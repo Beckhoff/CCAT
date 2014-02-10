@@ -9,6 +9,22 @@
 
 #define DRV_NAME "ccat_eth"
 
+struct ccat_eth_priv {
+	struct pci_dev *pdev;
+	void *ioaddr;
+	unsigned long bar0_start;
+	unsigned long bar0_end;
+	unsigned long bar0_len;
+	unsigned long bar0_flags;
+	unsigned char num_functions;
+	CCatInfoBlock info;
+	CCatInfoBlockOffs offsets;
+	CCatMii mii;
+	CCatDmaTxFifo tx_fifo;
+	CCatDmaRxActBuf rx_fifo;
+	CCatMacRegs mac;
+};
+
 static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
 	"not used",
 	"Informationblock",
@@ -37,15 +53,92 @@ static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
 	"unknown"
 };
 
-static void ccat_print_function_info(const CCatInfoBlock *pInfo)
+static void print_CCatDmaTxRxFiFo(const CCatDmaTxFifo* pTxFifo, const CCatDmaRxActBuf* pRxFifo, const void *const base_addr)
 {
-	size_t index = min((int)pInfo->eCCatInfoType, CCATINFO_MAX);
+	printk(KERN_INFO "%s: FIFO base address: %p\n", DRV_NAME, base_addr);
+	printk(KERN_INFO "%s:     Tx Frame Header start:   0x%08x\n", DRV_NAME, pTxFifo->startAddr);
+	printk(KERN_INFO "%s:     # 64 bit words:          %10d\n", DRV_NAME, pTxFifo->numQuadWords);
+	printk(KERN_INFO "%s:     reserved:                0x%08x\n", DRV_NAME, pTxFifo->reserved1);
+	printk(KERN_INFO "%s:     FIFO reset:              0x%08x\n", DRV_NAME, pTxFifo->fifoReset);
+	printk(KERN_INFO "%s:     Rx Frame Header start:   0x%08x\n", DRV_NAME, pRxFifo->startAddr);
+	printk(KERN_INFO "%s:     reserved:                0x%08x\n", DRV_NAME, pRxFifo->reserved1);
+	printk(KERN_INFO "%s:     Rx start address:        %s\n", DRV_NAME, pRxFifo->nextValid ? "valid" : "invalid");
+	printk(KERN_INFO "%s:     reserved:                0x%08x\n", DRV_NAME, pRxFifo->reserved2);
+	printk(KERN_INFO "%s:     FIFO level:              0x%08x\n", DRV_NAME, pRxFifo->FifoLevel);
+	printk(KERN_INFO "%s:     Buffer level:            0x%08x\n", DRV_NAME, pRxFifo->bufferLevel);
+	printk(KERN_INFO "%s:     next address:            0x%08x\n", DRV_NAME, pRxFifo->nextAddr);	
+}
+
+static void print_CCatInfoBlock(const CCatInfoBlock *pInfo, const void *const base_addr)
+{
+	const size_t index = min((int)pInfo->eCCatInfoType, CCATINFO_MAX);
 	printk(KERN_INFO "%s: %s\n", DRV_NAME, CCatFunctionTypes[index]);
-	printk(KERN_INFO "%s:     revision:    0x%x\n", DRV_NAME, pInfo->nRevision);
-	printk(KERN_INFO "%s:     RX channel:  %d\n", DRV_NAME, pInfo->rxDmaChn);
-	printk(KERN_INFO "%s:     TX channel:  %d\n", DRV_NAME, pInfo->txDmaChn);
-	printk(KERN_INFO "%s:     baseaddr:    0x%lx\n", DRV_NAME, pInfo->nAddr);
-	printk(KERN_INFO "%s:     size:        0x%lx\n", DRV_NAME, pInfo->nSize);
+	printk(KERN_INFO "%s:     revision:     0x%x\n", DRV_NAME, pInfo->nRevision);
+	printk(KERN_INFO "%s:     RX channel:   %d\n", DRV_NAME, pInfo->rxDmaChn);
+	printk(KERN_INFO "%s:     TX channel:   %d\n", DRV_NAME, pInfo->txDmaChn);
+	printk(KERN_INFO "%s:     baseaddr:     0x%lx\n", DRV_NAME, pInfo->nAddr);
+	printk(KERN_INFO "%s:     size:         0x%lx\n", DRV_NAME, pInfo->nSize);
+	printk(KERN_INFO "%s:     subfunction:  %p\n", DRV_NAME, base_addr);
+}
+
+static void print_CCatMacRegs(const CCatMacRegs *pMac, const void *const base_addr)
+{
+	printk(KERN_INFO "%s: MAC base address: %p\n", DRV_NAME, base_addr);
+	printk(KERN_INFO "%s:     frame length error count:   %10d\n", DRV_NAME, pMac->frameLenErrCnt);
+	printk(KERN_INFO "%s:     RX error count:             %10d\n", DRV_NAME, pMac->rxErrCnt);
+	printk(KERN_INFO "%s:     CRC error count:            %10d\n", DRV_NAME, pMac->crcErrCnt);
+	printk(KERN_INFO "%s:     Link lost error count:      %10d\n", DRV_NAME, pMac->linkLostErrCnt);
+	printk(KERN_INFO "%s:     reserved:                   0x%08x\n", DRV_NAME, pMac->reserved1);
+	printk(KERN_INFO "%s:     RX overflow count:          %10d\n", DRV_NAME, pMac->dropFrameErrCnt);
+	printk(KERN_INFO "%s:     DMA overflow count:         %10d\n", DRV_NAME, pMac->reserved2[0]);
+	//printk(KERN_INFO "%s:     reserverd:         %10d\n", DRV_NAME, pMac->reserved2[1]);
+	printk(KERN_INFO "%s:     TX frame counter:           %10d\n", DRV_NAME, pMac->txFrameCnt);
+	printk(KERN_INFO "%s:     RX frame counter:           %10d\n", DRV_NAME, pMac->rxFrameCnt);
+	printk(KERN_INFO "%s:     TX-FIFO level:              0x%08x\n", DRV_NAME, pMac->txFifoLevel);
+	printk(KERN_INFO "%s:     MII connection:             0x%08x\n", DRV_NAME, pMac->miiConnected);
+}
+
+static void print_CCatMii(const CCatMii *const pMii, const void *const base_addr)
+{
+	printk(KERN_INFO "%s: MII base address: %p\n", DRV_NAME, base_addr);
+	printk(KERN_INFO "%s:     MII cycle:    %s\n", DRV_NAME, pMii->startMiCycle ? "running" : "no cycle");
+	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved1);
+	printk(KERN_INFO "%s:     cmd valid:    %s\n", DRV_NAME, pMii->cmdErr ? "no" : "yes");
+	printk(KERN_INFO "%s:     cmd:          0x%x\n", DRV_NAME, pMii->cmd);
+	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved2);
+	printk(KERN_INFO "%s:     PHY addr:     0x%x\n", DRV_NAME, pMii->phyAddr);
+	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved3);
+	printk(KERN_INFO "%s:     PHY reg:      0x%x\n", DRV_NAME, pMii->phyReg);
+	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved4);
+	printk(KERN_INFO "%s:     PHY write:    0x%x\n", DRV_NAME, pMii->phyWriteData);
+	printk(KERN_INFO "%s:     PHY read:     0x%x\n", DRV_NAME, pMii->phyReadData);
+	printk(KERN_INFO "%s:     MAC addr:     %02x:%02x:%02x:%02x:%02x:%02x\n", DRV_NAME, pMii->macAddr.b[0], pMii->macAddr.b[1], pMii->macAddr.b[2], pMii->macAddr.b[3], pMii->macAddr.b[4], pMii->macAddr.b[5]);
+	printk(KERN_INFO "%s:     MAC filter:   %s\n", DRV_NAME, pMii->macFilterEnabled ? "enabled" : "disabled");
+	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved6);
+	printk(KERN_INFO "%s:     Link State:   %s\n", DRV_NAME, pMii->linkStatus ? "link" : "no link");
+	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved7);
+	//printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved8);
+	//TODO add leds, systimeinsertion and interrupts
+}
+
+static void ccat_print_function_info(struct ccat_eth_priv* priv)
+{
+	const CCatInfoBlock *pInfo = &priv->info;
+	void* func_base = priv->ioaddr + pInfo->nAddr;
+	memcpy_fromio(&priv->offsets, func_base, sizeof(priv->offsets));
+	memcpy_fromio(&priv->mii, func_base + priv->offsets.nMMIOffs, sizeof(priv->mii));
+	memcpy_fromio(&priv->tx_fifo, func_base + priv->offsets.nTxFifoOffs, sizeof(priv->tx_fifo));
+	memcpy_fromio(&priv->rx_fifo, func_base + priv->offsets.nTxFifoOffs + 0x10, sizeof(priv->rx_fifo));
+	memcpy_fromio(&priv->mac, func_base + priv->offsets.nMacRegOffs, sizeof(priv->mac));
+	
+	print_CCatInfoBlock(&priv->info, priv->ioaddr);
+	print_CCatMii(&priv->mii, func_base + priv->offsets.nMMIOffs);
+	print_CCatDmaTxRxFiFo(&priv->tx_fifo, &priv->rx_fifo, func_base + priv->offsets.nTxFifoOffs);	
+	print_CCatMacRegs(&priv->mac, func_base + priv->offsets.nMacRegOffs);
+	
+	printk(KERN_INFO "%s:  RX offset:    0x%04x\n", DRV_NAME, ioread32(func_base + 16));
+	printk(KERN_INFO "%s:  TX offset:    0x%04x\n", DRV_NAME, ioread32(func_base + 20));
+	printk(KERN_INFO "%s:  misc:         0x%04x\n", DRV_NAME, ioread32(func_base + 24));
 }
 
 #define PCI_DEVICE_ID_BECKHOFF_CCAT 0x5000
@@ -57,16 +150,6 @@ static const struct pci_device_id pci_ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, pci_ids);
 
-struct ccat_eth_priv {
-	struct pci_dev *pdev;
-	void *ioaddr;
-	unsigned long bar0_start;
-	unsigned long bar0_end;
-	unsigned long bar0_len;
-	unsigned long bar0_flags;
-	unsigned char num_functions;
-	CCatInfoBlock info;
-};
 
 static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *id);
 static int ccat_eth_init_pci(struct ccat_eth_priv *priv);
@@ -188,7 +271,7 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 	for(i = 0, addr = priv->ioaddr; i < priv->num_functions; ++i, addr += sizeof(priv->info)) {
 		if(CCATINFO_ETHERCAT_MASTER_DMA == ioread16(addr)) {
 			memcpy_fromio(&priv->info, addr, sizeof(priv->info));
-			ccat_print_function_info(&priv->info);
+			ccat_print_function_info(priv);
 			break;
 		}
 	}
