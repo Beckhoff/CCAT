@@ -329,8 +329,25 @@ static const UINT8 frameForwardEthernetFrames[] = { 0x01, 0x01, 0x05, 0x01, 0x00
 
 static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 {
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	int i;
+	const unsigned char *p = priv->rx_dma.virt;
+	const unsigned char *const end = p + 128;//priv->rx_dma.size;
+	iowrite32(0x80000008, priv->addr.rx_fifo);
+	//iowrite32(0x80000008, priv->addr.rx_fifo+8);
+	
+	for(i = 0; i <10000; ++i);
+	
+	while(p < end) {
+		printk(KERN_INFO "%s: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x\n", DRV_NAME, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
+		p += 16;
+	}
+	
+	memcpy_fromio(&priv->rx_fifo, priv->addr.rx_fifo, sizeof(priv->rx_fifo));
+	print_CCatDmaTxRxFiFo(&priv->tx_fifo, &priv->rx_fifo, priv->addr.tx_fifo);
+	
+	
 	#if 0
-	struct ccat_eth_priv *priv = netdev_priv(dev);
 	struct ccat_eth_tx_header *header = priv->tx_virt;
 	
 	const unsigned char *next = (const unsigned char *)header + 1;
