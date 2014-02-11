@@ -9,13 +9,65 @@
 
 #define DRV_NAME "ccat_eth"
 
+struct ccat_eth_func_ptr {
+	void *mii;
+	void *tx_fifo;
+	void *rx_fifo;
+	void *mac;
+	void *rx;
+	void *tx;
+	void *misc;
+};
+
+struct ccat_bar {
+	unsigned long start;
+	unsigned long end;
+	unsigned long len;
+	unsigned long flags;
+	void *ioaddr;
+};
+
+
+static void ccat_bar_free(struct ccat_bar *bar)
+{
+	iounmap(bar->ioaddr);
+	bar->ioaddr = NULL;
+	release_mem_region(bar->start, bar->len);
+}
+
+static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pdev)
+{
+	struct resource *res;
+	bar->start = pci_resource_start(pdev, index);
+	bar->end = pci_resource_end(pdev, index);
+	bar->len = pci_resource_len(pdev, index);
+	bar->flags = pci_resource_flags(pdev, index);
+	if(!(IORESOURCE_MEM & bar->flags)) {
+		printk(KERN_INFO "%s: bar%d should be memory space, but it isn't -> abort CCAT initialization.\n", DRV_NAME, index);
+		return -1;
+	}
+	
+	res = request_mem_region(bar->start, bar->len, DRV_NAME);
+	if(!res) {
+		printk(KERN_INFO "%s: allocate mem_region failed.\n", DRV_NAME);
+		return -1;
+	}
+	printk(KERN_INFO "%s: bar%d at [%lx,%lx] len=%lu.\n", DRV_NAME, index, bar->start, bar->end, bar->len);
+	printk(KERN_INFO "%s: bar%d mem_region resource allocated as %p.\n", DRV_NAME, index, res);
+	
+	bar->ioaddr = ioremap(bar->start, bar->len);
+	if(!bar->ioaddr) {
+		printk(KERN_INFO "%s: bar%d ioremap failed.\n", DRV_NAME, index);
+		release_mem_region(bar->start, bar->len);
+		return -1;
+	}
+	printk(KERN_INFO "%s: bar%d I/O mem mapped to %p.\n", DRV_NAME, index, bar->ioaddr);
+	return 0;
+}
+
 struct ccat_eth_priv {
 	struct pci_dev *pdev;
-	void *ioaddr;
-	unsigned long bar0_start;
-	unsigned long bar0_end;
-	unsigned long bar0_len;
-	unsigned long bar0_flags;
+	struct ccat_bar bar[3];
 	unsigned char num_functions;
 	CCatInfoBlock info;
 	CCatInfoBlockOffs offsets;
@@ -23,7 +75,56 @@ struct ccat_eth_priv {
 	CCatDmaTxFifo tx_fifo;
 	CCatDmaRxActBuf rx_fifo;
 	CCatMacRegs mac;
+	struct ccat_eth_func_ptr addr;
+	dma_addr_t rx_phys;
+	dma_addr_t tx_phys;
+	size_t rx_mem_size;
+	size_t tx_mem_size;
+	void *rx_virt;
+	void *tx_virt;
 };
+
+static void ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
+{
+	priv->rx_mem_size = 1024*100;
+	priv->rx_virt = dma_zalloc_coherent(&priv->pdev->dev, priv->rx_mem_size, &priv->rx_phys, GFP_KERNEL | __GFP_DMA);
+	iowrite32(0x800000 | priv->rx_phys, priv->addr.rx_fifo);
+	
+/*	UINT32 offs = sizeof(UINT64)*pAdapter->pCCatSlotInfo->txDmaChn+0x1000;
+	UINT32 status = ERROR_NO_RESOURCE;
+	if ( WriteToBar2(pAdapter, sizeof(data), offs, &data) == 0 && ReadFromBar2(pAdapter, sizeof(data), offs, &data) == 0 )
+	*/
+	printk(KERN_INFO "%s: rx start address %x.\n", DRV_NAME, ioread32(priv->addr.rx_fifo));
+	
+	
+	priv->tx_mem_size = 255*8;
+	priv->tx_virt = dma_zalloc_coherent(&priv->pdev->dev, priv->tx_mem_size, &priv->tx_phys, GFP_KERNEL | __GFP_DMA);
+	iowrite32(0xff000000 | priv->tx_phys, priv->addr.tx_fifo);	
+	iowrite32(0xff, priv->addr.tx_fifo + 0x8);
+}
+
+/*
+ * Initializes the CCat... members of the ccat_eth_priv structure.
+ * Call this function only if info and ioaddr are already initialized!
+ */
+static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
+{
+	void* func_base = priv->bar[0].ioaddr + priv->info.nAddr;
+	memcpy_fromio(&priv->offsets, func_base, sizeof(priv->offsets));
+	
+	priv->addr.mii = func_base + priv->offsets.nMMIOffs;
+	priv->addr.tx_fifo = func_base + priv->offsets.nTxFifoOffs;
+	priv->addr.rx_fifo = func_base + priv->offsets.nTxFifoOffs + 0x10;
+	priv->addr.mac = func_base + priv->offsets.nMacRegOffs;
+	priv->addr.rx = func_base + priv->offsets.nRxMemOffs;
+	priv->addr.tx = func_base + priv->offsets.nTxMemOffs;
+	priv->addr.misc = func_base + priv->offsets.nMiscOffs;
+	
+	memcpy_fromio(&priv->mii, priv->addr.mii, sizeof(priv->mii));
+	memcpy_fromio(&priv->tx_fifo, priv->addr.tx_fifo, sizeof(priv->tx_fifo));
+	memcpy_fromio(&priv->rx_fifo, priv->addr.rx_fifo, sizeof(priv->rx_fifo));
+	memcpy_fromio(&priv->mac, priv->addr.mac, sizeof(priv->mac));
+}
 
 static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
 	"not used",
@@ -118,27 +219,18 @@ static void print_CCatMii(const CCatMii *const pMii, const void *const base_addr
 	printk(KERN_INFO "%s:     Link State:   %s\n", DRV_NAME, pMii->linkStatus ? "link" : "no link");
 	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved7);
 	//printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, pMii->reserved8);
-	//TODO add leds, systimeinsertion and interrupts
+	//TODO add leds, systemtime insertion and interrupts
 }
 
 static void ccat_print_function_info(struct ccat_eth_priv* priv)
 {
-	const CCatInfoBlock *pInfo = &priv->info;
-	void* func_base = priv->ioaddr + pInfo->nAddr;
-	memcpy_fromio(&priv->offsets, func_base, sizeof(priv->offsets));
-	memcpy_fromio(&priv->mii, func_base + priv->offsets.nMMIOffs, sizeof(priv->mii));
-	memcpy_fromio(&priv->tx_fifo, func_base + priv->offsets.nTxFifoOffs, sizeof(priv->tx_fifo));
-	memcpy_fromio(&priv->rx_fifo, func_base + priv->offsets.nTxFifoOffs + 0x10, sizeof(priv->rx_fifo));
-	memcpy_fromio(&priv->mac, func_base + priv->offsets.nMacRegOffs, sizeof(priv->mac));
-	
-	print_CCatInfoBlock(&priv->info, priv->ioaddr);
-	print_CCatMii(&priv->mii, func_base + priv->offsets.nMMIOffs);
-	print_CCatDmaTxRxFiFo(&priv->tx_fifo, &priv->rx_fifo, func_base + priv->offsets.nTxFifoOffs);	
-	print_CCatMacRegs(&priv->mac, func_base + priv->offsets.nMacRegOffs);
-	
-	printk(KERN_INFO "%s:  RX offset:    0x%04x\n", DRV_NAME, ioread32(func_base + 16));
-	printk(KERN_INFO "%s:  TX offset:    0x%04x\n", DRV_NAME, ioread32(func_base + 20));
-	printk(KERN_INFO "%s:  misc:         0x%04x\n", DRV_NAME, ioread32(func_base + 24));
+	print_CCatInfoBlock(&priv->info, priv->bar[0].ioaddr);
+	print_CCatMii(&priv->mii, priv->addr.mii);
+	print_CCatDmaTxRxFiFo(&priv->tx_fifo, &priv->rx_fifo, priv->addr.tx_fifo);	
+	print_CCatMacRegs(&priv->mac, priv->addr.mac);
+	printk(KERN_INFO "%s:  RX window:    %p\n", DRV_NAME, priv->addr.rx);
+	printk(KERN_INFO "%s:  TX memory:    %p\n", DRV_NAME, priv->addr.tx);
+	printk(KERN_INFO "%s:  misc:         %p\n", DRV_NAME, priv->addr.misc);
 }
 
 #define PCI_DEVICE_ID_BECKHOFF_CCAT 0x5000
@@ -170,9 +262,56 @@ static const struct net_device_ops ccat_eth_netdev_ops = {
 
 static struct net_device *ccat_eth_dev;
 
+struct ccat_eth_tx_header {
+	uint64_t notused;
+	uint16_t length;
+	uint8_t port;
+	uint8_t wait_timestamp :1;
+	uint8_t wait_event0 :1;
+	uint8_t wait_event1 :1;
+	uint8_t reserved1 :5;
+	uint32_t was_read :1;
+	uint32_t reserved2 : 31;
+	uint64_t timestamp;
+};
+
+static const UINT8 frameForwardEthernetFrames[] = { 0x01, 0x01, 0x05, 0x01, 0x00, 0x00, 
+							0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
+							0x88, 0xa4, 0x0e, 0x10,
+							0x08,		
+							0x00,	
+							0x00, 0x00,
+							0x00, 0x01,
+							0x02,	0x00,
+							0x00, 0x00,
+							0x00, 0x00,
+							0x00, 0x00
+	};
+
 static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 {
-	//printk(KERN_INFO "%s: %s() called.\n", DRV_NAME, __FUNCTION__);
+	struct ccat_eth_priv *priv = netdev_priv(dev);
+	struct ccat_eth_tx_header *header = priv->tx_virt;
+	
+	const unsigned char *next = (const unsigned char *)header + 1;
+	const unsigned char *const end = next + sizeof(frameForwardEthernetFrames);
+	printk(KERN_INFO "%s: %s() called.\n", DRV_NAME, __FUNCTION__);
+	printk(KERN_INFO "%s: link is %s\n", DRV_NAME, priv->mii.linkStatus ? "up" : "down");
+	printk(KERN_INFO "%s: next rx frame at %x.\n", DRV_NAME, ioread32(priv->addr.rx_fifo));
+	printk(KERN_INFO "%s: old tx frame was %s.\n", DRV_NAME, header->was_read ? "read" : "not read");
+	
+	do {
+		//printk(KERN_INFO "%02x ", *next);
+	} while (++next < end);
+	
+	memcpy(header + 1, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
+	
+	header->length = sizeof(frameForwardEthernetFrames);
+	header->port = 0x01;
+	header->wait_timestamp = 0;
+	header->wait_event0 = 0;
+	header->wait_event1 = 0;
+	
 	//TODO
 	return storage;
 }
@@ -189,15 +328,12 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	priv = netdev_priv(ccat_eth_dev);
 	priv->pdev = pdev;
 	
-	//TODO pci initialization
+	/* pci initialization */
 	if(ccat_eth_init_pci(priv)) {
 		printk(KERN_INFO "%s: CCAT pci init failed.\n", DRV_NAME);
 		ccat_eth_remove_one(priv->pdev);		
 		return -1;		
 	}
-	
-	
-	
 	
 	/* complete ethernet device initialization */
 	ccat_eth_dev->netdev_ops = &ccat_eth_netdev_ops;
@@ -213,7 +349,6 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 {
 	struct pci_dev *pdev = priv->pdev;
-	struct resource *res;
 	void* addr;
 	size_t i;
 	int status;
@@ -241,37 +376,25 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 		printk(KERN_WARNING "%s: No suitable DMA available.\n", DRV_NAME);
 	}
 	
-	priv->bar0_start = pci_resource_start(pdev, 0);
-	priv->bar0_end = pci_resource_end(pdev, 0);
-	priv->bar0_len = pci_resource_len(pdev, 0);
-	priv->bar0_flags = pci_resource_flags(pdev, 0);
-	if(!(IORESOURCE_MEM & priv->bar0_flags)) {
-		printk(KERN_INFO "%s: bar0 should be memory space, but it isn't -> abort CCAT initialization.\n", DRV_NAME);
+	if(ccat_bar_init(&priv->bar[0], 0, priv->pdev)) {
+		printk(KERN_WARNING "%s: initialization of bar0 failed.\n", DRV_NAME);
 		return -1;
 	}
 	
-	res = request_mem_region(priv->bar0_start, priv->bar0_len, DRV_NAME);
-	if(!res) {
-		printk(KERN_INFO "%s: allocate mem_region failed.\n", DRV_NAME);
+	if(ccat_bar_init(&priv->bar[2], 2, priv->pdev)) {
+		printk(KERN_WARNING "%s: initialization of bar2 failed.\n", DRV_NAME);
 		return -1;
 	}
-	printk(KERN_INFO "%s: bar0 at [%lx,%lx] len=%lu.\n", DRV_NAME, priv->bar0_start, priv->bar0_end, priv->bar0_len);
-	printk(KERN_INFO "%s: mem_region resource allocated as %p.\n", DRV_NAME, res);
 	
-	priv->ioaddr = ioremap(priv->bar0_start, priv->bar0_len);
-	if(!priv->ioaddr) {
-		printk(KERN_INFO "%s: ioremap failed.\n", DRV_NAME);
-		release_mem_region(priv->bar0_start, priv->bar0_len);
-		return -1;
-	}
-	printk(KERN_INFO "%s: I/O mem mapped to %p.\n", DRV_NAME, priv->ioaddr);
-	priv->num_functions = ioread8(priv->ioaddr + 4); /* jump to CCatInfoBlock.nMaxEntries */
+	priv->num_functions = ioread8(priv->bar[0].ioaddr + 4); /* jump to CCatInfoBlock.nMaxEntries */
 	
 	/* find CCATINFO_ETHERCAT_MASTER_DMA function */
-	for(i = 0, addr = priv->ioaddr; i < priv->num_functions; ++i, addr += sizeof(priv->info)) {
+	for(i = 0, addr = priv->bar[0].ioaddr; i < priv->num_functions; ++i, addr += sizeof(priv->info)) {
 		if(CCATINFO_ETHERCAT_MASTER_DMA == ioread16(addr)) {
 			memcpy_fromio(&priv->info, addr, sizeof(priv->info));
-			ccat_print_function_info(priv);
+			ccat_eth_priv_init_mappings(priv);
+			ccat_eth_priv_init_dma(priv);
+			//ccat_print_function_info(priv);
 			break;
 		}
 	}
@@ -294,7 +417,7 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 		unregister_netdev(ccat_eth_dev);
 		ccat_eth_remove_pci(netdev_priv(ccat_eth_dev));
 		free_netdev(ccat_eth_dev);
-		printk(KERN_INFO "%s: cleanup done.\n", DRV_NAME);
+		printk(KERN_INFO "%s: cleanup done.\n\n", DRV_NAME);
 	}
 	//TODO
 }
@@ -302,9 +425,9 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 {
 	//TODO
-	iounmap(priv->ioaddr);
-	priv->ioaddr = NULL;
-	release_mem_region(priv->bar0_start, priv->bar0_len);
+	dma_free_coherent(&priv->pdev->dev, priv->rx_mem_size, priv->rx_virt, priv->rx_phys);
+	ccat_bar_free(&priv->bar[0]);
+	ccat_bar_free(&priv->bar[2]);
 	pci_disable_device (priv->pdev);
 	priv->pdev = NULL;
 }

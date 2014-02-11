@@ -9,6 +9,7 @@ typedef unsigned short USHORT;
 typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
+typedef uint64_t UINT64;
 #endif
 
 typedef enum
@@ -112,6 +113,7 @@ typedef struct _CCatInfoBlockOffs
 	UINT32			nMacRegOffs;
 	UINT32			nRxMemOffs;
 	UINT32			nTxMemOffs;
+	UINT32			nMiscOffs;
 } CCatInfoBlockOffs;
 
 typedef struct _CCatMacRegs
@@ -169,5 +171,34 @@ typedef struct _CCatMii
 	ULONG		interruptState[2];
 	ULONG		interruptMask[2];	
 }CCatMii;
+
+typedef struct _CCatRxDesc
+{
+	union
+	{
+		struct 
+		{
+			UINT32			nextDesc		: 24;
+			UINT32			reserved1	: 7;
+			UINT32			nextValid	: 1;
+			UINT32			received		: 1;
+			UINT32			reserved2	: 31;
+		};
+		UINT32			head[2];
+	};
+	union
+	{
+		struct
+		{
+			UINT16		length		: 12;
+			UINT16		reserved3	: 4;
+		};
+		UINT16 uLength;
+	};
+	UINT16		port;
+	UINT32		reserved4;
+	UINT64		timestamp;
+	UINT8			data[0x7e8];
+}CCatRxDesc;
 #endif /* #ifndef _CCAT_DEFINITIONS_H_ */
 
