@@ -65,6 +65,48 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pde
 	return 0;
 }
 
+struct ccat_dma {
+	dma_addr_t phys;
+	void *virt;
+	size_t size;
+};
+
+static void ccat_dma_free(struct ccat_dma *const dma, struct device *const dev)
+{
+	const struct ccat_dma tmp = {
+		.phys = dma->phys,
+		.virt = dma->virt,
+		.size = dma->size
+	};
+	memset(dma, 0, sizeof(*dma));	
+	dma_free_coherent(dev, tmp.size, tmp.virt, tmp.phys);
+}
+
+static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void *const ioaddr, struct device *const dev)
+{
+	uint64_t addr;
+	uint32_t addrTranslate;
+	uint32_t memTranslate;
+	uint32_t memSize;
+	uint32_t data = 0xffffffff;
+	uint32_t offset = (sizeof(uint64_t) * channel) + 0x1000;
+	iowrite32(data, ioaddr + offset);
+	data = ioread32(ioaddr + offset);
+	memTranslate = data & 0xfffffffc;
+	memSize = (~memTranslate) + 1;
+	dma->size = (2 * memSize) - PAGE_SIZE;
+	printk(KERN_INFO "%s: %s() %u %u %u\n", DRV_NAME, __FUNCTION__, memTranslate, memSize, dma->size);
+	dma->virt = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL | __GFP_DMA);
+	if(!dma->virt || !dma->phys) {
+		printk(KERN_INFO "%s: init DMA memory failed.\n", DRV_NAME);
+		return -1;
+	}
+	addrTranslate = (dma->phys + memSize - PAGE_SIZE) & memTranslate;
+	addr = addrTranslate;
+	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
+	return 0;
+}
+
 struct ccat_eth_priv {
 	struct pci_dev *pdev;
 	struct ccat_bar bar[3];
@@ -76,31 +118,23 @@ struct ccat_eth_priv {
 	CCatDmaRxActBuf rx_fifo;
 	CCatMacRegs mac;
 	struct ccat_eth_func_ptr addr;
-	dma_addr_t rx_phys;
-	dma_addr_t tx_phys;
-	size_t rx_mem_size;
-	size_t tx_mem_size;
-	void *rx_virt;
-	void *tx_virt;
+	struct ccat_dma rx_dma;
+	struct ccat_dma tx_dma;
 };
 
-static void ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
+static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	priv->rx_mem_size = 1024*100;
-	priv->rx_virt = dma_zalloc_coherent(&priv->pdev->dev, priv->rx_mem_size, &priv->rx_phys, GFP_KERNEL | __GFP_DMA);
-	iowrite32(0x800000 | priv->rx_phys, priv->addr.rx_fifo);
+	if(ccat_dma_init(&priv->rx_dma, priv->info.rxDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
+		printk(KERN_INFO "%s: init Rx DMA memory failed.\n", DRV_NAME);
+		return -1;
+	}
+	if(ccat_dma_init(&priv->tx_dma, priv->info.txDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
+		printk(KERN_INFO "%s: init Tx DMA memory failed.\n", DRV_NAME);
+		return -1;
+	}
 	
-/*	UINT32 offs = sizeof(UINT64)*pAdapter->pCCatSlotInfo->txDmaChn+0x1000;
-	UINT32 status = ERROR_NO_RESOURCE;
-	if ( WriteToBar2(pAdapter, sizeof(data), offs, &data) == 0 && ReadFromBar2(pAdapter, sizeof(data), offs, &data) == 0 )
-	*/
-	printk(KERN_INFO "%s: rx start address %x.\n", DRV_NAME, ioread32(priv->addr.rx_fifo));
-	
-	
-	priv->tx_mem_size = 255*8;
-	priv->tx_virt = dma_zalloc_coherent(&priv->pdev->dev, priv->tx_mem_size, &priv->tx_phys, GFP_KERNEL | __GFP_DMA);
-	iowrite32(0xff000000 | priv->tx_phys, priv->addr.tx_fifo);	
-	iowrite32(0xff, priv->addr.tx_fifo + 0x8);
+	// TODO
+	return 0;
 }
 
 /*
@@ -290,6 +324,7 @@ static const UINT8 frameForwardEthernetFrames[] = { 0x01, 0x01, 0x05, 0x01, 0x00
 
 static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 {
+	#if 0
 	struct ccat_eth_priv *priv = netdev_priv(dev);
 	struct ccat_eth_tx_header *header = priv->tx_virt;
 	
@@ -311,7 +346,7 @@ static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, st
 	header->wait_timestamp = 0;
 	header->wait_event0 = 0;
 	header->wait_event1 = 0;
-	
+	#endif
 	//TODO
 	return storage;
 }
@@ -393,14 +428,14 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 		if(CCATINFO_ETHERCAT_MASTER_DMA == ioread16(addr)) {
 			memcpy_fromio(&priv->info, addr, sizeof(priv->info));
 			ccat_eth_priv_init_mappings(priv);
-			ccat_eth_priv_init_dma(priv);
-			//ccat_print_function_info(priv);
+			ccat_print_function_info(priv);
+			status = ccat_eth_priv_init_dma(priv);
 			break;
 		}
 	}
 	
 	//TODO
-	return 0;
+	return status;
 }
 
 static int ccat_eth_open(struct net_device *dev)
@@ -425,9 +460,10 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 {
 	//TODO
-	dma_free_coherent(&priv->pdev->dev, priv->rx_mem_size, priv->rx_virt, priv->rx_phys);
-	ccat_bar_free(&priv->bar[0]);
+	ccat_dma_free(&priv->tx_dma, &priv->pdev->dev);
+	ccat_dma_free(&priv->rx_dma, &priv->pdev->dev);
 	ccat_bar_free(&priv->bar[2]);
+	ccat_bar_free(&priv->bar[0]);
 	pci_disable_device (priv->pdev);
 	priv->pdev = NULL;
 }
