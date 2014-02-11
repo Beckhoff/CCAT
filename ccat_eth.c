@@ -133,7 +133,12 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		return -1;
 	}
 	
-	// TODO
+	priv->rx_fifo.rxActBuf = 0;
+	priv->rx_fifo.FifoLevel = 0;
+	memcpy_toio(priv->addr.rx_fifo, &priv->rx_fifo, sizeof(priv->rx_fifo));
+	
+	priv->tx_fifo.fifoReset = 1;
+	memcpy_toio(priv->addr.tx_fifo, &priv->tx_fifo, sizeof(priv->tx_fifo));
 	return 0;
 }
 
