@@ -127,14 +127,6 @@ struct ccat_eth_priv {
 
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	CCatDmaTxFifo tx_fifo = {
-		.fifoReset = 1,
-	};
-	CCatDmaRxActBuf rx_fifo = {
-		.rxActBuf = 0,
-		.FifoLevel = 0,
-	};
-	
 	if(ccat_dma_init(&priv->rx_dma, priv->info.rxDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
 		printk(KERN_INFO "%s: init Rx DMA memory failed.\n", DRV_NAME);
 		return -1;
@@ -150,18 +142,10 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	/* reset tx fifo */
 	iowrite8(1, priv->reg.tx_fifo + 0x8);
 
-#if 1
 	/* start rx dma fifo */
 	iowrite32(0, priv->reg.rx_fifo + 12);
 	iowrite32(0, priv->reg.rx_fifo + 8);
 	iowrite32((1 << 31) | 0, priv->reg.rx_fifo);
-	//iowrite32((1 << 31) | priv->rx_dma.phys, priv->reg.rx_fifo);
-#else
-	rx_fifo.startAddr = priv->rx_dma.phys;
-	rx_fifo.nextValid = 1;
-	memcpy_toio(priv->reg.rx_fifo, &rx_fifo, sizeof(rx_fifo));
-	memcpy_toio(priv->reg.tx_fifo, &tx_fifo, sizeof(tx_fifo));
-#endif
 	return 0;
 }
 
