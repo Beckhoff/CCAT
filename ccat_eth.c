@@ -12,6 +12,16 @@
 
 static int run_rx_thread(void *data); /* rx handler thread function */
 
+struct ccat_eth_register {
+	void *mii;
+	void *tx_fifo;
+	void *rx_fifo;
+	void *mac;
+	void *rx_mem;
+	void *tx_mem;
+	void *misc;
+};
+
 struct ccat_bar {
 	unsigned long start;
 	unsigned long end;
@@ -19,7 +29,6 @@ struct ccat_bar {
 	unsigned long flags;
 	void *ioaddr;
 };
-
 
 static void ccat_bar_free(struct ccat_bar *bar)
 {
@@ -107,13 +116,7 @@ struct ccat_eth_priv {
 	CCatInfoBlock info;
 	struct ccat_dma rx_dma;
 	struct ccat_dma tx_dma;
-	void *mii;
-	void *tx_fifo;
-	void *rx_fifo;
-	void *mac;
-	void *rx_mem;
-	void *tx_mem;
-	void *misc;
+	struct ccat_eth_register reg;
 };
 
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
@@ -135,8 +138,8 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		return -1;
 	}
 	
-	memcpy_toio(priv->rx_fifo, &rx_fifo, sizeof(rx_fifo));
-	memcpy_toio(priv->tx_fifo, &tx_fifo, sizeof(tx_fifo));
+	memcpy_toio(priv->reg.rx_fifo, &rx_fifo, sizeof(rx_fifo));
+	memcpy_toio(priv->reg.tx_fifo, &tx_fifo, sizeof(tx_fifo));
 	return 0;
 }
 
@@ -150,13 +153,13 @@ static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 	void *const func_base = priv->bar[0].ioaddr + priv->info.nAddr;
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	
-	priv->mii = func_base + offsets.nMMIOffs;
-	priv->tx_fifo = func_base + offsets.nTxFifoOffs;
-	priv->rx_fifo = func_base + offsets.nTxFifoOffs + 0x10;
-	priv->mac = func_base + offsets.nMacRegOffs;
-	priv->rx_mem = func_base + offsets.nRxMemOffs;
-	priv->tx_mem = func_base + offsets.nTxMemOffs;
-	priv->misc = func_base + offsets.nMiscOffs;
+	priv->reg.mii = func_base + offsets.nMMIOffs;
+	priv->reg.tx_fifo = func_base + offsets.nTxFifoOffs;
+	priv->reg.rx_fifo = func_base + offsets.nTxFifoOffs + 0x10;
+	priv->reg.mac = func_base + offsets.nMacRegOffs;
+	priv->reg.rx_mem = func_base + offsets.nRxMemOffs;
+	priv->reg.tx_mem = func_base + offsets.nTxMemOffs;
+	priv->reg.misc = func_base + offsets.nMiscOffs;
 }
 
 static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
@@ -271,13 +274,13 @@ static void print_CCatMii(const void *const base_addr)
 static void ccat_print_function_info(struct ccat_eth_priv* priv)
 {
 	print_CCatInfoBlock(&priv->info, priv->bar[0].ioaddr);
-	print_CCatMii(priv->mii);
-	print_CCatDmaTxFiFo(priv->tx_fifo);	
-	print_CCatDmaRxFiFo(priv->rx_fifo);	
-	print_CCatMacRegs(priv->mac);
-	printk(KERN_INFO "%s:  RX window:    %p\n", DRV_NAME, priv->rx_mem);
-	printk(KERN_INFO "%s:  TX memory:    %p\n", DRV_NAME, priv->tx_mem);
-	printk(KERN_INFO "%s:  misc:         %p\n", DRV_NAME, priv->misc);
+	print_CCatMii(priv->reg.mii);
+	print_CCatDmaTxFiFo(priv->reg.tx_fifo);	
+	print_CCatDmaRxFiFo(priv->reg.rx_fifo);	
+	print_CCatMacRegs(priv->reg.mac);
+	printk(KERN_INFO "%s:  RX window:    %p\n", DRV_NAME, priv->reg.rx_mem);
+	printk(KERN_INFO "%s:  TX memory:    %p\n", DRV_NAME, priv->reg.tx_mem);
+	printk(KERN_INFO "%s:  misc:         %p\n", DRV_NAME, priv->reg.misc);
 }
 
 #define PCI_DEVICE_ID_BECKHOFF_CCAT 0x5000
@@ -492,7 +495,7 @@ static void test_rx(struct ccat_eth_priv *const priv)
 		}
 		++frame;
 	}
-	print_CCatMii(priv->mii);
+	print_CCatMii(priv->reg.mii);
 }
 
 static int run_rx_thread(void *data)
