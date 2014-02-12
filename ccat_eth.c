@@ -93,20 +93,27 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void *const
 	uint32_t memSize;
 	uint32_t data = 0xffffffff;
 	uint32_t offset = (sizeof(uint64_t) * channel) + 0x1000;
-	iowrite32(data, ioaddr + offset);
-	data = ioread32(ioaddr + offset);
 	
+	/* calculate size and alignments */
+	iowrite32(data, ioaddr + offset);
+	data = ioread32(ioaddr + offset);	
 	memTranslate = data & 0xfffffffc;
 	memSize = (~memTranslate) + 1;
 	dma->size = 2*memSize - PAGE_SIZE;
+	
 	dma->virt = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL | __GFP_DMA);
 	if(!dma->virt || !dma->phys) {
 		printk(KERN_INFO "%s: init DMA memory failed.\n", DRV_NAME);
 		return -1;
 	}
+	
 	translateAddr = (dma->phys + memSize - PAGE_SIZE) & memTranslate;
 	addr = translateAddr;
+#if 0
 	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
+#else
+	iowrite32(translateAddr, ioaddr + offset);
+#endif
 	frame = dma->virt + translateAddr - dma->phys;
 	
 	printk(KERN_INFO "%s: 0x%x.\n", DRV_NAME, memTranslate);
@@ -137,7 +144,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	}
 	
 	/* disable MAC filter */
-	iowrite8(1, priv->reg.mii + 0x8 + 6);
+	iowrite8(0, priv->reg.mii + 0x8 + 6);
 	
 	/* reset tx fifo */
 	iowrite8(1, priv->reg.tx_fifo + 0x8);
@@ -196,11 +203,11 @@ static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
 	"unknown"
 };
 
-static void print_CCatDmaRxActBuf(const void *const base_addr)
+static void print_CCatDmaRxActBuf(const struct ccat_eth_priv *const priv)
 {
 	CCatDmaRxActBuf rx_fifo;
-	memcpy_fromio(&rx_fifo, base_addr, sizeof(rx_fifo));
-	printk(KERN_INFO "%s: Rx FIFO base address: %p\n", DRV_NAME, base_addr);
+	memcpy_fromio(&rx_fifo, priv->reg.rx_fifo, sizeof(rx_fifo));
+	printk(KERN_INFO "%s: Rx FIFO base address: %p\n", DRV_NAME, priv->reg.rx_fifo);
 	printk(KERN_INFO "%s:     Rx Frame Header start:   0x%08x\n", DRV_NAME, rx_fifo.startAddr);
 	printk(KERN_INFO "%s:     reserved:                0x%08x\n", DRV_NAME, rx_fifo.reserved1);
 	printk(KERN_INFO "%s:     Rx start address:        %s\n", DRV_NAME, rx_fifo.nextValid ? "valid" : "invalid");
@@ -210,11 +217,11 @@ static void print_CCatDmaRxActBuf(const void *const base_addr)
 	printk(KERN_INFO "%s:     next address:            0x%08x\n", DRV_NAME, rx_fifo.nextAddr);	
 }
 
-static void print_CCatDmaTxFifo(const void *const base_addr)
+static void print_CCatDmaTxFifo(const struct ccat_eth_priv *const priv)
 {
 	CCatDmaTxFifo tx_fifo;
-	memcpy_fromio(&tx_fifo, base_addr, sizeof(tx_fifo));
-	printk(KERN_INFO "%s: Tx FIFO base address: %p\n", DRV_NAME, base_addr);
+	memcpy_fromio(&tx_fifo, priv->reg.tx_fifo, sizeof(tx_fifo));
+	printk(KERN_INFO "%s: Tx FIFO base address: %p\n", DRV_NAME, priv->reg.tx_fifo);
 	printk(KERN_INFO "%s:     Tx Frame Header start:   0x%08x\n", DRV_NAME, tx_fifo.startAddr);
 	printk(KERN_INFO "%s:     # 64 bit words:          %10d\n", DRV_NAME, tx_fifo.numQuadWords);
 	printk(KERN_INFO "%s:     reserved:                0x%08x\n", DRV_NAME, tx_fifo.reserved1);
@@ -233,11 +240,11 @@ static void print_CCatInfoBlock(const CCatInfoBlock *pInfo, const void *const ba
 	printk(KERN_INFO "%s:     subfunction:  %p\n", DRV_NAME, base_addr);
 }
 
-static void print_CCatMacRegs(const void *const base_addr)
+static void print_CCatMacRegs(const struct ccat_eth_priv *const priv)
 {
 	CCatMacRegs mac;
-	memcpy_fromio(&mac, base_addr, sizeof(mac));
-	printk(KERN_INFO "%s: MAC base address: %p\n", DRV_NAME, base_addr);
+	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
+	printk(KERN_INFO "%s: MAC base address: %p\n", DRV_NAME, priv->reg.mac);
 	printk(KERN_INFO "%s:     frame length error count:   %10d\n", DRV_NAME, mac.frameLenErrCnt);
 	printk(KERN_INFO "%s:     RX error count:             %10d\n", DRV_NAME, mac.rxErrCnt);
 	printk(KERN_INFO "%s:     CRC error count:            %10d\n", DRV_NAME, mac.crcErrCnt);
@@ -252,11 +259,11 @@ static void print_CCatMacRegs(const void *const base_addr)
 	printk(KERN_INFO "%s:     MII connection:             0x%08x\n", DRV_NAME, mac.miiConnected);
 }
 
-static void print_CCatMii(const void *const base_addr)
+static void print_CCatMii(const struct ccat_eth_priv *const priv)
 {
 	CCatMii mii;
-	memcpy_fromio(&mii, base_addr, sizeof(mii));
-	printk(KERN_INFO "%s: MII base address: %p\n", DRV_NAME, base_addr);
+	memcpy_fromio(&mii, priv->reg.mii, sizeof(mii));
+	printk(KERN_INFO "%s: MII base address: %p\n", DRV_NAME, priv->reg.mii);
 	printk(KERN_INFO "%s:     MII cycle:    %s\n", DRV_NAME, mii.startMiCycle ? "running" : "no cycle");
 	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, mii.reserved1);
 	printk(KERN_INFO "%s:     cmd valid:    %s\n", DRV_NAME, mii.cmdErr ? "no" : "yes");
@@ -280,10 +287,10 @@ static void print_CCatMii(const void *const base_addr)
 static void ccat_print_function_info(struct ccat_eth_priv* priv)
 {
 	print_CCatInfoBlock(&priv->info, priv->bar[0].ioaddr);
-	print_CCatMii(priv->reg.mii);
-	print_CCatDmaTxFifo(priv->reg.tx_fifo);
-	print_CCatDmaRxActBuf(priv->reg.rx_fifo);
-	print_CCatMacRegs(priv->reg.mac);
+	print_CCatMii(priv);
+	print_CCatDmaTxFifo(priv);
+	print_CCatDmaRxActBuf(priv);
+	print_CCatMacRegs(priv);
 	printk(KERN_INFO "%s:  RX window:    %p\n", DRV_NAME, priv->reg.rx_mem);
 	printk(KERN_INFO "%s:  TX memory:    %p\n", DRV_NAME, priv->reg.tx_mem);
 	printk(KERN_INFO "%s:  misc:         %p\n", DRV_NAME, priv->reg.misc);
@@ -489,7 +496,7 @@ static void test_rx(struct ccat_eth_priv *const priv)
 		}
 		++frame;
 	}
-	print_CCatDmaRxActBuf(priv->reg.rx_fifo);
+	print_CCatDmaRxActBuf(priv);
 }
 
 static const UINT8 frameForwardEthernetFrames[] = {
@@ -518,6 +525,7 @@ static const UINT8 frameArpReq[] = {
 
 static void test_tx(struct ccat_eth_priv *const priv)
 {
+	uint64_t dmaAddr;
 	uint32_t addr_and_length;
 	CCatDmaTxFrame *const frame = priv->tx_dma.virt;
 	if(frame->head.sent) {
@@ -528,10 +536,11 @@ static void test_tx(struct ccat_eth_priv *const priv)
 		frame->head.length = sizeof(frameForwardEthernetFrames);
 		memcpy(frame->data, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
 		wmb();
-		addr_and_length = 8;
+		addr_and_length = 0;
 		addr_and_length += ((frame->head.length + sizeof(frame->head) + 8) / 8) << 24;
-		printk(KERN_INFO "%s: BAR%lx\n", DRV_NAME, addr_and_length);
-		
+		memcpy_fromio(&dmaAddr, priv->bar[2].ioaddr + 0x1000 + (8*priv->info.txDmaChn), sizeof(dmaAddr));
+		printk(KERN_INFO "%s: phys: 0x%llx offset: 0x%x\n", DRV_NAME, dmaAddr, addr_and_length);
+		print_CCatMii(priv);
 		iowrite32(addr_and_length, priv->reg.tx_fifo);
 	}
 }
@@ -540,7 +549,7 @@ static int run_rx_thread(void *data)
 {
 	while(!kthread_should_stop()) {
 		msleep(2000);
-		//test_rx((struct ccat_eth_priv *)data);
+		test_rx((struct ccat_eth_priv *)data);
 		test_tx((struct ccat_eth_priv *)data);
 	}
 	return 0;
