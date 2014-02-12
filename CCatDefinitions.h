@@ -12,6 +12,12 @@ typedef uint32_t UINT32;
 typedef uint64_t UINT64;
 #endif
 
+typedef struct _LIST_ENTRY 
+{
+   struct _LIST_ENTRY *Flink;
+   struct _LIST_ENTRY *Blink;
+}LIST_ENTRY;
+
 typedef enum
 {
 	CCATINFO_NOTUSED				= 0,
@@ -73,6 +79,26 @@ typedef struct _CCatDmaTxFifo
 	UINT8    fifoReset;
 	UINT8    reserved2[7];
 }CCatDmaTxFifo;
+
+typedef struct _CCAT_HEADER_TAG
+{
+	UINT16	length; // not used in header // required for 64 Bit Alignment in CCAT
+	UINT8		port0				: 1;
+	UINT8		port1				: 1;					
+	UINT8		reserved1		: 6;
+	UINT8		tsEnable			: 1;
+	UINT8		reserved2		: 7;
+	UINT32	sent				: 1;
+	UINT32	reserved3		: 31;
+	UINT64   TimeStamp;	
+}CCAT_HEADER_TAG;
+
+typedef struct _CCatDmaTxFrame
+{
+	LIST_ENTRY			list;
+	CCAT_HEADER_TAG	head;
+	UINT8					data[0x800-sizeof(LIST_ENTRY)-sizeof(CCAT_HEADER_TAG)];
+}CCatDmaTxFrame;
 
 typedef struct
 {

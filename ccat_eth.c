@@ -86,6 +86,7 @@ static void ccat_dma_free(struct ccat_dma *const dma, struct device *const dev)
 
 static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void *const ioaddr, struct device *const dev)
 {
+	void *frame;
 	uint64_t addr;
 	uint32_t translateAddr;
 	uint32_t memTranslate;
@@ -106,6 +107,11 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void *const
 	translateAddr = (dma->phys + memSize - PAGE_SIZE) & memTranslate;
 	addr = translateAddr;
 	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
+	frame = dma->virt + translateAddr - dma->phys;
+	
+	printk(KERN_INFO "%s: 0x%x.\n", DRV_NAME, memTranslate);
+	printk(KERN_INFO "%s: DMA mem initialized %p/%p -> %llx/%llx %u bytes.\n", DRV_NAME, dma->virt, frame, (uint64_t)(dma->phys), addr, dma->size);
+	printk(KERN_INFO "%s: 0x%08x%x.\n", DRV_NAME, ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset));
 	return 0;
 }
 
@@ -138,8 +144,24 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		return -1;
 	}
 	
+	/* disable MAC filter */
+	iowrite8(1, priv->reg.mii + 0x8 + 6);
+	
+	/* reset tx fifo */
+	iowrite8(1, priv->reg.tx_fifo + 0x8);
+
+#if 1
+	/* start rx dma fifo */
+	iowrite32(0, priv->reg.rx_fifo + 12);
+	iowrite32(0, priv->reg.rx_fifo + 8);
+	iowrite32((1 << 31) | 0, priv->reg.rx_fifo);
+	//iowrite32((1 << 31) | priv->rx_dma.phys, priv->reg.rx_fifo);
+#else
+	rx_fifo.startAddr = priv->rx_dma.phys;
+	rx_fifo.nextValid = 1;
 	memcpy_toio(priv->reg.rx_fifo, &rx_fifo, sizeof(rx_fifo));
 	memcpy_toio(priv->reg.tx_fifo, &tx_fifo, sizeof(tx_fifo));
+#endif
 	return 0;
 }
 
@@ -190,7 +212,7 @@ static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
 	"unknown"
 };
 
-static void print_CCatDmaRxFiFo(const void *const base_addr)
+static void print_CCatDmaRxActBuf(const void *const base_addr)
 {
 	CCatDmaRxActBuf rx_fifo;
 	memcpy_fromio(&rx_fifo, base_addr, sizeof(rx_fifo));
@@ -204,7 +226,7 @@ static void print_CCatDmaRxFiFo(const void *const base_addr)
 	printk(KERN_INFO "%s:     next address:            0x%08x\n", DRV_NAME, rx_fifo.nextAddr);	
 }
 
-static void print_CCatDmaTxFiFo(const void *const base_addr)
+static void print_CCatDmaTxFifo(const void *const base_addr)
 {
 	CCatDmaTxFifo tx_fifo;
 	memcpy_fromio(&tx_fifo, base_addr, sizeof(tx_fifo));
@@ -275,8 +297,8 @@ static void ccat_print_function_info(struct ccat_eth_priv* priv)
 {
 	print_CCatInfoBlock(&priv->info, priv->bar[0].ioaddr);
 	print_CCatMii(priv->reg.mii);
-	print_CCatDmaTxFiFo(priv->reg.tx_fifo);	
-	print_CCatDmaRxFiFo(priv->reg.rx_fifo);	
+	print_CCatDmaTxFifo(priv->reg.tx_fifo);
+	print_CCatDmaRxActBuf(priv->reg.rx_fifo);
 	print_CCatMacRegs(priv->reg.mac);
 	printk(KERN_INFO "%s:  RX window:    %p\n", DRV_NAME, priv->reg.rx_mem);
 	printk(KERN_INFO "%s:  TX memory:    %p\n", DRV_NAME, priv->reg.tx_mem);
@@ -325,19 +347,6 @@ struct ccat_eth_tx_header {
 	uint64_t timestamp;
 };
 
-static const UINT8 frameForwardEthernetFrames[] = { 0x01, 0x01, 0x05, 0x01, 0x00, 0x00, 
-							0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
-							0x88, 0xa4, 0x0e, 0x10,
-							0x08,		
-							0x00,	
-							0x00, 0x00,
-							0x00, 0x01,
-							0x02,	0x00,
-							0x00, 0x00,
-							0x00, 0x00,
-							0x00, 0x00
-	};
-
 static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 {
 	//TODO
@@ -375,7 +384,7 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	}
 	printk(KERN_INFO "%s: registered %s as network device.\n", DRV_NAME, ccat_eth_dev->name);
 	
-	priv->rx_thread = kthread_run(run_rx_thread, priv, "%s_rx_thread", DRV_NAME);
+	priv->rx_thread = kthread_run(run_rx_thread, priv, "%s_rx", DRV_NAME);
 	
 	return 0;
 }
@@ -402,7 +411,8 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 	
 	/* FIXME upgrade to a newer kernel to get support of dma_set_mask_and_coherent()
 	if (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64))) { */
-	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) {
+	//if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) {
+	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(24))) {
 		printk(KERN_INFO "%s: 64 bit DMA supported.\n", DRV_NAME);
 	/*} else if (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(32))) { */
 	} else if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
@@ -495,7 +505,51 @@ static void test_rx(struct ccat_eth_priv *const priv)
 		}
 		++frame;
 	}
-	print_CCatMii(priv->reg.mii);
+	print_CCatDmaRxActBuf(priv->reg.rx_fifo);
+}
+
+static const UINT8 frameForwardEthernetFrames[] = {
+	0x01, 0x01, 0x05, 0x01, 0x00, 0x00,
+	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
+	0x88, 0xa4, 0x0e, 0x10,
+	0x08,		
+	0x00,	
+	0x00, 0x00,
+	0x00, 0x01,
+	0x02, 0x00,
+	0x00, 0x00,
+	0x00, 0x00,
+	0x00, 0x00
+};
+
+static const UINT8 frameArpReq[] = {
+	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
+	0x08, 0x06, 0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01, 
+	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
+	0xc0, 0xa8, 0x01, 0x04, //sender ip Address 192.168.1.4
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+	0xc0, 0xa8, 0x01, 0x07, //target ip Address 192.168.1.7
+};
+
+static void test_tx(struct ccat_eth_priv *const priv)
+{
+	uint32_t addr_and_length;
+	CCatDmaTxFrame *const frame = priv->tx_dma.virt;
+	if(frame->head.sent) {
+		printk(KERN_INFO "%s: HUHU\nHUHU\nHUHU\nHUHU\nHUHU\nHUHU\n", DRV_NAME);
+	} else {
+		memset(frame, 0, sizeof(*frame));
+		frame->head.port0 = 1;
+		frame->head.length = sizeof(frameForwardEthernetFrames);
+		memcpy(frame->data, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
+		wmb();
+		addr_and_length = 8;
+		addr_and_length += ((frame->head.length + sizeof(frame->head) + 8) / 8) << 24;
+		printk(KERN_INFO "%s: BAR%lx\n", DRV_NAME, addr_and_length);
+		
+		iowrite32(addr_and_length, priv->reg.tx_fifo);
+	}
 }
 
 static int run_rx_thread(void *data)
@@ -503,6 +557,7 @@ static int run_rx_thread(void *data)
 	while(!kthread_should_stop()) {
 		msleep(2000);
 		//test_rx((struct ccat_eth_priv *)data);
+		test_tx((struct ccat_eth_priv *)data);
 	}
 	return 0;
 }
