@@ -119,16 +119,18 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iome
 		return -1;
 	}
 	
-	printk(KERN_INFO "%s: dma request: %d\n", DRV_NAME, request_dma(channel, DRV_NAME));
+	if(request_dma(channel, DRV_NAME)) {
+		printk(KERN_INFO "%s: request dma channel %d failed\n", DRV_NAME, channel);
+		ccat_dma_free(dma, dev);
+		return -1;
+	}
 	
 	translateAddr = (dma->phys + memSize - PAGE_SIZE) & memTranslate;
 	addr = translateAddr;
-	iowrite32(translateAddr, ioaddr + offset);
+	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
 	frame = dma->virt + translateAddr - dma->phys;
 	
-	printk(KERN_INFO "%s: 0x%x.\n", DRV_NAME, memTranslate);
-	printk(KERN_INFO "%s: DMA%d mem initialized %p/%p -> %llx/%llx %u bytes.\n", DRV_NAME, channel, dma->virt, frame, (uint64_t)(dma->phys), addr, dma->size);
-	printk(KERN_INFO "%s: 0x%08x%x.\n", DRV_NAME, ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset));
+	printk(KERN_INFO "%s: DMA%d mem initialized\n virt:         0x%p\n phys:         0x%llx\n translated:   0x%llx\n pci addr:     0x%08x%x\n memTranslate: 0x%x\n size:         %u bytes.\n", DRV_NAME, channel, dma->virt, (uint64_t)(dma->phys), addr, ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset), memTranslate, dma->size);
 	return 0;
 }
 
@@ -501,7 +503,7 @@ static int ccat_eth_stop(struct net_device *dev)
 
 static void test_rx(struct ccat_eth_priv *const priv)
 {
-#if 1
+#if 0
 	const char *const end = priv->rx_dma.virt + priv->rx_dma.size;
 	const char *frame = priv->rx_dma.virt;
 	int first = 1;
@@ -555,6 +557,7 @@ static const UINT8 frameArpReq[] = {
 
 static void test_tx(struct ccat_eth_priv *const priv)
 {
+	static int first = 1;
 	uint64_t dmaAddr;
 	uint32_t addr_and_length;
 	CCatDmaTxFrame *const frame = priv->tx_dma.virt;
@@ -564,12 +567,20 @@ static void test_tx(struct ccat_eth_priv *const priv)
 	} else {
 		memset(frame, 0, sizeof(*frame));
 		frame->head.port0 = 1;
-		frame->head.length = sizeof(frameForwardEthernetFrames);
-		memcpy(frame->data, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
+		if(first) {
+			first = 0;
+			frame->head.length = sizeof(frameForwardEthernetFrames);
+			memcpy(frame->data, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
+		} else {
+			frame->head.length = sizeof(frameArpReq);
+			memcpy(frame->data, frameArpReq, sizeof(frameArpReq));
+		}
 		addr_and_length = 8;
 		addr_and_length += ((frame->head.length + sizeof(frame->head) + 8 + 64) / 8) << 24;
 		memcpy_fromio(&dmaAddr, priv->bar[2].ioaddr + 0x1000 + (8*priv->info.txDmaChn), sizeof(dmaAddr));
-		printk(KERN_INFO "%s: phys: 0x%llx offset: 0x%x len: %d read ACK: %s\n", DRV_NAME, dmaAddr, addr_and_length, frame->head.length, frame->head.sent ? "set" : "cleared");
+		printk(KERN_INFO "%s: dma address: 0x%llx\n", DRV_NAME, (uint64_t)(dmaAddr));
+		printk(KERN_INFO "%s: interrupt state: 0x%x # tx: %u /%u /%u /0x%x\n", DRV_NAME, ioread32(priv->reg.mii + 0x30), ioread32(priv->reg.mac + 0x10), ioread32(priv->reg.mac + 0x20), ioread32(priv->reg.mac + 0x28), ioread8(priv->reg.mac + 0x78));
+		printk(KERN_INFO "%s: 0x%x phys: 0x%llx offs: 0x%08x len: %d ACK: %u\n", DRV_NAME, ioread32(priv->bar[2].ioaddr + 0x0040), dmaAddr, addr_and_length, frame->head.length, frame->head.sent);
 		iowrite32(addr_and_length, priv->reg.tx_fifo);
 	}
 }
@@ -577,7 +588,7 @@ static void test_tx(struct ccat_eth_priv *const priv)
 static int run_rx_thread(void *data)
 {
 	while(!kthread_should_stop()) {
-		msleep(2000);
+		msleep(1000);
 		test_rx((struct ccat_eth_priv *)data);
 		test_tx((struct ccat_eth_priv *)data);
 	}
