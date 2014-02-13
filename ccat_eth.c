@@ -413,6 +413,8 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 		return status;
 	}
 	
+	pci_set_master(pdev);
+	
 	status = pci_read_config_byte(pdev, PCI_REVISION_ID, &revision);
 	if(status) {
 		printk(KERN_INFO "%s: read CCAT pci revision failed with %d\n", DRV_NAME, status);
