@@ -1,7 +1,7 @@
 #ifndef _CCAT_DEFINITIONS_H_
 #define _CCAT_DEFINITIONS_H_
 
-#ifdef __gnu_linux__
+#ifndef WINDOWS
 #include <linux/kernel.h>
 typedef unsigned char BYTE;
 typedef unsigned long ULONG;
