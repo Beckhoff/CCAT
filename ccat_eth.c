@@ -43,9 +43,14 @@ struct ccat_bar {
 
 static void ccat_bar_free(struct ccat_bar *bar)
 {
-	iounmap(bar->ioaddr);
-	bar->ioaddr = NULL;
-	release_mem_region(bar->start, bar->len);
+	const struct ccat_bar tmp = {
+		.start = bar->start,
+		.len = bar->len,
+		.ioaddr = bar->ioaddr
+	};
+	memset(bar, 0, sizeof(*bar));
+	iounmap(tmp.ioaddr);
+	release_mem_region(tmp.start, tmp.len);
 }
 
 static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pdev)
@@ -525,9 +530,11 @@ static void test_rx(struct ccat_eth_priv *const priv)
 	while(frame < end) {
 		if(frame->nextValid) {
 			printk(KERN_INFO "%s: valid frame found at %p\n", DRV_NAME, frame);
+			return;
 		}
 		++frame;
 	}
+	printk(KERN_INFO "%s: no valid rx frame found.\n", DRV_NAME);
 #endif
 }
 
@@ -562,7 +569,7 @@ static void test_tx(struct ccat_eth_priv *const priv)
 	uint32_t addr_and_length;
 	CCatDmaTxFrame *const frame = priv->tx_dma.virt;
 	if(frame->head.sent) {
-		printk(KERN_INFO "%s: HUHU\nHUHU\nHUHU\nHUHU\nHUHU\nHUHU\n", DRV_NAME);
+		printk(KERN_INFO "%s: Last frame was send.\n", DRV_NAME);
 		frame->head.sent = 0;
 	} else {
 		memset(frame, 0, sizeof(*frame));
@@ -582,6 +589,7 @@ static void test_tx(struct ccat_eth_priv *const priv)
 		printk(KERN_INFO "%s: interrupt state: 0x%x # tx: %u /%u /%u /0x%x\n", DRV_NAME, ioread32(priv->reg.mii + 0x30), ioread32(priv->reg.mac + 0x10), ioread32(priv->reg.mac + 0x20), ioread32(priv->reg.mac + 0x28), ioread8(priv->reg.mac + 0x78));
 		printk(KERN_INFO "%s: 0x%x phys: 0x%llx offs: 0x%08x len: %d ACK: %u\n", DRV_NAME, ioread32(priv->bar[2].ioaddr + 0x0040), dmaAddr, addr_and_length, frame->head.length, frame->head.sent);
 		iowrite32(addr_and_length, priv->reg.tx_fifo);
+		iowrite32(0, priv->reg.mac + 0x28);
 	}
 }
 
