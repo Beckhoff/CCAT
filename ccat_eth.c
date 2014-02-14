@@ -2,10 +2,12 @@
 #include <linux/etherdevice.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/kfifo.h>
+#include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/pci.h>
-#include <linux/kthread.h>
+#include <linux/spinlock.h>
 
 #include "CCatDefinitions.h"
 
@@ -139,6 +141,7 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iome
 	return 0;
 }
 
+#define TX_FIFO_LENGTH 16
 struct ccat_eth_priv {
 	struct pci_dev *pdev;
 	struct task_struct *rx_thread;
@@ -147,6 +150,9 @@ struct ccat_eth_priv {
 	struct ccat_dma rx_dma;
 	struct ccat_dma tx_dma;
 	struct ccat_eth_register reg;
+	spinlock_t tx_lock;
+	DECLARE_KFIFO(tx_queue, CCatDmaTxFrame*, TX_FIFO_LENGTH);
+	DECLARE_KFIFO(tx_free, CCatDmaTxFrame*, TX_FIFO_LENGTH);
 };
 
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
@@ -376,6 +382,9 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	}
 	priv = netdev_priv(ccat_eth_dev);
 	priv->pdev = pdev;
+	spin_lock_init(&priv->tx_lock);
+	INIT_KFIFO(priv->tx_queue);
+	INIT_KFIFO(priv->tx_free);
 	
 	/* pci initialization */
 	if(ccat_eth_init_pci(priv)) {
@@ -385,7 +394,7 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	}
 	
 	/* complete ethernet device initialization */
-	memcpy_fromio(ccat_eth_dev->dev_addr, priv->reg.mii + 8, 6);
+	memcpy_fromio(ccat_eth_dev->dev_addr, priv->reg.mii + 8, 6); /* init MAC address */
 	ccat_eth_dev->netdev_ops = &ccat_eth_netdev_ops;
 	if(0 != register_netdev(ccat_eth_dev)) {
 		printk(KERN_INFO "%s: unable to register network device.\n", DRV_NAME);
@@ -496,9 +505,42 @@ static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
-	//printk(KERN_INFO "%s: %s() called.\n", DRV_NAME, __FUNCTION__);
-	//TODO
-	return NETDEV_TX_BUSY;
+	struct ccat_eth_priv *const priv = netdev_priv(ccat_eth_dev);
+	CCatDmaTxFrame *frame;
+	uint32_t addr_and_length;
+	
+	if(skb_is_nonlinear(skb)) {
+		printk(KERN_WARNING "%s: Non linear skb's are not supported and will be dropped.\n", DRV_NAME);
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
+	
+	if(skb->len > sizeof(frame->data)) {
+		printk(KERN_WARNING "%s: skb->len 0x%x exceeds our dma buffer 0x%x -> frame dropped.\n", DRV_NAME, skb->len, sizeof(frame->data));
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
+	
+	if(1 != kfifo_out_spinlocked(&priv->tx_free, &frame, sizeof(frame), &priv->tx_lock)) {
+		printk(KERN_INFO "%s: DMA TX buffer full.\n", DRV_NAME);
+		return NETDEV_TX_BUSY;
+	}
+	
+	/* prepare frame in DMA memory */
+	memset(frame, 0, sizeof(*frame));
+	frame->head.length = skb->len;
+	memcpy(frame->data, skb->data, skb->len);
+	
+	dev_kfree_skb_any(skb); /* we don't need this anymore */
+	
+	addr_and_length = 8 + ((void*)(frame) - priv->tx_dma.virt);
+	addr_and_length += ((frame->head.length + sizeof(frame->head) + 8) / 8) << 24;
+	iowrite32(addr_and_length, priv->reg.tx_fifo); /* add to DMA fifo */
+
+	/* cast to a pointer to a const object to omit warning.
+	 * pointers from the tx_queue will never be used to manipulate memory */
+	kfifo_in_spinlocked(&priv->tx_queue, (const CCatDmaTxFrame**)&frame, sizeof(frame), &priv->tx_lock);
+	return NETDEV_TX_OK;
 }
 
 static int ccat_eth_stop(struct net_device *dev)
@@ -569,11 +611,13 @@ static void test_tx(struct ccat_eth_priv *const priv)
 	static int first = 1;
 	uint64_t dmaAddr;
 	uint32_t addr_and_length;
-	CCatDmaTxFrame *const frame = priv->tx_dma.virt;
+	unsigned char numFrames = 0;
+	CCatDmaTxFrame *frame = priv->tx_dma.virt;
 	if(frame->head.sent) {
 		printk(KERN_INFO "%s: Last frame was send.\n", DRV_NAME);
 		frame->head.sent = 0;
 	} else {
+		do {
 		memset(frame, 0, sizeof(*frame));
 		frame->head.port0 = 1;
 		if(first) {
@@ -583,15 +627,20 @@ static void test_tx(struct ccat_eth_priv *const priv)
 		} else {
 			frame->head.length = sizeof(frameArpReq);
 			memcpy(frame->data, frameArpReq, sizeof(frameArpReq));
+			frame->data[41] = numFrames;
 		}
-		addr_and_length = 8;
+		addr_and_length = 8 + (numFrames * sizeof(*frame));
 		addr_and_length += ((frame->head.length + sizeof(frame->head) + 8 + 64) / 8) << 24;
+#if 0
 		memcpy_fromio(&dmaAddr, priv->bar[2].ioaddr + 0x1000 + (8*priv->info.txDmaChn), sizeof(dmaAddr));
 		printk(KERN_INFO "%s: dma address: 0x%llx\n", DRV_NAME, (uint64_t)(dmaAddr));
 		printk(KERN_INFO "%s: interrupt state: 0x%x # tx: %u /%u /%u /0x%x\n", DRV_NAME, ioread32(priv->reg.mii + 0x30), ioread32(priv->reg.mac + 0x10), ioread32(priv->reg.mac + 0x20), ioread32(priv->reg.mac + 0x28), ioread8(priv->reg.mac + 0x78));
 		printk(KERN_INFO "%s: 0x%x phys: 0x%llx offs: 0x%08x len: %d ACK: %u\n", DRV_NAME, ioread32(priv->bar[2].ioaddr + 0x0040), dmaAddr, addr_and_length, frame->head.length, frame->head.sent);
+#endif
+		printk(KERN_INFO "%s: #%u on wire.\n", DRV_NAME, numFrames);
 		iowrite32(addr_and_length, priv->reg.tx_fifo);
-		iowrite32(0, priv->reg.mac + 0x28);
+		frame++;
+	} while(++numFrames <= 1);
 	}
 }
 
