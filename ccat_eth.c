@@ -13,7 +13,10 @@
 
 #define DRV_NAME "ccat_eth"
 
-static int run_rx_thread(void *data); /* rx handler thread function */
+#define TESTING_ENABLED 0
+#if TESTING_ENABLED
+static int run_test_thread(void *data);
+static struct task_struct *test_thread;
 
 static void print_mem(const char* p, size_t lines)
 {
@@ -24,6 +27,10 @@ static void print_mem(const char* p, size_t lines)
 		--lines;
 	}
 }
+#endif /* #if TESTING_ENABLED */
+
+
+static int run_tx_thread(void *data);
 
 struct ccat_eth_register {
 	void __iomem *mii;
@@ -145,6 +152,7 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iome
 struct ccat_eth_priv {
 	struct pci_dev *pdev;
 	struct task_struct *rx_thread;
+	struct task_struct *tx_thread; /* housekeeper for tx dma descriptors */
 	struct ccat_bar bar[3];
 	CCatInfoBlock info;
 	struct ccat_dma rx_dma;
@@ -175,7 +183,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	kfifo_reset(&priv->tx_queue);
 	kfifo_reset(&priv->tx_free);
 	{
-		CCatDmaTxFrame *frame = priv->tx_dma.virt;
+		const CCatDmaTxFrame *frame = priv->tx_dma.virt;
 		const CCatDmaTxFrame *const end = frame + TX_FIFO_LENGTH;
 		while(frame < end) {
 			if(1 != kfifo_put(&priv->tx_free, &frame)) {
@@ -364,19 +372,6 @@ static const struct net_device_ops ccat_eth_netdev_ops = {
 
 static struct net_device *ccat_eth_dev;
 
-struct ccat_eth_tx_header {
-	uint64_t notused;
-	uint16_t length;
-	uint8_t port;
-	uint8_t wait_timestamp :1;
-	uint8_t wait_event0 :1;
-	uint8_t wait_event1 :1;
-	uint8_t reserved1 :5;
-	uint32_t was_read :1;
-	uint32_t reserved2 : 31;
-	uint64_t timestamp;
-};
-
 static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 {
 	//TODO
@@ -400,6 +395,7 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	spin_lock_init(&priv->tx_lock);
 	INIT_KFIFO(priv->tx_queue);
 	INIT_KFIFO(priv->tx_free);
+	priv->tx_thread = kthread_run(run_tx_thread, priv, "%s_tx", DRV_NAME);
 	
 	/* pci initialization */
 	if(ccat_eth_init_pci(priv)) {
@@ -418,8 +414,10 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	}
 	printk(KERN_INFO "%s: registered %s as network device.\n", DRV_NAME, ccat_eth_dev->name);
 	
-	priv->rx_thread = kthread_run(run_rx_thread, ccat_eth_dev, "%s_rx", DRV_NAME);
 	
+#if TESTING_ENABLED
+	test_thread = kthread_run(run_test_thread, ccat_eth_dev, "%s_test", DRV_NAME);
+#endif	
 	return 0;
 }
 
@@ -495,9 +493,19 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 {
 	if(ccat_eth_dev) {
 		struct ccat_eth_priv *const priv = netdev_priv(ccat_eth_dev);
-		if(priv && priv->rx_thread) {
-			kthread_stop(priv->rx_thread);
+
+#if TESTING_ENABLED
+		if(test_thread) {
+			kthread_stop(test_thread);
+			test_thread = NULL;
 		}
+#endif		
+		if(priv->tx_thread) {
+			/* TODO care about smp context? */
+			kthread_stop(priv->tx_thread);
+			priv->tx_thread = NULL;
+		}
+		
 		unregister_netdev(ccat_eth_dev);
 		ccat_eth_remove_pci(priv);
 		free_netdev(ccat_eth_dev);
@@ -522,6 +530,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 {
 	struct ccat_eth_priv *const priv = netdev_priv(ccat_eth_dev);
 	CCatDmaTxFrame *frame;
+	const CCatDmaTxFrame **const ppframe = (const CCatDmaTxFrame **)&frame; 
 	uint32_t addr_and_length;
 	
 	if(skb_is_nonlinear(skb)) {
@@ -544,6 +553,11 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	}
 	spin_unlock(&priv->tx_lock);
 	
+	if(!frame) {
+		printk(KERN_WARNING "%s: %s(): we read a NULL pointer from the tx_free queue, which should never happen!\n", DRV_NAME, __FUNCTION__);
+		return NETDEV_TX_BUSY;
+	}		
+	
 	/* prepare frame in DMA memory */
 	memset(frame, 0, sizeof(*frame));
 	frame->head.length = skb->len;
@@ -556,9 +570,9 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	iowrite32(addr_and_length, priv->reg.tx_fifo); /* add to DMA fifo */
 
 	spin_lock(&priv->tx_lock);
-	kfifo_put(&priv->tx_queue, &frame);
+	kfifo_put(&priv->tx_queue, ppframe);
 	spin_unlock(&priv->tx_lock);
-	printk(KERN_INFO "%s: We send something.\n", DRV_NAME);
+	//printk(KERN_INFO "%s: We send something.\n", DRV_NAME);
 	return NETDEV_TX_OK;
 }
 
@@ -601,6 +615,39 @@ static void test_rx(struct ccat_eth_priv *const priv)
 #endif
 }
 
+static const unsigned int TX_POLL_DELAY_TMMS = 0; /* time to sleep between tx polls */
+/**
+ * Since interrupts are not availabe with CCAT for now, we have to poll
+ * the DMA descriptors and move frames which are send from the tx queue
+ * to the tx free queue. 
+ */
+static int run_tx_thread(void *data)
+{
+	struct ccat_eth_priv *const priv = data;
+	CCatDmaTxFrame *frame;
+	const CCatDmaTxFrame **const ppframe = (const CCatDmaTxFrame **)&frame;
+	
+	for(;!kthread_should_stop(); frame = NULL) {		
+		/* wait for frames in tx_queue */
+		while(!kthread_should_stop() && (0 ==kfifo_get(&priv->tx_queue, &frame))) {
+			msleep(TX_POLL_DELAY_TMMS);
+		}
+		
+		/* wait until frame was transfered by DMA */
+		while(!kthread_should_stop() && !frame->head.sent) {
+			msleep(TX_POLL_DELAY_TMMS);
+		}
+		
+		/* can be NULL, if are asked to stop! */
+		if(frame) {
+			kfifo_put(&priv->tx_free, ppframe);
+		}
+	}
+	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
+	return 0;
+}
+
+#if TESTING_ENABLED
 static const UINT8 frameForwardEthernetFrames[] = {
 	0x01, 0x01, 0x05, 0x01, 0x00, 0x00,
 	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
@@ -635,6 +682,7 @@ static void test_tx(struct net_device *dev)
 			unsigned char *data = skb_put(skb, sizeof(frameForwardEthernetFrames));
 			memcpy(data, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
 			ccat_eth_start_xmit(skb, dev);
+			first = 0;
 		} else {
 			struct sk_buff *skb = dev_alloc_skb(sizeof(frameArpReq));
 			unsigned char *data = skb_put(skb, sizeof(frameArpReq));
@@ -644,15 +692,16 @@ static void test_tx(struct net_device *dev)
 	} while(++numFrames <= 16);
 }
 
-static int run_rx_thread(void *data)
+static int run_test_thread(void *data)
 {
 	while(!kthread_should_stop()) {
-		msleep(1000);
-		test_rx(netdev_priv(data));
+		msleep(0);
+		//test_rx(netdev_priv(data));
 		test_tx((struct net_device *)data);
 	}
 	return 0;
 }
+#endif /* #if TESTING_ENABLED */
 
 static struct pci_driver pci_driver = {
 	.name = DRV_NAME,
