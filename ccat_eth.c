@@ -31,6 +31,7 @@ static void print_mem(const char* p, size_t lines)
 
 
 static int run_tx_thread(void *data);
+static int run_rx_thread(void *data);
 
 struct ccat_eth_register {
 	void __iomem *mii;
@@ -148,24 +149,40 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iome
 	return 0;
 }
 
-#define TX_FIFO_LENGTH 64
+#define FIFO_LENGTH 64
+
+struct ccat_eth_dma_fifo {
+	struct ccat_dma dma;
+	spinlock_t lock;
+	DECLARE_KFIFO(queue, CCatRxDesc*, FIFO_LENGTH);
+	DECLARE_KFIFO(free, CCatRxDesc*, FIFO_LENGTH);	
+};
+
+static void ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *const fifo)
+{
+	spin_lock_init(&fifo->lock);
+	INIT_KFIFO(fifo->queue);
+	INIT_KFIFO(fifo->free);
+}
+
 struct ccat_eth_priv {
 	struct pci_dev *pdev;
-	struct task_struct *rx_thread;
 	struct task_struct *tx_thread; /* housekeeper for tx dma descriptors */
+	struct task_struct *rx_thread; /* housekeeper for rx dma descriptors */
 	struct ccat_bar bar[3];
 	CCatInfoBlock info;
-	struct ccat_dma rx_dma;
-	struct ccat_dma tx_dma;
 	struct ccat_eth_register reg;
+	struct ccat_eth_dma_fifo rx_fifo;
+	//struct ccat_dma rx_dma;
+	struct ccat_dma tx_dma;
 	spinlock_t tx_lock;
-	DECLARE_KFIFO(tx_queue, CCatDmaTxFrame*, TX_FIFO_LENGTH);
-	DECLARE_KFIFO(tx_free, CCatDmaTxFrame*, TX_FIFO_LENGTH);
+	DECLARE_KFIFO(tx_queue, CCatDmaTxFrame*, FIFO_LENGTH);
+	DECLARE_KFIFO(tx_free, CCatDmaTxFrame*, FIFO_LENGTH);
 };
 
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	if(ccat_dma_init(&priv->rx_dma, priv->info.rxDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
+	if(ccat_dma_init(&priv->rx_fifo.dma, priv->info.rxDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
 		printk(KERN_INFO "%s: init Rx DMA memory failed.\n", DRV_NAME);
 		return -1;
 	}
@@ -184,7 +201,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	kfifo_reset(&priv->tx_free);
 	{
 		const CCatDmaTxFrame *frame = priv->tx_dma.virt;
-		const CCatDmaTxFrame *const end = frame + TX_FIFO_LENGTH;
+		const CCatDmaTxFrame *const end = frame + FIFO_LENGTH;
 		while(frame < end) {
 			if(1 != kfifo_put(&priv->tx_free, &frame)) {
 				printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
@@ -199,7 +216,23 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	iowrite32(0, priv->reg.rx_fifo + 12);
 	iowrite32(0, priv->reg.rx_fifo + 8);
 	wmb();
-	iowrite32((1 << 31) | 8, priv->reg.rx_fifo);
+	spin_lock(&priv->rx_fifo.lock);
+	kfifo_reset(&priv->rx_fifo.queue);
+	kfifo_reset(&priv->rx_fifo.free);
+	{
+		const CCatRxDesc *frame = priv->rx_fifo.dma.virt;
+		const CCatRxDesc *const end = frame + FIFO_LENGTH;
+		while(frame < end) {
+			uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - priv->rx_fifo.dma.virt);
+			iowrite32(addr_and_length, priv->reg.rx_fifo); /* add to DMA fifo */
+			
+			if(1 != kfifo_put(&priv->rx_fifo.queue, &frame)) {
+				printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
+			}
+			++frame;
+		}
+	}
+	spin_unlock(&priv->rx_fifo.lock);
 	return 0;
 }
 
@@ -397,6 +430,9 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	INIT_KFIFO(priv->tx_free);
 	priv->tx_thread = kthread_run(run_tx_thread, priv, "%s_tx", DRV_NAME);
 	
+	ccat_eth_dma_fifo_init(&priv->rx_fifo);
+	priv->rx_thread = kthread_run(run_rx_thread, priv, "%s_rx", DRV_NAME);
+	
 	/* pci initialization */
 	if(ccat_eth_init_pci(priv)) {
 		printk(KERN_INFO "%s: CCAT pci init failed.\n", DRV_NAME);
@@ -499,7 +535,12 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 			kthread_stop(test_thread);
 			test_thread = NULL;
 		}
-#endif		
+#endif
+		if(priv->rx_thread) {
+			/* TODO care about smp context? */
+			kthread_stop(priv->rx_thread);
+			priv->rx_thread = NULL;
+		}
 		if(priv->tx_thread) {
 			/* TODO care about smp context? */
 			kthread_stop(priv->tx_thread);
@@ -517,7 +558,7 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 {
 	ccat_dma_free(&priv->tx_dma, &priv->pdev->dev);
-	ccat_dma_free(&priv->rx_dma, &priv->pdev->dev);
+	ccat_dma_free(&priv->rx_fifo.dma, &priv->pdev->dev);
 	free_dma(priv->info.rxDmaChn);
 	free_dma(priv->info.txDmaChn);
 	ccat_bar_free(&priv->bar[2]);
@@ -583,39 +624,35 @@ static int ccat_eth_stop(struct net_device *dev)
 	return 0;
 }
 
-static void test_rx(struct ccat_eth_priv *const priv)
+static const unsigned int POLL_DELAY_TMMS = 0; /* time to sleep between rx/tx DMA polls */
+static int run_rx_thread(void *data)
 {
-#if 0
-	const char *const end = priv->rx_dma.virt + priv->rx_dma.size;
-	const char *frame = priv->rx_dma.virt;
-	int first = 1;
+	struct ccat_eth_priv *const priv = data;
+	CCatRxDesc *frame;
+	const CCatRxDesc **const ppframe = (const CCatRxDesc **)&frame;
 	
-	while(frame < end) {
-		if(*frame && first) {
-			printk(KERN_INFO "%s: 0x%x found at %p\n", DRV_NAME, (int)(*frame), frame);
-			first = 0;
+	for(;!kthread_should_stop(); frame = NULL) {		
+		/* wait for frames in rx_queue */
+		while(!kthread_should_stop() && (0 ==kfifo_get(&priv->rx_fifo.queue, &frame))) {
+			msleep(POLL_DELAY_TMMS);
 		}
-		++frame;
-	}
-	printk(KERN_INFO "%s: rx search [%p, %p]\n", DRV_NAME, priv->rx_dma.virt, end);
-	printk(KERN_INFO "%s: rx fifo 0x%x\n", DRV_NAME, ioread32(priv->reg.rx_fifo));
-	print_mem(priv->rx_dma.virt, 16);
-#else
-	const CCatRxDesc *const end = (CCatRxDesc *)(priv->rx_dma.virt + priv->rx_dma.size);
-	const CCatRxDesc *frame = priv->rx_dma.virt;
-	
-	while(frame < end) {
-		if(frame->nextValid) {
-			printk(KERN_INFO "%s: valid frame found at %p\n", DRV_NAME, frame);
-			return;
+		
+		/* wait until frame was used by DMA for Rx*/
+		while(!kthread_should_stop() && !frame->received) {
+			msleep(POLL_DELAY_TMMS);
 		}
-		++frame;
+		
+		/* can be NULL, if we are asked to stop! */
+		if(frame) {
+			printk(KERN_INFO "%s: frame received!\n", DRV_NAME);
+			memset(frame, 0, sizeof(frame));
+			kfifo_put(&priv->rx_fifo.free, ppframe);
+		}
 	}
-	printk(KERN_INFO "%s: no valid rx frame found.\n", DRV_NAME);
-#endif
+	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
+	return 0;
 }
 
-static const unsigned int TX_POLL_DELAY_TMMS = 0; /* time to sleep between tx polls */
 /**
  * Since interrupts are not availabe with CCAT for now, we have to poll
  * the DMA descriptors and move frames which are send from the tx queue
@@ -630,15 +667,15 @@ static int run_tx_thread(void *data)
 	for(;!kthread_should_stop(); frame = NULL) {		
 		/* wait for frames in tx_queue */
 		while(!kthread_should_stop() && (0 ==kfifo_get(&priv->tx_queue, &frame))) {
-			msleep(TX_POLL_DELAY_TMMS);
+			msleep(POLL_DELAY_TMMS);
 		}
 		
 		/* wait until frame was transfered by DMA */
 		while(!kthread_should_stop() && !frame->head.sent) {
-			msleep(TX_POLL_DELAY_TMMS);
+			msleep(POLL_DELAY_TMMS);
 		}
 		
-		/* can be NULL, if are asked to stop! */
+		/* can be NULL, if we are asked to stop! */
 		if(frame) {
 			kfifo_put(&priv->tx_free, ppframe);
 		}
