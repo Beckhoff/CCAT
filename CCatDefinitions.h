@@ -133,11 +133,6 @@ typedef struct _CCatRxDesc
 	UINT8			data[0x7e8];
 }CCatRxDesc;
 
-union ccat_eth_frame {
-	CCatDmaTxFrame tx;
-	CCatRxDesc rx;
-};
-
 typedef struct _CCatMacRegs
 {
 	union

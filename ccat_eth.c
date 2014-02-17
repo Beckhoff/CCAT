@@ -168,17 +168,29 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iome
 
 #define FIFO_LENGTH 64
 
+struct ccat_eth_frame {
+	uint32_t reserved1;
+	uint32_t received :1;
+	uint32_t reserved2    :31;
+	uint16_t length;
+	uint16_t reserved3;
+	uint32_t sent    :1;
+	uint32_t reserved4    :31;
+	uint64_t timestamp;
+	uint8_t data[0x800 - 3 * sizeof(uint64_t)];
+};
+
 struct ccat_eth_rx_dma_fifo {
 	struct ccat_dma dma;
 	spinlock_t lock;
-	DECLARE_KFIFO(queue, CCatRxDesc*, FIFO_LENGTH);
+	DECLARE_KFIFO(queue, struct ccat_eth_frame*, FIFO_LENGTH);
 };
 
 struct ccat_eth_tx_dma_fifo {
 	struct ccat_dma dma;
 	spinlock_t lock;
-	DECLARE_KFIFO(queue, CCatDmaTxFrame*, FIFO_LENGTH);
-	DECLARE_KFIFO(free, CCatDmaTxFrame*, FIFO_LENGTH);
+	DECLARE_KFIFO(queue, struct ccat_eth_frame*, FIFO_LENGTH);
+	DECLARE_KFIFO(free, struct ccat_eth_frame*, FIFO_LENGTH);
 };
 
 struct ccat_eth_priv {
@@ -192,7 +204,7 @@ struct ccat_eth_priv {
 	struct ccat_eth_tx_dma_fifo tx_fifo;
 };
 
-static void ccat_eth_rx_fifo_add(const CCatRxDesc *frame, struct ccat_eth_rx_dma_fifo *const fifo, void __iomem *const fifo_reg)
+static void ccat_eth_rx_fifo_add(const struct ccat_eth_frame *frame, struct ccat_eth_rx_dma_fifo *const fifo, void __iomem *const fifo_reg)
 {
 	uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - fifo->dma.virt);
 	iowrite32(addr_and_length, fifo_reg);
@@ -216,13 +228,12 @@ static int ccat_eth_rx_fifo_init(struct ccat_eth_priv *const priv)
 	iowrite32(0, priv->reg.rx_fifo + 0x8);
 	wmb();
 	{
-		const CCatRxDesc *frame = fifo->dma.virt;
-		const CCatRxDesc *const end = frame + FIFO_LENGTH;
+		const struct ccat_eth_frame *frame = fifo->dma.virt;
+		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 		while(frame < end) {
 			ccat_eth_rx_fifo_add(frame, fifo, priv->reg.rx_fifo);
 			++frame;
 		}
-		printk(KERN_INFO "%s: %x %x %x\n", DRV_NAME, sizeof(union ccat_eth_frame), offsetof(CCatDmaTxFrame, data), offsetof(CCatRxDesc, data));
 	}
 	return 0;
 }
@@ -242,8 +253,8 @@ static int ccat_eth_tx_fifo_init(struct ccat_eth_tx_dma_fifo *const fifo, struct
 	iowrite8(0, priv->reg.tx_fifo + 0x8);
 	wmb();
 	{
-		const CCatDmaTxFrame *frame = fifo->dma.virt;
-		const CCatDmaTxFrame *const end = frame + FIFO_LENGTH;
+		const struct ccat_eth_frame *frame = fifo->dma.virt;
+		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 		while(frame < end) {
 			if(1 != kfifo_put(&fifo->free, &frame)) {
 				printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
@@ -561,9 +572,9 @@ static int ccat_eth_open(struct net_device *dev)
 }
 
 static const size_t CCATRXDESC_HEADER_LEN = 20;
-static void ccat_eth_receive(struct net_device *const dev, const CCatRxDesc *const frame)
+static void ccat_eth_receive(struct net_device *const dev, const struct ccat_eth_frame *const frame)
 {
-	const size_t len = frame->uLength - CCATRXDESC_HEADER_LEN;
+	const size_t len = frame->length - CCATRXDESC_HEADER_LEN;
 	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
 	if(!skb) {
 		printk(KERN_INFO "%s: %s() out of memory :-(\n", DRV_NAME, __FUNCTION__);
@@ -622,8 +633,8 @@ static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	CCatDmaTxFrame *frame;
-	const CCatDmaTxFrame **const ppframe = (const CCatDmaTxFrame **)&frame; 
+	struct ccat_eth_frame *frame;
+	const struct ccat_eth_frame **const ppframe = (const struct ccat_eth_frame **)&frame; 
 	uint32_t addr_and_length;
 	
 	if(skb_is_nonlinear(skb)) {
@@ -654,13 +665,13 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	
 	/* prepare frame in DMA memory */
 	memset(frame, 0, sizeof(*frame));
-	frame->head.length = skb->len;
+	frame->length = skb->len;
 	memcpy(frame->data, skb->data, skb->len);
 	
 	dev_kfree_skb_any(skb); /* we don't need this anymore */
 	
 	addr_and_length = 8 + ((void*)(frame) - priv->tx_fifo.dma.virt);
-	addr_and_length += ((frame->head.length + sizeof(frame->head) + 8) / 8) << 24;
+	addr_and_length += ((frame->length + sizeof(CCAT_HEADER_TAG) + 8) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo); /* add to DMA fifo */
 
 	spin_lock(&priv->tx_fifo.lock);
@@ -696,7 +707,7 @@ static int run_rx_thread(void *data)
 {
 	struct net_device *const dev = (struct net_device *)data;
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	CCatRxDesc *frame;
+	struct ccat_eth_frame *frame;
 
 	while(!kthread_should_stop()) {
 		frame = NULL;
@@ -731,8 +742,8 @@ static int run_tx_thread(void *data)
 {
 	struct net_device *const dev = (struct net_device *)data;
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	CCatDmaTxFrame *frame;
-	const CCatDmaTxFrame **const ppframe = (const CCatDmaTxFrame **)&frame;
+	struct ccat_eth_frame *frame;
+	const struct ccat_eth_frame **const ppframe = (const struct ccat_eth_frame **)&frame;
 
 	while(!kthread_should_stop()) {
 		frame = NULL;
@@ -742,12 +753,12 @@ static int run_tx_thread(void *data)
 		}
 
 		/* wait until frame was transfered by DMA */
-		while(!kthread_should_stop() && !frame->head.sent) {
+		while(!kthread_should_stop() && !frame->sent) {
 			msleep(POLL_DELAY_TMMS);
 		}
 
 		/* can be NULL, if we are asked to stop! */
-		if(frame && frame->head.sent) {
+		if(frame && frame->sent) {
 			kfifo_put(&priv->tx_fifo.free, ppframe);
 			if(netif_queue_stopped(dev)) {
 				netif_wake_queue(dev);
@@ -799,7 +810,10 @@ static void ccat_eth_exit_module(void) {
 }
 
 static int ccat_eth_init_module(void) {
-	BUILD_BUG_ON(sizeof(CCatDmaTxFrame) != sizeof(CCatRxDesc));
+	BUILD_BUG_ON(sizeof(struct ccat_eth_frame) != sizeof(CCatDmaTxFrame));
+	BUILD_BUG_ON(sizeof(struct ccat_eth_frame) != sizeof(CCatRxDesc));
+	BUILD_BUG_ON(offsetof(struct ccat_eth_frame, data) != offsetof(CCatDmaTxFrame, data));
+	BUILD_BUG_ON(offsetof(struct ccat_eth_frame, data) != offsetof(CCatRxDesc, data));
 	return pci_register_driver(&pci_driver);
 }
 
