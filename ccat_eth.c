@@ -428,10 +428,10 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	spin_lock_init(&priv->tx_lock);
 	INIT_KFIFO(priv->tx_queue);
 	INIT_KFIFO(priv->tx_free);
-	priv->tx_thread = kthread_run(run_tx_thread, priv, "%s_tx", DRV_NAME);
+	priv->tx_thread = kthread_run(run_tx_thread, ccat_eth_dev, "%s_tx", DRV_NAME);
 	
 	ccat_eth_dma_fifo_init(&priv->rx_fifo);
-	priv->rx_thread = kthread_run(run_rx_thread, priv, "%s_rx", DRV_NAME);
+	priv->rx_thread = kthread_run(run_rx_thread, ccat_eth_dev, "%s_rx", DRV_NAME);
 	
 	/* pci initialization */
 	if(ccat_eth_init_pci(priv)) {
@@ -525,6 +525,28 @@ static int ccat_eth_open(struct net_device *dev)
 	return 0;
 }
 
+static const size_t CCATRXDESC_HEADER_LEN = 20;
+static void ccat_eth_receive(struct net_device *const dev, const CCatRxDesc *const frame)
+{
+	const size_t len = frame->uLength - CCATRXDESC_HEADER_LEN;
+	struct sk_buff *skb = dev_alloc_skb(len + 2);
+	if(!skb) {
+		printk(KERN_INFO "%s: %s() out of memory :-(\n", DRV_NAME, __FUNCTION__);
+		return;
+	}
+
+	skb_reserve(skb, 2);
+	memcpy(skb_put(skb, len), frame->data, len);
+	skb->dev = dev;
+	skb->protocol = eth_type_trans(skb, dev);
+	skb->ip_summed = CHECKSUM_UNNECESSARY;
+
+	dev_kfree_skb_any(skb);
+	//TODO find out what is going wrong here
+	//netif_rx(skb);
+	printk(KERN_INFO "%s: received packet %p propagated to kernel.\n", DRV_NAME, frame);
+}
+
 static void ccat_eth_remove_one(struct pci_dev *pdev)
 {
 	if(ccat_eth_dev) {
@@ -546,7 +568,6 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 			kthread_stop(priv->tx_thread);
 			priv->tx_thread = NULL;
 		}
-		
 		unregister_netdev(ccat_eth_dev);
 		ccat_eth_remove_pci(priv);
 		free_netdev(ccat_eth_dev);
@@ -569,7 +590,7 @@ static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
-	struct ccat_eth_priv *const priv = netdev_priv(ccat_eth_dev);
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	CCatDmaTxFrame *frame;
 	const CCatDmaTxFrame **const ppframe = (const CCatDmaTxFrame **)&frame; 
 	uint32_t addr_and_length;
@@ -613,7 +634,6 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	spin_lock(&priv->tx_lock);
 	kfifo_put(&priv->tx_queue, ppframe);
 	spin_unlock(&priv->tx_lock);
-	//printk(KERN_INFO "%s: We send something.\n", DRV_NAME);
 	return NETDEV_TX_OK;
 }
 
@@ -627,11 +647,13 @@ static int ccat_eth_stop(struct net_device *dev)
 static const unsigned int POLL_DELAY_TMMS = 0; /* time to sleep between rx/tx DMA polls */
 static int run_rx_thread(void *data)
 {
-	struct ccat_eth_priv *const priv = data;
+	struct net_device *const dev = (struct net_device *)data;
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	CCatRxDesc *frame;
 	const CCatRxDesc **const ppframe = (const CCatRxDesc **)&frame;
-	
-	for(;!kthread_should_stop(); frame = NULL) {		
+
+	while(!kthread_should_stop()) {
+		frame = NULL;
 		/* wait for frames in rx_queue */
 		while(!kthread_should_stop() && (0 ==kfifo_get(&priv->rx_fifo.queue, &frame))) {
 			msleep(POLL_DELAY_TMMS);
@@ -641,10 +663,10 @@ static int run_rx_thread(void *data)
 		while(!kthread_should_stop() && !frame->received) {
 			msleep(POLL_DELAY_TMMS);
 		}
-		
+
 		/* can be NULL, if we are asked to stop! */
-		if(frame) {
-			printk(KERN_INFO "%s: frame received!\n", DRV_NAME);
+		if(frame && frame->received) {
+			ccat_eth_receive(dev, frame);
 			memset(frame, 0, sizeof(frame));
 			kfifo_put(&priv->rx_fifo.free, ppframe);
 		}
@@ -657,26 +679,29 @@ static int run_rx_thread(void *data)
  * Since interrupts are not availabe with CCAT for now, we have to poll
  * the DMA descriptors and move frames which are send from the tx queue
  * to the tx free queue. 
+ * @data pointer to a struct net_device*
  */
 static int run_tx_thread(void *data)
 {
-	struct ccat_eth_priv *const priv = data;
+	struct net_device *const dev = (struct net_device *)data;
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	CCatDmaTxFrame *frame;
 	const CCatDmaTxFrame **const ppframe = (const CCatDmaTxFrame **)&frame;
 	
-	for(;!kthread_should_stop(); frame = NULL) {		
+	while(!kthread_should_stop()) {
+		frame = NULL;
 		/* wait for frames in tx_queue */
 		while(!kthread_should_stop() && (0 ==kfifo_get(&priv->tx_queue, &frame))) {
 			msleep(POLL_DELAY_TMMS);
 		}
-		
+
 		/* wait until frame was transfered by DMA */
 		while(!kthread_should_stop() && !frame->head.sent) {
 			msleep(POLL_DELAY_TMMS);
 		}
-		
+
 		/* can be NULL, if we are asked to stop! */
-		if(frame) {
+		if(frame && frame->head.sent) {
 			kfifo_put(&priv->tx_free, ppframe);
 		}
 	}
@@ -733,7 +758,6 @@ static int run_test_thread(void *data)
 {
 	while(!kthread_should_stop()) {
 		msleep(0);
-		//test_rx(netdev_priv(data));
 		test_tx((struct net_device *)data);
 	}
 	return 0;
