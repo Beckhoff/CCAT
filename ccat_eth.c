@@ -173,7 +173,6 @@ struct ccat_eth_priv {
 	CCatInfoBlock info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
-	//struct ccat_dma rx_dma;
 	struct ccat_dma tx_dma;
 	spinlock_t tx_lock;
 	DECLARE_KFIFO(tx_queue, CCatDmaTxFrame*, FIFO_LENGTH);
@@ -529,21 +528,18 @@ static const size_t CCATRXDESC_HEADER_LEN = 20;
 static void ccat_eth_receive(struct net_device *const dev, const CCatRxDesc *const frame)
 {
 	const size_t len = frame->uLength - CCATRXDESC_HEADER_LEN;
-	struct sk_buff *skb = dev_alloc_skb(len + 2);
+	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
 	if(!skb) {
 		printk(KERN_INFO "%s: %s() out of memory :-(\n", DRV_NAME, __FUNCTION__);
 		return;
 	}
-
-	skb_reserve(skb, 2);
-	memcpy(skb_put(skb, len), frame->data, len);
 	skb->dev = dev;
+	skb_reserve(skb, NET_IP_ALIGN);
+	skb_copy_to_linear_data(skb, frame->data, len);
+	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
-
-	dev_kfree_skb_any(skb);
-	//TODO find out what is going wrong here
-	//netif_rx(skb);
+	netif_rx(skb);
 	printk(KERN_INFO "%s: received packet %p propagated to kernel.\n", DRV_NAME, frame);
 }
 
