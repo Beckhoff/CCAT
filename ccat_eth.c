@@ -560,7 +560,6 @@ static void ccat_eth_receive(struct net_device *const dev, const CCatRxDesc *con
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
 	netif_rx(skb);
-	printk(KERN_INFO "%s: received packet %p propagated to kernel.\n", DRV_NAME, frame);
 }
 
 static void ccat_eth_remove_one(struct pci_dev *pdev)
@@ -698,9 +697,6 @@ static int run_rx_thread(void *data)
 
 		/* can be NULL, if we are asked to stop! */
 		if(frame && frame->received) {
-			if(0 == ((void*)(frame) - priv->rx_fifo.dma.virt)) {
-				printk(KERN_INFO "%s: %s() restart.\n", DRV_NAME, __FUNCTION__);
-			}
 			uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - priv->rx_fifo.dma.virt);
 			ccat_eth_receive(dev, frame);
 			frame->received = 0;
