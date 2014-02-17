@@ -171,14 +171,12 @@ struct ccat_eth_dma_fifo {
 	struct ccat_dma dma;
 	spinlock_t lock;
 	DECLARE_KFIFO(queue, CCatRxDesc*, FIFO_LENGTH);
-	DECLARE_KFIFO(free, CCatRxDesc*, FIFO_LENGTH);	
 };
 
 static void ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *const fifo)
 {
 	spin_lock_init(&fifo->lock);
 	INIT_KFIFO(fifo->queue);
-	INIT_KFIFO(fifo->free);
 }
 
 struct ccat_eth_priv {
@@ -194,6 +192,15 @@ struct ccat_eth_priv {
 	DECLARE_KFIFO(tx_queue, CCatDmaTxFrame*, FIFO_LENGTH);
 	DECLARE_KFIFO(tx_free, CCatDmaTxFrame*, FIFO_LENGTH);
 };
+
+static void ccat_eth_hw_write_fifo(const CCatRxDesc *frame, struct ccat_eth_dma_fifo *const fifo, void __iomem *const fifo_reg)
+{
+	uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - fifo->dma.virt);
+	iowrite32(addr_and_length, fifo_reg);
+	if(1 != kfifo_put(&fifo->queue, &frame)) {
+		printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
+	}
+}
 
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
@@ -233,17 +240,11 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	wmb();
 	spin_lock(&priv->rx_fifo.lock);
 	kfifo_reset(&priv->rx_fifo.queue);
-	kfifo_reset(&priv->rx_fifo.free);
 	{
 		const CCatRxDesc *frame = priv->rx_fifo.dma.virt;
 		const CCatRxDesc *const end = frame + FIFO_LENGTH;
 		while(frame < end) {
-			uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - priv->rx_fifo.dma.virt);
-			iowrite32(addr_and_length, priv->reg.rx_fifo); /* add to DMA fifo */
-			
-			if(1 != kfifo_put(&priv->rx_fifo.queue, &frame)) {
-				printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
-			}
+			ccat_eth_hw_write_fifo(frame, &priv->rx_fifo, priv->reg.rx_fifo);
 			++frame;
 		}
 	}
@@ -681,7 +682,6 @@ static int run_rx_thread(void *data)
 	struct net_device *const dev = (struct net_device *)data;
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	CCatRxDesc *frame;
-	const CCatRxDesc **const ppframe = (const CCatRxDesc **)&frame;
 
 	while(!kthread_should_stop()) {
 		frame = NULL;
@@ -697,11 +697,9 @@ static int run_rx_thread(void *data)
 
 		/* can be NULL, if we are asked to stop! */
 		if(frame && frame->received) {
-			uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - priv->rx_fifo.dma.virt);
 			ccat_eth_receive(dev, frame);
 			frame->received = 0;
-			iowrite32(addr_and_length, priv->reg.rx_fifo); /* add to DMA fifo */
-			kfifo_put(&priv->rx_fifo.queue, ppframe);
+			ccat_eth_hw_write_fifo(frame, &priv->rx_fifo, priv->reg.rx_fifo);
 		}
 	}
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
