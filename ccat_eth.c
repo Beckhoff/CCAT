@@ -29,6 +29,22 @@ static void print_mem(const char* p, size_t lines)
 }
 #endif /* #if TESTING_ENABLED */
 
+/**
+ * EtherCAT frame to enable forwarding on EtherCAT Terminals
+ */
+static const UINT8 frameForwardEthernetFrames[] = {
+	0x01, 0x01, 0x05, 0x01, 0x00, 0x00,
+	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
+	0x88, 0xa4, 0x0e, 0x10,
+	0x08,		
+	0x00,	
+	0x00, 0x00,
+	0x00, 0x01,
+	0x02, 0x00,
+	0x00, 0x00,
+	0x00, 0x00,
+	0x00, 0x00
+};
 
 static int run_tx_thread(void *data);
 static int run_rx_thread(void *data);
@@ -393,6 +409,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 static void ccat_eth_remove_one(struct pci_dev *pdev);
 static void ccat_eth_remove_pci(struct ccat_eth_priv *priv);
 static int ccat_eth_stop(struct net_device *dev);
+static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data, size_t len);
 
 
 static const struct net_device_ops ccat_eth_netdev_ops = {
@@ -428,17 +445,17 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	INIT_KFIFO(priv->tx_queue);
 	INIT_KFIFO(priv->tx_free);
 	priv->tx_thread = kthread_run(run_tx_thread, ccat_eth_dev, "%s_tx", DRV_NAME);
-	
+
 	ccat_eth_dma_fifo_init(&priv->rx_fifo);
 	priv->rx_thread = kthread_run(run_rx_thread, ccat_eth_dev, "%s_rx", DRV_NAME);
-	
+
 	/* pci initialization */
 	if(ccat_eth_init_pci(priv)) {
 		printk(KERN_INFO "%s: CCAT pci init failed.\n", DRV_NAME);
 		ccat_eth_remove_one(priv->pdev);		
 		return -1;		
 	}
-	
+
 	/* complete ethernet device initialization */
 	memcpy_fromio(ccat_eth_dev->dev_addr, priv->reg.mii + 8, 6); /* init MAC address */
 	ccat_eth_dev->netdev_ops = &ccat_eth_netdev_ops;
@@ -447,9 +464,12 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 		ccat_eth_remove_one(pdev);
 		return -ENODEV;
 	}
+	netif_start_queue(ccat_eth_dev);
+
+	/* enable ethernet frame forwarding, too */
+	ccat_eth_xmit_raw(ccat_eth_dev, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
+
 	printk(KERN_INFO "%s: registered %s as network device.\n", DRV_NAME, ccat_eth_dev->name);
-	
-	
 #if TESTING_ENABLED
 	test_thread = kthread_run(run_test_thread, ccat_eth_dev, "%s_test", DRV_NAME);
 #endif	
@@ -607,6 +627,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	if(1 != kfifo_get(&priv->tx_free, &frame)) {
 		printk(KERN_INFO "%s: no more DMA descriptors available for TX.\n", DRV_NAME);
 		spin_unlock(&priv->tx_lock);
+		netif_stop_queue(dev);
 		return NETDEV_TX_BUSY;
 	}
 	spin_unlock(&priv->tx_lock);
@@ -640,6 +661,21 @@ static int ccat_eth_stop(struct net_device *dev)
 	return 0;
 }
 
+/**
+ * Function to transmit a raw buffer to the network (f.e. frameForwardEthernetFrames)
+ * @dev a valid net_device
+ * @data pointer to your raw buffer
+ * @len number of bytes in the raw buffer to transmit
+ */
+static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data, size_t len)
+{
+	struct sk_buff *skb = dev_alloc_skb(len);
+	skb->dev = dev;
+	skb_copy_to_linear_data(skb, data, len);
+	skb_put(skb, len);
+	ccat_eth_start_xmit(skb, dev);
+}
+
 static const unsigned int POLL_DELAY_TMMS = 0; /* time to sleep between rx/tx DMA polls */
 static int run_rx_thread(void *data)
 {
@@ -662,9 +698,14 @@ static int run_rx_thread(void *data)
 
 		/* can be NULL, if we are asked to stop! */
 		if(frame && frame->received) {
+			if(0 == ((void*)(frame) - priv->rx_fifo.dma.virt)) {
+				printk(KERN_INFO "%s: %s() restart.\n", DRV_NAME, __FUNCTION__);
+			}
+			uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - priv->rx_fifo.dma.virt);
 			ccat_eth_receive(dev, frame);
-			memset(frame, 0, sizeof(frame));
-			kfifo_put(&priv->rx_fifo.free, ppframe);
+			frame->received = 0;
+			iowrite32(addr_and_length, priv->reg.rx_fifo); /* add to DMA fifo */
+			kfifo_put(&priv->rx_fifo.queue, ppframe);
 		}
 	}
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
@@ -699,6 +740,9 @@ static int run_tx_thread(void *data)
 		/* can be NULL, if we are asked to stop! */
 		if(frame && frame->head.sent) {
 			kfifo_put(&priv->tx_free, ppframe);
+			if(netif_queue_stopped(dev)) {
+				netif_wake_queue(dev);
+			}
 		}
 	}
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
@@ -706,20 +750,6 @@ static int run_tx_thread(void *data)
 }
 
 #if TESTING_ENABLED
-static const UINT8 frameForwardEthernetFrames[] = {
-	0x01, 0x01, 0x05, 0x01, 0x00, 0x00,
-	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
-	0x88, 0xa4, 0x0e, 0x10,
-	0x08,		
-	0x00,	
-	0x00, 0x00,
-	0x00, 0x01,
-	0x02, 0x00,
-	0x00, 0x00,
-	0x00, 0x00,
-	0x00, 0x00
-};
-
 static const UINT8 frameArpReq[] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
 	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
@@ -732,21 +762,9 @@ static const UINT8 frameArpReq[] = {
 
 static void test_tx(struct net_device *dev)
 {
-	static int first = 1;
 	unsigned char numFrames = 0;
 	do {
-		if(first) {
-			struct sk_buff *skb = dev_alloc_skb(sizeof(frameForwardEthernetFrames));
-			unsigned char *data = skb_put(skb, sizeof(frameForwardEthernetFrames));
-			memcpy(data, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
-			ccat_eth_start_xmit(skb, dev);
-			first = 0;
-		} else {
-			struct sk_buff *skb = dev_alloc_skb(sizeof(frameArpReq));
-			unsigned char *data = skb_put(skb, sizeof(frameArpReq));
-			memcpy(data, frameArpReq, sizeof(frameArpReq));
-			ccat_eth_start_xmit(skb, dev);
-		}
+		ccat_eth_xmit_raw(dev, frameArpReq, sizeof(frameArpReq));
 	} while(++numFrames <= 16);
 }
 
