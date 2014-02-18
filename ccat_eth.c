@@ -182,8 +182,6 @@ struct ccat_eth_frame {
 
 struct ccat_eth_rx_dma_fifo {
 	struct ccat_dma dma;
-	spinlock_t lock;
-	DECLARE_KFIFO(queue, struct ccat_eth_frame*, FIFO_LENGTH);
 };
 
 struct ccat_eth_tx_dma_fifo {
@@ -191,6 +189,11 @@ struct ccat_eth_tx_dma_fifo {
 	spinlock_t lock;
 	DECLARE_KFIFO(queue, struct ccat_eth_frame*, FIFO_LENGTH);
 	DECLARE_KFIFO(free, struct ccat_eth_frame*, FIFO_LENGTH);
+};
+
+union ccat_eth_dma_fifo {
+	struct ccat_eth_rx_dma_fifo rx;
+	struct ccat_eth_tx_dma_fifo tx;
 };
 
 struct ccat_eth_priv {
@@ -208,7 +211,11 @@ static void ccat_eth_rx_fifo_add(const struct ccat_eth_frame *frame, struct ccat
 {
 	uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - fifo->dma.virt);
 	iowrite32(addr_and_length, fifo_reg);
-	if(1 != kfifo_put(&fifo->queue, &frame)) {
+}
+
+static void ccat_eth_tx_fifo_add_free(const struct ccat_eth_frame *frame, struct ccat_eth_tx_dma_fifo *const fifo, void __iomem *const fifo_reg)
+{
+	if(1 != kfifo_put(&fifo->free, &frame)) {
 		printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
 	}
 }
@@ -220,14 +227,15 @@ static int ccat_eth_rx_fifo_init(struct ccat_eth_priv *const priv)
 		printk(KERN_INFO "%s: init Rx DMA memory failed.\n", DRV_NAME);
 		return -1;
 	}
-	
-	spin_lock_init(&fifo->lock);
-	INIT_KFIFO(fifo->queue);
 
 	/* start rx dma fifo */
 	iowrite32(0, priv->reg.rx_fifo + 0x8);
 	wmb();
 	{
+		union ccat_eth_dma_fifo base_fifo = {
+			.rx = priv->rx_fifo,
+		};
+		
 		const struct ccat_eth_frame *frame = fifo->dma.virt;
 		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 		while(frame < end) {
@@ -256,9 +264,7 @@ static int ccat_eth_tx_fifo_init(struct ccat_eth_tx_dma_fifo *const fifo, struct
 		const struct ccat_eth_frame *frame = fifo->dma.virt;
 		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 		while(frame < end) {
-			if(1 != kfifo_put(&fifo->free, &frame)) {
-				printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
-			}
+			ccat_eth_tx_fifo_add_free(frame, fifo, priv->reg.tx_fifo);
 			++frame;
 		}
 	}
@@ -707,15 +713,10 @@ static int run_rx_thread(void *data)
 {
 	struct net_device *const dev = (struct net_device *)data;
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_frame *frame;
+	struct ccat_eth_frame *frame = priv->rx_fifo.dma.virt;
+	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 
 	while(!kthread_should_stop()) {
-		frame = NULL;
-		/* wait for frames in rx_queue */
-		while(!kthread_should_stop() && (0 ==kfifo_get(&priv->rx_fifo.queue, &frame))) {
-			msleep(POLL_DELAY_TMMS);
-		}
-		
 		/* wait until frame was used by DMA for Rx*/
 		while(!kthread_should_stop() && !frame->received) {
 			msleep(POLL_DELAY_TMMS);
@@ -726,6 +727,9 @@ static int run_rx_thread(void *data)
 			ccat_eth_receive(dev, frame);
 			frame->received = 0;
 			ccat_eth_rx_fifo_add(frame, &priv->rx_fifo, priv->reg.rx_fifo);
+		}
+		if(++frame >= end) {
+			frame = priv->rx_fifo.dma.virt;
 		}
 	}
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
