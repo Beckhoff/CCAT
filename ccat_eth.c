@@ -192,8 +192,8 @@ struct ccat_eth_tx_dma_fifo {
 };
 
 union ccat_eth_dma_fifo {
-	struct ccat_eth_rx_dma_fifo rx;
-	struct ccat_eth_tx_dma_fifo tx;
+	struct ccat_eth_rx_dma_fifo* rx;
+	struct ccat_eth_tx_dma_fifo* tx;
 };
 
 struct ccat_eth_priv {
@@ -207,47 +207,50 @@ struct ccat_eth_priv {
 	struct ccat_eth_tx_dma_fifo tx_fifo;
 };
 
-static void ccat_eth_rx_fifo_add(const struct ccat_eth_frame *frame, struct ccat_eth_rx_dma_fifo *const fifo, void __iomem *const fifo_reg)
+typedef void (*fifo_add_function)(const struct ccat_eth_frame *, union ccat_eth_dma_fifo, void __iomem *const);
+static void ccat_eth_rx_fifo_add(const struct ccat_eth_frame *frame, union ccat_eth_dma_fifo fifo, void __iomem *const fifo_reg)
 {
-	uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - fifo->dma.virt);
+	uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - fifo.rx->dma.virt);
 	iowrite32(addr_and_length, fifo_reg);
 }
 
-static void ccat_eth_tx_fifo_add_free(const struct ccat_eth_frame *frame, struct ccat_eth_tx_dma_fifo *const fifo, void __iomem *const fifo_reg)
+static void ccat_eth_tx_fifo_add_free(const struct ccat_eth_frame *frame, union ccat_eth_dma_fifo fifo, void __iomem *const fifo_reg)
 {
-	if(1 != kfifo_put(&fifo->free, &frame)) {
+	if(1 != kfifo_put(&fifo.tx->free, &frame)) {
 		printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
+	}
+}
+
+static void ccat_eth_fifo_init(union ccat_eth_dma_fifo fifo, const void *const base_addr, void __iomem *const fifo_reg, fifo_add_function add)
+{
+	const struct ccat_eth_frame *frame = base_addr;
+	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
+	
+	/* reset dma fifo */
+	iowrite32(0, fifo_reg + 0x8);
+	wmb();
+	
+	while(frame < end) {
+		add(frame, fifo, fifo_reg);
+		++frame;
 	}
 }
 
 static int ccat_eth_rx_fifo_init(struct ccat_eth_priv *const priv)
 {
-	struct ccat_eth_rx_dma_fifo *const fifo = &priv->rx_fifo;
-	if(ccat_dma_init(&fifo->dma, priv->info.rxDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
+	union ccat_eth_dma_fifo base_fifo = { .rx = &priv->rx_fifo };
+	if(ccat_dma_init(&priv->rx_fifo.dma, priv->info.rxDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
 		printk(KERN_INFO "%s: init Rx DMA memory failed.\n", DRV_NAME);
 		return -1;
 	}
 
-	/* start rx dma fifo */
-	iowrite32(0, priv->reg.rx_fifo + 0x8);
-	wmb();
-	{
-		union ccat_eth_dma_fifo base_fifo = {
-			.rx = priv->rx_fifo,
-		};
-		
-		const struct ccat_eth_frame *frame = fifo->dma.virt;
-		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
-		while(frame < end) {
-			ccat_eth_rx_fifo_add(frame, fifo, priv->reg.rx_fifo);
-			++frame;
-		}
-	}
+	ccat_eth_fifo_init(base_fifo, priv->rx_fifo.dma.virt, priv->reg.rx_fifo, ccat_eth_rx_fifo_add);
 	return 0;
 }
 
 static int ccat_eth_tx_fifo_init(struct ccat_eth_tx_dma_fifo *const fifo, struct ccat_eth_priv *const priv)
 {
+	union ccat_eth_dma_fifo base_fifo = { .tx = &priv->tx_fifo };
 	if(ccat_dma_init(&fifo->dma, priv->info.txDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
 		printk(KERN_INFO "%s: init Tx DMA memory failed.\n", DRV_NAME);
 		return -1;
@@ -256,18 +259,7 @@ static int ccat_eth_tx_fifo_init(struct ccat_eth_tx_dma_fifo *const fifo, struct
 	spin_lock_init(&fifo->lock);
 	INIT_KFIFO(fifo->queue);
 	INIT_KFIFO(fifo->free);
-	
-	/* reset tx fifo */
-	iowrite8(0, priv->reg.tx_fifo + 0x8);
-	wmb();
-	{
-		const struct ccat_eth_frame *frame = fifo->dma.virt;
-		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
-		while(frame < end) {
-			ccat_eth_tx_fifo_add_free(frame, fifo, priv->reg.tx_fifo);
-			++frame;
-		}
-	}
+	ccat_eth_fifo_init(base_fifo, priv->tx_fifo.dma.virt, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free);
 	return 0;
 }
 
@@ -724,9 +716,10 @@ static int run_rx_thread(void *data)
 
 		/* can be NULL, if we are asked to stop! */
 		if(frame && frame->received) {
+			union ccat_eth_dma_fifo base_fifo = { .rx = &priv->rx_fifo };
 			ccat_eth_receive(dev, frame);
 			frame->received = 0;
-			ccat_eth_rx_fifo_add(frame, &priv->rx_fifo, priv->reg.rx_fifo);
+			ccat_eth_rx_fifo_add(frame, base_fifo, priv->reg.rx_fifo);
 		}
 		if(++frame >= end) {
 			frame = priv->rx_fifo.dma.virt;
