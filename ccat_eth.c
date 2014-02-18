@@ -533,8 +533,6 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 			break;
 		}
 	}
-	
-	//TODO
 	return status;
 }
 
@@ -633,8 +631,6 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	iowrite32(addr_and_length, priv->reg.tx_fifo); /* add to DMA fifo */
 
 	next = (next + 1) % FIFO_LENGTH;
-	
-	printk(KERN_INFO "%s: next TX will be %u.\n", DRV_NAME, next);
 	return NETDEV_TX_OK;
 }
 
