@@ -47,7 +47,6 @@ static const UINT8 frameForwardEthernetFrames[] = {
 	0x00, 0x00
 };
 
-static int run_tx_thread(void *data);
 static int run_rx_thread(void *data);
 
 struct ccat_eth_register {
@@ -187,49 +186,34 @@ struct ccat_eth_dma_fifo {
 	struct ccat_dma dma;
 };
 
-struct ccat_eth_rx_dma_fifo {
-	struct ccat_eth_dma_fifo base;
-};
-
-struct ccat_eth_tx_dma_fifo {
-	struct ccat_eth_dma_fifo base;
-	spinlock_t lock;
-	DECLARE_KFIFO(queue, struct ccat_eth_frame*, FIFO_LENGTH);
-	DECLARE_KFIFO(free, struct ccat_eth_frame*, FIFO_LENGTH);
-};
-
 struct ccat_eth_priv {
 	struct pci_dev *pdev;
-	struct task_struct *tx_thread; /* housekeeper for tx dma descriptors */
 	struct task_struct *rx_thread; /* housekeeper for rx dma descriptors */
 	struct ccat_bar bar[3];
 	CCatInfoBlock info;
 	struct ccat_eth_register reg;
-	struct ccat_eth_rx_dma_fifo rx_fifo;
-	struct ccat_eth_tx_dma_fifo tx_fifo;
+	struct ccat_eth_dma_fifo rx_fifo;
+	struct ccat_eth_dma_fifo tx_fifo;
 };
 
-typedef void (*fifo_add_function)(const struct ccat_eth_frame *, struct ccat_eth_dma_fifo*);
-static void ccat_eth_rx_fifo_add(const struct ccat_eth_frame *frame, struct ccat_eth_dma_fifo* fifo)
+typedef void (*fifo_add_function)(struct ccat_eth_frame *, struct ccat_eth_dma_fifo*);
+
+static void ccat_eth_rx_fifo_add(struct ccat_eth_frame *frame, struct ccat_eth_dma_fifo* fifo)
 {
 	uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - fifo->dma.virt);
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_tx_fifo_add_free(const struct ccat_eth_frame *frame, struct ccat_eth_dma_fifo* fifo)
+static void ccat_eth_tx_fifo_add_free(struct ccat_eth_frame *frame, struct ccat_eth_dma_fifo* fifo)
 {
-	struct ccat_eth_tx_dma_fifo* tx_fifo = (struct ccat_eth_tx_dma_fifo*)fifo;
-	BUILD_BUG_ON(offsetof(struct ccat_eth_tx_dma_fifo, base) != 0);
-	
-	if(1 != kfifo_put(&tx_fifo->free, &frame)) {
-		printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
-	}
+	/* mark frame as ready to use for tx */
+	frame->sent = 1;
 }
 
 static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *const fifo_reg, fifo_add_function add, size_t channel, struct ccat_eth_priv *const priv)
 {
 	if(0 == ccat_dma_init(&fifo->dma, channel, priv->bar[2].ioaddr, &priv->pdev->dev)) {
-		const struct ccat_eth_frame *frame = fifo->dma.virt;
+		struct ccat_eth_frame *frame = fifo->dma.virt;
 		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 		fifo->reg = fifo_reg;
 
@@ -247,23 +231,10 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *
 	return -1;
 }
 
-static int ccat_eth_rx_fifo_init(struct ccat_eth_rx_dma_fifo *const fifo, size_t channel, struct ccat_eth_priv *const priv)
+static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 {
-	return ccat_eth_dma_fifo_init(&fifo->base, priv->reg.rx_fifo, ccat_eth_rx_fifo_add, channel, priv);
-}
-
-static int ccat_eth_tx_fifo_init(struct ccat_eth_tx_dma_fifo *const fifo, size_t channel, struct ccat_eth_priv *const priv)
-{
-	spin_lock_init(&fifo->lock);
-	INIT_KFIFO(fifo->queue);
-	INIT_KFIFO(fifo->free);
-	return ccat_eth_dma_fifo_init(&fifo->base, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free, channel, priv);
-}
-
-static void ccat_eth_priv_cleanup_dma(struct ccat_eth_priv *priv)
-{
-	ccat_dma_free(&priv->tx_fifo.base.dma);
-	ccat_dma_free(&priv->rx_fifo.base.dma);
+	ccat_dma_free(&priv->tx_fifo.dma);
+	ccat_dma_free(&priv->rx_fifo.dma);
 }
 
 /**
@@ -271,12 +242,12 @@ static void ccat_eth_priv_cleanup_dma(struct ccat_eth_priv *priv)
  */
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	if(ccat_eth_rx_fifo_init(&priv->rx_fifo, priv->info.rxDmaChn, priv)) {
+	if(ccat_eth_dma_fifo_init(&priv->rx_fifo, priv->reg.rx_fifo, ccat_eth_rx_fifo_add, priv->info.rxDmaChn, priv)) {
 		printk(KERN_INFO "%s: init Rx DMA fifo failed.\n", DRV_NAME);
 		return -1;
 	}
 	
-	if(ccat_eth_tx_fifo_init(&priv->tx_fifo, priv->info.txDmaChn, priv)) {
+	if(ccat_eth_dma_fifo_init(&priv->tx_fifo, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free, priv->info.txDmaChn, priv)) {
 		printk(KERN_INFO "%s: init Tx DMA fifo failed.\n", DRV_NAME);
 		return -1;
 	}
@@ -559,7 +530,6 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 			ccat_print_function_info(priv);
 			status = ccat_eth_priv_init_dma(priv);	
 			priv->rx_thread = kthread_run(run_rx_thread, ccat_eth_dev, "%s_rx", DRV_NAME);
-			priv->tx_thread = kthread_run(run_tx_thread, ccat_eth_dev, "%s_tx", DRV_NAME);
 			break;
 		}
 	}
@@ -609,11 +579,6 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 			kthread_stop(priv->rx_thread);
 			priv->rx_thread = NULL;
 		}
-		if(priv->tx_thread) {
-			/* TODO care about smp context? */
-			kthread_stop(priv->tx_thread);
-			priv->tx_thread = NULL;
-		}
 		unregister_netdev(ccat_eth_dev);
 		ccat_eth_remove_pci(priv);
 		free_netdev(ccat_eth_dev);
@@ -624,7 +589,7 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 
 static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 {
-	ccat_eth_priv_cleanup_dma(priv);
+	ccat_eth_priv_free_dma(priv);
 	ccat_bar_free(&priv->bar[2]);
 	ccat_bar_free(&priv->bar[0]);
 	pci_disable_device (priv->pdev);
@@ -633,9 +598,9 @@ static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
+	static size_t next = 0;
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_frame *frame;
-	const struct ccat_eth_frame **const ppframe = (const struct ccat_eth_frame **)&frame; 
+	struct ccat_eth_frame *frame = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + next;
 	uint32_t addr_and_length;
 	
 	if(skb_is_nonlinear(skb)) {
@@ -650,34 +615,26 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 		return NETDEV_TX_OK;
 	}
 
-	spin_lock(&priv->tx_fifo.lock);
-	if(1 != kfifo_get(&priv->tx_fifo.free, &frame)) {
+	if(!frame->sent) {
 		printk(KERN_INFO "%s: no more DMA descriptors available for TX.\n", DRV_NAME);
-		spin_unlock(&priv->tx_fifo.lock);
-		netif_stop_queue(dev);
+		//TODO reenable if we have a cleanup thread netif_stop_queue(dev);
 		return NETDEV_TX_BUSY;
 	}
-	spin_unlock(&priv->tx_fifo.lock);
-	
-	if(!frame) {
-		printk(KERN_WARNING "%s: %s(): we read a NULL pointer from the tx_free queue, which should never happen!\n", DRV_NAME, __FUNCTION__);
-		return NETDEV_TX_BUSY;
-	}		
-	
+
 	/* prepare frame in DMA memory */
 	memset(frame, 0, sizeof(*frame));
 	frame->length = skb->len;
 	memcpy(frame->data, skb->data, skb->len);
 	
 	dev_kfree_skb_any(skb); /* we don't need this anymore */
-	
-	addr_and_length = 8 + ((void*)(frame) - priv->tx_fifo.base.dma.virt);
+
+	addr_and_length = 8 + ((void*)(frame) - priv->tx_fifo.dma.virt);
 	addr_and_length += ((frame->length + sizeof(CCAT_HEADER_TAG) + 8) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo); /* add to DMA fifo */
 
-	spin_lock(&priv->tx_fifo.lock);
-	kfifo_put(&priv->tx_fifo.queue, ppframe);
-	spin_unlock(&priv->tx_fifo.lock);
+	next = (next + 1) % FIFO_LENGTH;
+	
+	printk(KERN_INFO "%s: next TX will be %u.\n", DRV_NAME, next);
 	return NETDEV_TX_OK;
 }
 
@@ -708,7 +665,7 @@ static int run_rx_thread(void *data)
 {
 	struct net_device *const dev = (struct net_device *)data;
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_frame *frame = priv->rx_fifo.base.dma.virt;
+	struct ccat_eth_frame *frame = priv->rx_fifo.dma.virt;
 	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 
 	while(!kthread_should_stop()) {
@@ -721,47 +678,10 @@ static int run_rx_thread(void *data)
 		if(frame && frame->received) {
 			ccat_eth_receive(dev, frame);
 			frame->received = 0;
-			ccat_eth_rx_fifo_add(frame, &priv->rx_fifo.base);
+			ccat_eth_rx_fifo_add(frame, &priv->rx_fifo);
 		}
 		if(++frame >= end) {
-			frame = priv->rx_fifo.base.dma.virt;
-		}
-	}
-	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
-	return 0;
-}
-
-/**
- * Since interrupts are not availabe with CCAT for now, we have to poll
- * the DMA descriptors and move frames which are send from the tx queue
- * to the tx free queue. 
- * @data pointer to a struct net_device*
- */
-static int run_tx_thread(void *data)
-{
-	struct net_device *const dev = (struct net_device *)data;
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_frame *frame;
-	const struct ccat_eth_frame **const ppframe = (const struct ccat_eth_frame **)&frame;
-
-	while(!kthread_should_stop()) {
-		frame = NULL;
-		/* wait for frames in tx queue */
-		while(!kthread_should_stop() && (0 ==kfifo_get(&priv->tx_fifo.queue, &frame))) {
-			msleep(POLL_DELAY_TMMS);
-		}
-
-		/* wait until frame was transfered by DMA */
-		while(!kthread_should_stop() && !frame->sent) {
-			msleep(POLL_DELAY_TMMS);
-		}
-
-		/* can be NULL, if we are asked to stop! */
-		if(frame && frame->sent) {
-			kfifo_put(&priv->tx_fifo.free, ppframe);
-			if(netif_queue_stopped(dev)) {
-				netif_wake_queue(dev);
-			}
+			frame = priv->rx_fifo.dma.virt;
 		}
 	}
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
