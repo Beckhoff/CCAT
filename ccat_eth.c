@@ -114,17 +114,16 @@ struct ccat_dma {
 	dma_addr_t phys;
 	void *virt;
 	size_t size;
+	size_t channel;
+	struct device *dev;
 };
 
-static void ccat_dma_free(struct ccat_dma *const dma, struct device *const dev)
+static void ccat_dma_free(struct ccat_dma *const dma)
 {
-	const struct ccat_dma tmp = {
-		.phys = dma->phys,
-		.virt = dma->virt,
-		.size = dma->size
-	};
+	const struct ccat_dma tmp = *dma;
+	free_dma(dma->channel);
 	memset(dma, 0, sizeof(*dma));	
-	dma_free_coherent(dev, tmp.size, tmp.virt, tmp.phys);
+	dma_free_coherent(tmp.dev, tmp.size, tmp.virt, tmp.phys);
 }
 
 static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iomem *const ioaddr, struct device *const dev)
@@ -136,6 +135,9 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iome
 	uint32_t memSize;
 	uint32_t data = 0xffffffff;
 	uint32_t offset = (sizeof(uint64_t) * channel) + 0x1000;
+	
+	dma->channel = channel;
+	dma->dev = dev;
 	
 	/* calculate size and alignments */
 	iowrite32(data, ioaddr + offset);
@@ -153,7 +155,7 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iome
 	
 	if(request_dma(channel, DRV_NAME)) {
 		printk(KERN_INFO "%s: request dma channel %d failed\n", DRV_NAME, channel);
-		ccat_dma_free(dma, dev);
+		ccat_dma_free(dma);
 		return -1;
 	}
 	
@@ -224,31 +226,30 @@ static void ccat_eth_tx_fifo_add_free(const struct ccat_eth_frame *frame, struct
 	}
 }
 
-static int ccat_eth_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *const fifo_reg, fifo_add_function add, size_t channel, struct ccat_eth_priv *const priv)
+static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *const fifo_reg, fifo_add_function add, size_t channel, struct ccat_eth_priv *const priv)
 {
-	const struct ccat_eth_frame *frame = fifo->dma.virt;
-	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
-	fifo->reg = fifo_reg;
-	
-	/* reset dma fifo */
-	iowrite32(0, fifo->reg + 0x8);
-	wmb();
-	
-	while(frame < end) {
-		add(frame, fifo);
-		++frame;
+	if(0 == ccat_dma_init(&fifo->dma, channel, priv->bar[2].ioaddr, &priv->pdev->dev)) {
+		const struct ccat_eth_frame *frame = fifo->dma.virt;
+		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
+		fifo->reg = fifo_reg;
+
+		/* reset hw fifo */
+		iowrite32(0, fifo->reg + 0x8);
+		wmb();
+		
+		while(frame < end) {
+			add(frame, fifo);
+			++frame;
+		}
+		return 0;
 	}
-	return 0;
+	printk(KERN_INFO "%s: init DMA%d memory failed.\n", DRV_NAME, channel);
+	return -1;
 }
 
 static int ccat_eth_rx_fifo_init(struct ccat_eth_rx_dma_fifo *const fifo, size_t channel, struct ccat_eth_priv *const priv)
 {
-	if(ccat_dma_init(&fifo->base.dma, channel, priv->bar[2].ioaddr, &priv->pdev->dev)) {
-		printk(KERN_INFO "%s: init Rx DMA memory failed.\n", DRV_NAME);
-		return -1;
-	}
-
-	return ccat_eth_fifo_init(&priv->rx_fifo.base, priv->reg.rx_fifo, ccat_eth_rx_fifo_add, channel, priv);
+	return ccat_eth_dma_fifo_init(&fifo->base, priv->reg.rx_fifo, ccat_eth_rx_fifo_add, channel, priv);
 }
 
 static int ccat_eth_tx_fifo_init(struct ccat_eth_tx_dma_fifo *const fifo, size_t channel, struct ccat_eth_priv *const priv)
@@ -256,14 +257,18 @@ static int ccat_eth_tx_fifo_init(struct ccat_eth_tx_dma_fifo *const fifo, size_t
 	spin_lock_init(&fifo->lock);
 	INIT_KFIFO(fifo->queue);
 	INIT_KFIFO(fifo->free);
-	
-	if(ccat_dma_init(&fifo->base.dma, channel, priv->bar[2].ioaddr, &priv->pdev->dev)) {
-		printk(KERN_INFO "%s: init Tx DMA memory failed.\n", DRV_NAME);
-		return -1;
-	}
-	return ccat_eth_fifo_init(&fifo->base, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free, channel, priv);
+	return ccat_eth_dma_fifo_init(&fifo->base, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free, channel, priv);
 }
 
+static void ccat_eth_priv_cleanup_dma(struct ccat_eth_priv *priv)
+{
+	ccat_dma_free(&priv->tx_fifo.base.dma);
+	ccat_dma_free(&priv->rx_fifo.base.dma);
+}
+
+/**
+ * Initalizes both (Rx/Tx) DMA fifo's and related management structures
+ */
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
 	if(ccat_eth_rx_fifo_init(&priv->rx_fifo, priv->info.rxDmaChn, priv)) {
@@ -462,7 +467,7 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 {
 	struct ccat_eth_priv *priv;
 	if(ccat_eth_dev) {
-		printk(KERN_INFO "%s: driver supports only one CCAT device at a time.\n", DRV_NAME);
+		printk(KERN_INFO "%s: this driver supports only one CCAT device at a time.\n", DRV_NAME);
 		return -1;
 	}
 	ccat_eth_dev = alloc_etherdev(sizeof(struct ccat_eth_priv));
@@ -552,7 +557,7 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 			memcpy_fromio(&priv->info, addr, sizeof(priv->info));
 			ccat_eth_priv_init_mappings(priv);
 			ccat_print_function_info(priv);
-			status = ccat_eth_priv_init_dma(priv);
+			status = ccat_eth_priv_init_dma(priv);	
 			priv->rx_thread = kthread_run(run_rx_thread, ccat_eth_dev, "%s_rx", DRV_NAME);
 			priv->tx_thread = kthread_run(run_tx_thread, ccat_eth_dev, "%s_tx", DRV_NAME);
 			break;
@@ -619,10 +624,7 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 
 static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 {
-	ccat_dma_free(&priv->tx_fifo.base.dma, &priv->pdev->dev);
-	ccat_dma_free(&priv->rx_fifo.base.dma, &priv->pdev->dev);
-	free_dma(priv->info.rxDmaChn);
-	free_dma(priv->info.txDmaChn);
+	ccat_eth_priv_cleanup_dma(priv);
 	ccat_bar_free(&priv->bar[2]);
 	ccat_bar_free(&priv->bar[0]);
 	pci_disable_device (priv->pdev);
