@@ -217,14 +217,16 @@ static void ccat_eth_rx_fifo_add(const struct ccat_eth_frame *frame, struct ccat
 static void ccat_eth_tx_fifo_add_free(const struct ccat_eth_frame *frame, struct ccat_eth_dma_fifo* fifo)
 {
 	struct ccat_eth_tx_dma_fifo* tx_fifo = (struct ccat_eth_tx_dma_fifo*)fifo;
+	BUILD_BUG_ON(offsetof(struct ccat_eth_tx_dma_fifo, base) != 0);
+	
 	if(1 != kfifo_put(&tx_fifo->free, &frame)) {
 		printk(KERN_ERR "%s: kfifo_put() should never fail in %s(), but it did :-(\n", DRV_NAME, __FUNCTION__);
 	}
 }
 
-static void ccat_eth_fifo_init(struct ccat_eth_dma_fifo* fifo, const void *const base_addr, void __iomem *const fifo_reg, fifo_add_function add)
+static int ccat_eth_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *const fifo_reg, fifo_add_function add, size_t channel, struct ccat_eth_priv *const priv)
 {
-	const struct ccat_eth_frame *frame = base_addr;
+	const struct ccat_eth_frame *frame = fifo->dma.virt;
 	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 	fifo->reg = fifo_reg;
 	
@@ -236,41 +238,40 @@ static void ccat_eth_fifo_init(struct ccat_eth_dma_fifo* fifo, const void *const
 		add(frame, fifo);
 		++frame;
 	}
+	return 0;
 }
 
-static int ccat_eth_rx_fifo_init(struct ccat_eth_priv *const priv)
+static int ccat_eth_rx_fifo_init(struct ccat_eth_rx_dma_fifo *const fifo, size_t channel, struct ccat_eth_priv *const priv)
 {
-	if(ccat_dma_init(&priv->rx_fifo.base.dma, priv->info.rxDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
+	if(ccat_dma_init(&fifo->base.dma, channel, priv->bar[2].ioaddr, &priv->pdev->dev)) {
 		printk(KERN_INFO "%s: init Rx DMA memory failed.\n", DRV_NAME);
 		return -1;
 	}
 
-	ccat_eth_fifo_init(&priv->rx_fifo.base, priv->rx_fifo.base.dma.virt, priv->reg.rx_fifo, ccat_eth_rx_fifo_add);
-	return 0;
+	return ccat_eth_fifo_init(&priv->rx_fifo.base, priv->reg.rx_fifo, ccat_eth_rx_fifo_add, channel, priv);
 }
 
-static int ccat_eth_tx_fifo_init(struct ccat_eth_priv *const priv)
-{	
-	if(ccat_dma_init(&priv->tx_fifo.base.dma, priv->info.txDmaChn, priv->bar[2].ioaddr, &priv->pdev->dev)) {
+static int ccat_eth_tx_fifo_init(struct ccat_eth_tx_dma_fifo *const fifo, size_t channel, struct ccat_eth_priv *const priv)
+{
+	spin_lock_init(&fifo->lock);
+	INIT_KFIFO(fifo->queue);
+	INIT_KFIFO(fifo->free);
+	
+	if(ccat_dma_init(&fifo->base.dma, channel, priv->bar[2].ioaddr, &priv->pdev->dev)) {
 		printk(KERN_INFO "%s: init Tx DMA memory failed.\n", DRV_NAME);
 		return -1;
 	}
-
-	spin_lock_init(&priv->tx_fifo.lock);
-	INIT_KFIFO(priv->tx_fifo.queue);
-	INIT_KFIFO(priv->tx_fifo.free);
-	ccat_eth_fifo_init(&priv->tx_fifo.base, priv->tx_fifo.base.dma.virt, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free);
-	return 0;
+	return ccat_eth_fifo_init(&fifo->base, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free, channel, priv);
 }
 
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	if(ccat_eth_rx_fifo_init(priv)) {
+	if(ccat_eth_rx_fifo_init(&priv->rx_fifo, priv->info.rxDmaChn, priv)) {
 		printk(KERN_INFO "%s: init Rx DMA fifo failed.\n", DRV_NAME);
 		return -1;
 	}
 	
-	if(ccat_eth_tx_fifo_init(priv)) {
+	if(ccat_eth_tx_fifo_init(&priv->tx_fifo, priv->info.txDmaChn, priv)) {
 		printk(KERN_INFO "%s: init Tx DMA fifo failed.\n", DRV_NAME);
 		return -1;
 	}
