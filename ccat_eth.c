@@ -674,7 +674,7 @@ static int ccat_eth_stop(struct net_device *dev)
 
 static void ccat_eth_link_down(struct net_device *dev)
 {
-	// TODO clear dma queues
+	// TODO stop dma queues?
 	netif_stop_queue(dev);
 	netif_carrier_off(dev);
 	netdev_info(dev, "NIC Link is Down\n");
@@ -682,10 +682,14 @@ static void ccat_eth_link_down(struct net_device *dev)
 
 static void ccat_eth_link_up(struct net_device *const dev)
 {
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	netdev_info(dev, "NIC Link is Up\n");
 	/* TODO netdev_info(dev, "NIC Link is Up %u Mbps %s Duplex\n",
 			    speed == SPEED_100 ? 100 : 10,
 			    cmd.duplex == DUPLEX_FULL ? "Full" : "Half");*/
+	
+	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
+	ccat_eth_dma_fifo_reset(&priv->tx_fifo);	
 	ccat_eth_xmit_raw(dev, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
 	netif_carrier_on(dev);
 	netif_start_queue(dev);
