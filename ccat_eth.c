@@ -183,6 +183,7 @@ struct ccat_eth_frame {
 };
 
 struct ccat_eth_dma_fifo {
+	void (*add)(struct ccat_eth_frame *, struct ccat_eth_dma_fifo*);
 	void __iomem *reg;
 	struct ccat_dma dma;
 };
@@ -204,6 +205,7 @@ typedef void (*fifo_add_function)(struct ccat_eth_frame *, struct ccat_eth_dma_f
 static void ccat_eth_rx_fifo_add(struct ccat_eth_frame *frame, struct ccat_eth_dma_fifo* fifo)
 {
 	uint32_t addr_and_length = (1 << 31) | ((void*)(frame) - fifo->dma.virt);
+	frame->received = 0;
 	iowrite32(addr_and_length, fifo->reg);
 }
 
@@ -213,25 +215,33 @@ static void ccat_eth_tx_fifo_add_free(struct ccat_eth_frame *frame, struct ccat_
 	frame->sent = 1;
 }
 
-static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *const fifo_reg, fifo_add_function add, size_t channel, struct ccat_eth_priv *const priv)
+static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo* fifo)
 {
-	if(0 == ccat_dma_init(&fifo->dma, channel, priv->bar[2].ioaddr, &priv->pdev->dev)) {
-		struct ccat_eth_frame *frame = fifo->dma.virt;
-		const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
-		fifo->reg = fifo_reg;
+	struct ccat_eth_frame *frame = fifo->dma.virt;
+	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 
-		/* reset hw fifo */
-		iowrite32(0, fifo->reg + 0x8);
-		wmb();
-		
+	/* reset hw fifo */
+	iowrite32(0, fifo->reg + 0x8);
+	wmb();
+	
+	if(fifo->add) {
 		while(frame < end) {
-			add(frame, fifo);
+			fifo->add(frame, fifo);
 			++frame;
 		}
-		return 0;
 	}
-	printk(KERN_INFO "%s: init DMA%d memory failed.\n", DRV_NAME, channel);
-	return -1;
+}
+
+static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *const fifo_reg, fifo_add_function add, size_t channel, struct ccat_eth_priv *const priv)
+{
+	if(0 != ccat_dma_init(&fifo->dma, channel, priv->bar[2].ioaddr, &priv->pdev->dev)) {
+		printk(KERN_INFO "%s: init DMA%d memory failed.\n", DRV_NAME, channel);
+		return -1;
+	}
+	fifo->add = add;
+	fifo->reg = fifo_reg;
+	ccat_eth_dma_fifo_reset(fifo);
+	return 0;
 }
 
 static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)

@@ -7,6 +7,7 @@ all:
 install:
 	- sudo rmmod $(TARGET)
 	sudo insmod ./$(TARGET).ko
+	env sleep 1
 	sudo ifconfig eth2 debug
 
 clean:
