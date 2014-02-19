@@ -240,7 +240,6 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *
 	}
 	fifo->add = add;
 	fifo->reg = fifo_reg;
-	ccat_eth_dma_fifo_reset(fifo);
 	return 0;
 }
 
