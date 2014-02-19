@@ -47,6 +47,7 @@ static const UINT8 frameForwardEthernetFrames[] = {
 	0x00, 0x00
 };
 
+static int run_poll_thread(void *data);
 static int run_rx_thread(void *data);
 
 struct ccat_eth_register {
@@ -188,6 +189,8 @@ struct ccat_eth_dma_fifo {
 
 struct ccat_eth_priv {
 	struct pci_dev *pdev;
+	struct net_device *netdev;
+	struct task_struct *poll_thread; /* since there are no IRQs we pool things like "link state" */
 	struct task_struct *rx_thread; /* housekeeper for rx dma descriptors */
 	struct ccat_bar bar[3];
 	CCatInfoBlock info;
@@ -258,7 +261,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	return 0;
 }
 
-/*
+/**
  * Initializes the CCat... members of the ccat_eth_priv structure.
  * Call this function only if info and ioaddr are already initialized!
  */
@@ -275,6 +278,15 @@ static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 	priv->reg.rx_mem = func_base + offsets.nRxMemOffs;
 	priv->reg.tx_mem = func_base + offsets.nTxMemOffs;
 	priv->reg.misc = func_base + offsets.nMiscOffs;
+}
+
+/**
+ * Read link state from CCAT hardware
+ * @return 1 if link is up, 0 if not
+ */
+inline static size_t ccat_eth_priv_read_link_state(const struct ccat_eth_priv *const priv)
+{
+	return (1 << 24) == (ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
 }
 
 static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
@@ -426,8 +438,6 @@ static const struct net_device_ops ccat_eth_netdev_ops = {
 	.ndo_stop = ccat_eth_stop,
 };
 
-static struct net_device *ccat_eth_dev;
-
 static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 {
 	//TODO
@@ -436,18 +446,18 @@ static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, st
 
 static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 {
+	struct net_device *netdev;
 	struct ccat_eth_priv *priv;
-	if(ccat_eth_dev) {
-		printk(KERN_INFO "%s: this driver supports only one CCAT device at a time.\n", DRV_NAME);
-		return -1;
-	}
-	ccat_eth_dev = alloc_etherdev(sizeof(struct ccat_eth_priv));
-	if(!ccat_eth_dev) {
+	
+	netdev = alloc_etherdev(sizeof(*priv));
+	if(!netdev) {
 		printk(KERN_INFO "%s: mem alloc failed.\n", DRV_NAME);
 		return -ENOMEM;
 	}
-	priv = netdev_priv(ccat_eth_dev);
+	priv = netdev_priv(netdev);
 	priv->pdev = pdev;
+	priv->netdev = netdev;
+	pci_set_drvdata(pdev, netdev);
 
 	/* pci initialization */
 	if(ccat_eth_init_pci(priv)) {
@@ -455,23 +465,23 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 		ccat_eth_remove_one(priv->pdev);		
 		return -1;		
 	}
+	SET_NETDEV_DEV(netdev, &pdev->dev);
 
 	/* complete ethernet device initialization */
-	memcpy_fromio(ccat_eth_dev->dev_addr, priv->reg.mii + 8, 6); /* init MAC address */
-	ccat_eth_dev->netdev_ops = &ccat_eth_netdev_ops;
-	if(0 != register_netdev(ccat_eth_dev)) {
+	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, 6); /* init MAC address */
+	netdev->netdev_ops = &ccat_eth_netdev_ops;
+	if(0 != register_netdev(netdev)) {
 		printk(KERN_INFO "%s: unable to register network device.\n", DRV_NAME);
 		ccat_eth_remove_one(pdev);
 		return -ENODEV;
 	}
-	netif_start_queue(ccat_eth_dev);
 
 	/* enable ethernet frame forwarding, too */
-	ccat_eth_xmit_raw(ccat_eth_dev, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
+	ccat_eth_xmit_raw(netdev, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
 
-	printk(KERN_INFO "%s: registered %s as network device.\n", DRV_NAME, ccat_eth_dev->name);
+	printk(KERN_INFO "%s: registered %s as network device.\n", DRV_NAME, netdev->name);
 #if TESTING_ENABLED
-	test_thread = kthread_run(run_test_thread, ccat_eth_dev, "%s_test", DRV_NAME);
+	test_thread = kthread_run(run_test_thread, netdev, "%s_test", DRV_NAME);
 #endif	
 	return 0;
 }
@@ -528,8 +538,8 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 			memcpy_fromio(&priv->info, addr, sizeof(priv->info));
 			ccat_eth_priv_init_mappings(priv);
 			ccat_print_function_info(priv);
-			status = ccat_eth_priv_init_dma(priv);	
-			priv->rx_thread = kthread_run(run_rx_thread, ccat_eth_dev, "%s_rx", DRV_NAME);
+			status = ccat_eth_priv_init_dma(priv);
+			priv->rx_thread = kthread_run(run_rx_thread, priv->netdev, "%s_rx", DRV_NAME);
 			break;
 		}
 	}
@@ -538,6 +548,10 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 
 static int ccat_eth_open(struct net_device *dev)
 {
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	netif_carrier_off(dev);
+	priv->poll_thread = kthread_run(run_poll_thread, dev, "%s_poll", DRV_NAME);
+	
 	printk(KERN_INFO "%s: %s() called.\n", DRV_NAME, __FUNCTION__);
 	//TODO
 	return 0;
@@ -563,8 +577,9 @@ static void ccat_eth_receive(struct net_device *const dev, const struct ccat_eth
 
 static void ccat_eth_remove_one(struct pci_dev *pdev)
 {
-	if(ccat_eth_dev) {
-		struct ccat_eth_priv *const priv = netdev_priv(ccat_eth_dev);
+	struct net_device *const netdev = pci_get_drvdata(pdev);
+	if(netdev) {
+		struct ccat_eth_priv *const priv = netdev_priv(netdev);
 
 #if TESTING_ENABLED
 		if(test_thread) {
@@ -577,10 +592,10 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 			kthread_stop(priv->rx_thread);
 			priv->rx_thread = NULL;
 		}
-		unregister_netdev(ccat_eth_dev);
+		unregister_netdev(netdev);
 		ccat_eth_remove_pci(priv);
-		free_netdev(ccat_eth_dev);
-		ccat_eth_dev = NULL;
+		free_netdev(netdev);
+		pci_disable_device (pdev);
 		printk(KERN_INFO "%s: cleanup done.\n\n", DRV_NAME);
 	}
 }
@@ -590,7 +605,6 @@ static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 	ccat_eth_priv_free_dma(priv);
 	ccat_bar_free(&priv->bar[2]);
 	ccat_bar_free(&priv->bar[0]);
-	pci_disable_device (priv->pdev);
 	priv->pdev = NULL;
 }
 
@@ -636,9 +650,35 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 
 static int ccat_eth_stop(struct net_device *dev)
 {
-	printk(KERN_INFO "%s: %s() called.\n", DRV_NAME, __FUNCTION__);
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	netif_stop_queue(dev);
+	if(priv->poll_thread) {
+		/* TODO care about smp context? */
+		kthread_stop(priv->poll_thread);
+		priv->poll_thread = NULL;
+	}
+	printk(KERN_INFO "%s: %s stopped.\n", DRV_NAME, dev->name);
 	//TODO
 	return 0;
+}
+
+static void ccat_eth_link_down(struct net_device *dev)
+{
+	// TODO clear dma queues
+	netif_stop_queue(dev);
+	netif_carrier_off(dev);
+	netdev_info(dev, "NIC Link is Down\n");
+}
+
+static void ccat_eth_link_up(struct net_device *const dev)
+{
+	netdev_info(dev, "NIC Link is Up\n");
+	/* TODO netdev_info(dev, "NIC Link is Up %u Mbps %s Duplex\n",
+			    speed == SPEED_100 ? 100 : 10,
+			    cmd.duplex == DUPLEX_FULL ? "Full" : "Half");*/
+	ccat_eth_xmit_raw(dev, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
+	netif_carrier_on(dev);
+	netif_start_queue(dev);
 }
 
 /**
@@ -657,6 +697,32 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data, si
 }
 
 static const unsigned int POLL_DELAY_TMMS = 0; /* time to sleep between rx/tx DMA polls */
+
+static void (* const link_changed_callback[])(struct net_device *) = {
+	ccat_eth_link_down,
+	ccat_eth_link_up
+};
+
+/**
+ * Since CCAT doesn't support interrupts until now, we have to poll
+ * some status bits to recognize thinks like link change etc.
+ */
+static int run_poll_thread(void *data)
+{
+	struct net_device *const dev = (struct net_device *)data;
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	size_t oldLink = 0;
+
+	while(!kthread_should_stop()) {
+		if(ccat_eth_priv_read_link_state(priv) != oldLink) {
+			oldLink = !oldLink;
+			link_changed_callback[oldLink](dev);
+		}
+		msleep(POLL_DELAY_TMMS);
+	}
+	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
+	return 0;
+}
 static int run_rx_thread(void *data)
 {
 	struct net_device *const dev = (struct net_device *)data;
