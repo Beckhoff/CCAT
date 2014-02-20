@@ -16,9 +16,6 @@
 
 #define TESTING_ENABLED 0
 #if TESTING_ENABLED
-static int run_test_thread(void *data);
-static struct task_struct *test_thread;
-
 static void print_mem(const char* p, size_t lines)
 {
 	printk(KERN_INFO "%s: mem at: %p\n", DRV_NAME, p);
@@ -489,9 +486,6 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	ccat_eth_xmit_raw(netdev, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
 
 	printk(KERN_INFO "%s: registered %s as network device.\n", DRV_NAME, netdev->name);
-#if TESTING_ENABLED
-	test_thread = kthread_run(run_test_thread, netdev, "%s_test", DRV_NAME);
-#endif	
 	return 0;
 }
 
@@ -589,13 +583,6 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 	struct net_device *const netdev = pci_get_drvdata(pdev);
 	if(netdev) {
 		struct ccat_eth_priv *const priv = netdev_priv(netdev);
-
-#if TESTING_ENABLED
-		if(test_thread) {
-			kthread_stop(test_thread);
-			test_thread = NULL;
-		}
-#endif
 		if(priv->rx_thread) {
 			/* TODO care about smp context? */
 			kthread_stop(priv->rx_thread);
@@ -724,12 +711,12 @@ static int run_poll_thread(void *data)
 {
 	struct net_device *const dev = (struct net_device *)data;
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	size_t oldLink = 0;
+	size_t link = 0;
 
 	while(!kthread_should_stop()) {
-		if(ccat_eth_priv_read_link_state(priv) != oldLink) {
-			oldLink = !oldLink;
-			link_changed_callback[oldLink](dev);
+		if(ccat_eth_priv_read_link_state(priv) != link) {
+			link = !link;
+			link_changed_callback[link](dev);
 		}
 		msleep(POLL_DELAY_TMMS);
 	}
@@ -762,35 +749,6 @@ static int run_rx_thread(void *data)
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
 	return 0;
 }
-
-#if TESTING_ENABLED
-static const UINT8 frameArpReq[] = {
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
-	0x08, 0x06, 0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01, 
-	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
-	0xc0, 0xa8, 0x01, 0x04, //sender ip Address 192.168.1.4
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-	0xc0, 0xa8, 0x01, 0x07, //target ip Address 192.168.1.7
-};
-
-static void test_tx(struct net_device *dev)
-{
-	unsigned char numFrames = 0;
-	do {
-		ccat_eth_xmit_raw(dev, frameArpReq, sizeof(frameArpReq));
-	} while(++numFrames <= 16);
-}
-
-static int run_test_thread(void *data)
-{
-	while(!kthread_should_stop()) {
-		msleep(0);
-		test_tx((struct net_device *)data);
-	}
-	return 0;
-}
-#endif /* #if TESTING_ENABLED */
 
 static struct pci_driver pci_driver = {
 	.name = DRV_NAME,
