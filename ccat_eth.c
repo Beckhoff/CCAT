@@ -508,9 +508,7 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 		ccat_eth_remove_one(priv->pdev);		
 		return -1;		
 	}
-	SET_NETDEV_DEV(netdev, &pdev->dev);
-	//netdev->features &= ~IFF_MULTICAST;
-	
+	SET_NETDEV_DEV(netdev, &pdev->dev);	
 
 	/* complete ethernet device initialization */
 	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, 6); /* init MAC address */
@@ -651,7 +649,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 {
 	static size_t next = 0;
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_frame *frame = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + next;
+	struct ccat_eth_frame *const frame = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt);
 	uint32_t addr_and_length;
 	
 	if(skb_is_nonlinear(skb)) {
@@ -668,33 +666,31 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 		return NETDEV_TX_OK;
 	}
 
-	if(!frame->sent) {
+	if(!frame[next].sent) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
 		netif_stop_queue(dev);
-		priv->next_tx_frame = frame;
+		priv->next_tx_frame = &frame[next];
 		wake_up_process(priv->tx_thread);
 		return NETDEV_TX_BUSY;
 	}
 
 	/* prepare frame in DMA memory */
-	memset(frame, 0x0, sizeof(*frame));
-	frame->sent = 0;
-	frame->length = skb->len;
-	memcpy(frame->data, skb->data, skb->len);
+	frame[next].sent = 0;
+	frame[next].length = skb->len;
+	memcpy(frame[next].data, skb->data, skb->len);
 	
 	dev_kfree_skb_any(skb); /* we don't need this anymore */
 
-	addr_and_length = 8 + ((void*)(frame) - priv->tx_fifo.dma.virt);
-	addr_and_length += ((frame->length + sizeof(CCAT_HEADER_TAG) + 8) / 8) << 24;
+	addr_and_length = 8 + (next * sizeof(*frame));
+	addr_and_length += ((frame[next].length + sizeof(CCAT_HEADER_TAG) + 8) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo); /* add to DMA fifo */
 	
-	atomic64_add(frame->length, &priv->tx_bytes);
+	atomic64_add(frame[next].length, &priv->tx_bytes); /* update stats */
 
 	next = (next + 1) % FIFO_LENGTH;
-	struct ccat_eth_frame *dummy = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + next;
-	if(!dummy->sent) {
+	if(!frame[next].sent) {
 		netif_stop_queue(dev);
-		priv->next_tx_frame = dummy;
+		priv->next_tx_frame = &frame[next];
 		wake_up_process(priv->tx_thread);
 	}
 	return NETDEV_TX_OK;
