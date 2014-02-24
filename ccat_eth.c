@@ -46,6 +46,7 @@ static const UINT8 frameForwardEthernetFrames[] = {
 
 static int run_poll_thread(void *data);
 static int run_rx_thread(void *data);
+static int run_tx_thread(void *data);
 
 struct ccat_eth_register {
 	void __iomem *mii;
@@ -190,11 +191,15 @@ struct ccat_eth_priv {
 	struct net_device *netdev;
 	struct task_struct *poll_thread; /* since there are no IRQs we pool things like "link state" */
 	struct task_struct *rx_thread; /* housekeeper for rx dma descriptors */
+	struct task_struct *tx_thread; /* housekeeper for tx dma descriptors */
+	struct ccat_eth_frame *next_tx_frame; /* next frame the tx_thread should check for availability*/
 	struct ccat_bar bar[3];
 	CCatInfoBlock info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
 	struct ccat_eth_dma_fifo tx_fifo;
+	atomic64_t rx_bytes;
+	atomic64_t tx_bytes;
 };
 
 typedef void (*fifo_add_function)(struct ccat_eth_frame *, struct ccat_eth_dma_fifo*);
@@ -446,7 +451,39 @@ static const struct net_device_ops ccat_eth_netdev_ops = {
 
 static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 {
-	//TODO
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	CCatMacRegs mac;
+	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
+	
+	storage->rx_packets = mac.rxFrameCnt;		/* total packets received	*/
+	storage->tx_packets = mac.txFrameCnt;		/* total packets transmitted	*/
+	storage->rx_bytes = atomic64_read(&priv->rx_bytes);		/* total bytes received 	*/
+	storage->tx_bytes = atomic64_read(&priv->tx_bytes);		/* total bytes transmitted	*/
+	//TODO __u64	rx_errors;		/* bad packets received		*/
+	//TODO __u64	tx_errors;		/* packet transmit problems	*/
+	//TODO __u64	rx_dropped;		/* no space in linux buffers	*/
+	//TODO __u64	tx_dropped;		/* no space available in linux	*/
+	//TODO __u64	multicast;		/* multicast packets received	*/
+	//TODO __u64	collisions;
+
+	/* detailed rx_errors: */
+	storage->rx_length_errors = mac.frameLenErrCnt;
+	storage->rx_over_errors = mac.dropFrameErrCnt;		/* receiver ring buff overflow	*/
+	storage->rx_crc_errors = mac.crcErrCnt;		/* recved pkt with crc error	*/
+	storage->rx_frame_errors = mac.rxErrCnt;	/* recv'd frame alignment error */
+	//TODO __u64	rx_fifo_errors;		/* recv'r fifo overrun		*/
+	//TODO __u64	rx_missed_errors;	/* receiver missed packet	*/
+
+	/* detailed tx_errors */
+	//TODO __u64	tx_aborted_errors;
+	//TODO __u64	tx_carrier_errors;
+	//TODO __u64	tx_fifo_errors;
+	//TODO __u64	tx_heartbeat_errors;
+	//TODO __u64	tx_window_errors;
+
+	/* for cslip etc */
+	//TODO __u64	rx_compressed;
+	//TODO __u64	tx_compressed;
 	return storage;
 }
 
@@ -472,6 +509,8 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 		return -1;		
 	}
 	SET_NETDEV_DEV(netdev, &pdev->dev);
+	//netdev->features &= ~IFF_MULTICAST;
+	
 
 	/* complete ethernet device initialization */
 	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, 6); /* init MAC address */
@@ -543,6 +582,7 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 			ccat_print_function_info(priv);
 			status = ccat_eth_priv_init_dma(priv);
 			priv->rx_thread = kthread_run(run_rx_thread, priv->netdev, "%s_rx", DRV_NAME);
+			priv->tx_thread = kthread_run(run_tx_thread, priv->netdev, "%s_tx", DRV_NAME);
 			break;
 		}
 	}
@@ -563,6 +603,7 @@ static int ccat_eth_open(struct net_device *dev)
 static const size_t CCATRXDESC_HEADER_LEN = 20;
 static void ccat_eth_receive(struct net_device *const dev, const struct ccat_eth_frame *const frame)
 {
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	const size_t len = frame->length - CCATRXDESC_HEADER_LEN;
 	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
 	if(!skb) {
@@ -575,6 +616,7 @@ static void ccat_eth_receive(struct net_device *const dev, const struct ccat_eth
 	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
+	atomic64_add(len, &priv->rx_bytes);
 	netif_rx(skb);
 }
 
@@ -584,11 +626,12 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 	if(netdev) {
 		struct ccat_eth_priv *const priv = netdev_priv(netdev);
 		if(priv->rx_thread) {
-			/* TODO care about smp context? */
 			kthread_stop(priv->rx_thread);
-			priv->rx_thread = NULL;
 		}
 		unregister_netdev(netdev);
+		if(priv->tx_thread) {
+			kthread_stop(priv->tx_thread);
+		}
 		ccat_eth_remove_pci(priv);
 		free_netdev(netdev);
 		pci_disable_device (pdev);
@@ -613,24 +656,29 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	
 	if(skb_is_nonlinear(skb)) {
 		printk(KERN_WARNING "%s: Non linear skb's are not supported and will be dropped.\n", DRV_NAME);
+		//TODO update stats
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
 	
 	if(skb->len > sizeof(frame->data)) {
 		printk(KERN_WARNING "%s: skb->len 0x%x exceeds our dma buffer 0x%x -> frame dropped.\n", DRV_NAME, skb->len, sizeof(frame->data));
+		//TODO update stats
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
 
 	if(!frame->sent) {
-		printk(KERN_INFO "%s: no more DMA descriptors available for TX.\n", DRV_NAME);
-		//TODO reenable if we have a cleanup thread netif_stop_queue(dev);
+		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
+		netif_stop_queue(dev);
+		priv->next_tx_frame = frame;
+		wake_up_process(priv->tx_thread);
 		return NETDEV_TX_BUSY;
 	}
 
 	/* prepare frame in DMA memory */
-	memset(frame, 0, sizeof(*frame));
+	memset(frame, 0x0, sizeof(*frame));
+	frame->sent = 0;
 	frame->length = skb->len;
 	memcpy(frame->data, skb->data, skb->len);
 	
@@ -639,8 +687,16 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	addr_and_length = 8 + ((void*)(frame) - priv->tx_fifo.dma.virt);
 	addr_and_length += ((frame->length + sizeof(CCAT_HEADER_TAG) + 8) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo); /* add to DMA fifo */
+	
+	atomic64_add(frame->length, &priv->tx_bytes);
 
 	next = (next + 1) % FIFO_LENGTH;
+	struct ccat_eth_frame *dummy = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + next;
+	if(!dummy->sent) {
+		netif_stop_queue(dev);
+		priv->next_tx_frame = dummy;
+		wake_up_process(priv->tx_thread);
+	}
 	return NETDEV_TX_OK;
 }
 
@@ -723,6 +779,7 @@ static int run_poll_thread(void *data)
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
 	return 0;
 }
+
 static int run_rx_thread(void *data)
 {
 	struct net_device *const dev = (struct net_device *)data;
@@ -746,6 +803,28 @@ static int run_rx_thread(void *data)
 			frame = priv->rx_fifo.dma.virt;
 		}
 	}
+	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
+	return 0;
+}
+
+static int run_tx_thread(void *data)
+{
+	struct net_device *const dev = (struct net_device *)data;
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+
+	set_current_state(TASK_INTERRUPTIBLE);
+	while(!kthread_should_stop()) {
+		const struct ccat_eth_frame *const frame = priv->next_tx_frame;
+		if(frame) {
+			while(!kthread_should_stop() && !frame->sent) {
+				msleep(POLL_DELAY_TMMS);
+			}
+		}
+		netif_wake_queue(dev);
+		schedule();
+		set_current_state(TASK_INTERRUPTIBLE);
+	}
+	set_current_state(TASK_RUNNING);
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
 	return 0;
 }
