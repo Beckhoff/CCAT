@@ -752,7 +752,8 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data, si
 	ccat_eth_start_xmit(skb, dev);
 }
 
-static const unsigned int POLL_DELAY_MICROS = 100; /* time to sleep between rx/tx DMA polls */
+static const unsigned int DMA_POLL_DELAY_USECS = 100; /* time to sleep between rx/tx DMA polls */
+static const unsigned int POLL_DELAY_USECS = 1000; /* time to sleep between link state polls */
 
 static void (* const link_changed_callback[])(struct net_device *) = {
 	ccat_eth_link_down,
@@ -774,7 +775,7 @@ static int run_poll_thread(void *data)
 			link = !link;
 			link_changed_callback[link](dev);
 		}
-		usleep_range(POLL_DELAY_MICROS, POLL_DELAY_MICROS);
+		usleep_range(POLL_DELAY_USECS, POLL_DELAY_USECS);
 	}
 	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
 	return 0;
@@ -790,7 +791,7 @@ static int run_rx_thread(void *data)
 	while(!kthread_should_stop()) {
 		/* wait until frame was used by DMA for Rx*/
 		while(!kthread_should_stop() && !frame->received) {
-			usleep_range(POLL_DELAY_MICROS, POLL_DELAY_MICROS);
+			usleep_range(DMA_POLL_DELAY_USECS, DMA_POLL_DELAY_USECS);
 		}
 
 		/* can be NULL, if we are asked to stop! */
@@ -817,7 +818,7 @@ static int run_tx_thread(void *data)
 		const struct ccat_eth_frame *const frame = priv->next_tx_frame;
 		if(frame) {
 			while(!kthread_should_stop() && !frame->sent) {
-				usleep_range(POLL_DELAY_MICROS, POLL_DELAY_MICROS);
+				usleep_range(DMA_POLL_DELAY_USECS, DMA_POLL_DELAY_USECS);
 			}
 		}
 		netif_wake_queue(dev);
