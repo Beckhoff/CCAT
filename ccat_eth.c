@@ -199,7 +199,9 @@ struct ccat_eth_priv {
 	struct ccat_eth_dma_fifo rx_fifo;
 	struct ccat_eth_dma_fifo tx_fifo;
 	atomic64_t rx_bytes;
+	atomic64_t rx_dropped;
 	atomic64_t tx_bytes;
+	atomic64_t tx_dropped;
 };
 
 typedef void (*fifo_add_function)(struct ccat_eth_frame *, struct ccat_eth_dma_fifo*);
@@ -459,10 +461,10 @@ static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, st
 	storage->tx_packets = mac.txFrameCnt;		/* total packets transmitted	*/
 	storage->rx_bytes = atomic64_read(&priv->rx_bytes);		/* total bytes received 	*/
 	storage->tx_bytes = atomic64_read(&priv->tx_bytes);		/* total bytes transmitted	*/
-	//TODO __u64	rx_errors;		/* bad packets received		*/
+	storage->rx_errors = mac.frameLenErrCnt + mac.dropFrameErrCnt + mac.crcErrCnt + mac.rxErrCnt;		/* bad packets received		*/
 	//TODO __u64	tx_errors;		/* packet transmit problems	*/
-	//TODO __u64	rx_dropped;		/* no space in linux buffers	*/
-	//TODO __u64	tx_dropped;		/* no space available in linux	*/
+	storage->rx_dropped = atomic64_read(&priv->rx_dropped);		/* no space in linux buffers	*/
+	storage->tx_dropped = atomic64_read(&priv->tx_dropped);		/* no space available in linux	*/
 	//TODO __u64	multicast;		/* multicast packets received	*/
 	//TODO __u64	collisions;
 
@@ -471,7 +473,7 @@ static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, st
 	storage->rx_over_errors = mac.dropFrameErrCnt;		/* receiver ring buff overflow	*/
 	storage->rx_crc_errors = mac.crcErrCnt;		/* recved pkt with crc error	*/
 	storage->rx_frame_errors = mac.rxErrCnt;	/* recv'd frame alignment error */
-	//TODO __u64	rx_fifo_errors;		/* recv'r fifo overrun		*/
+	storage->rx_fifo_errors = mac.dropFrameErrCnt;		/* recv'r fifo overrun		*/
 	//TODO __u64	rx_missed_errors;	/* receiver missed packet	*/
 
 	/* detailed tx_errors */
@@ -606,6 +608,7 @@ static void ccat_eth_receive(struct net_device *const dev, const struct ccat_eth
 	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
 	if(!skb) {
 		printk(KERN_INFO "%s: %s() out of memory :-(\n", DRV_NAME, __FUNCTION__);
+		atomic64_inc(&priv->rx_dropped);
 		return;
 	}
 	skb->dev = dev;
@@ -654,14 +657,14 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	
 	if(skb_is_nonlinear(skb)) {
 		printk(KERN_WARNING "%s: Non linear skb's are not supported and will be dropped.\n", DRV_NAME);
-		//TODO update stats
+		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
 	
 	if(skb->len > sizeof(frame->data)) {
 		printk(KERN_WARNING "%s: skb->len 0x%x exceeds our dma buffer 0x%x -> frame dropped.\n", DRV_NAME, skb->len, sizeof(frame->data));
-		//TODO update stats
+		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
@@ -688,6 +691,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	atomic64_add(frame[next].length, &priv->tx_bytes); /* update stats */
 
 	next = (next + 1) % FIFO_LENGTH;
+	/* stop queue if tx ring is full */
 	if(!frame[next].sent) {
 		netif_stop_queue(dev);
 		priv->next_tx_frame = &frame[next];
