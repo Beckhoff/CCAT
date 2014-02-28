@@ -6,7 +6,9 @@ all:
 
 install:
 	- sudo rmmod $(TARGET)
-	sudo insmod ./$(TARGET).ko
+	sudo cp ./$(TARGET).ko /lib/modules/$(shell uname -r)/extra/
+	sudo depmod -a
+	sudo modprobe $(TARGET)
 	env sleep 1
 	sudo ifconfig eth2 debug
 

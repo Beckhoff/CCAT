@@ -1,3 +1,23 @@
+/**
+    Network Driver for Beckhoff CCAT communication controller
+    Copyright (C) 2014  Beckhoff Automation GmbH
+    Author: Patrick Bruenn <p.bruenn@beckhoff.com>
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc.,
+    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+*/
+
 #include <asm/dma.h>
 #include <linux/etherdevice.h>
 #include <linux/init.h>
@@ -11,8 +31,14 @@
 
 #include "CCatDefinitions.h"
 
+#define DRV_NAME         "ccat_eth"
+#define DRV_VERSION      "0.1"
+#define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
-#define DRV_NAME "ccat_eth"
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
 
 #define TESTING_ENABLED 0
 #if TESTING_ENABLED
@@ -595,7 +621,6 @@ static int ccat_eth_open(struct net_device *dev)
 	netif_carrier_off(dev);
 	priv->poll_thread = kthread_run(run_poll_thread, dev, "%s_poll", DRV_NAME);
 	
-	printk(KERN_INFO "%s: %s() called.\n", DRV_NAME, __FUNCTION__);
 	//TODO
 	return 0;
 }
@@ -670,6 +695,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	}
 
 	if(!frame[next].sent) {
+		// TODO this is always called after module reload -> some cleanup code missing?
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
 		netif_stop_queue(dev);
 		priv->next_tx_frame = &frame[next];
@@ -789,7 +815,7 @@ static int run_rx_thread(void *data)
 	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
 
 	while(!kthread_should_stop()) {
-		/* wait until frame was used by DMA for Rx*/
+		/* wait until frame was used by DMA for Rx */
 		while(!kthread_should_stop() && !frame->received) {
 			usleep_range(DMA_POLL_DELAY_USECS, DMA_POLL_DELAY_USECS);
 		}
@@ -846,12 +872,9 @@ static int ccat_eth_init_module(void) {
 	BUILD_BUG_ON(sizeof(struct ccat_eth_frame) != sizeof(CCatRxDesc));
 	BUILD_BUG_ON(offsetof(struct ccat_eth_frame, data) != offsetof(CCatDmaTxFrame, data));
 	BUILD_BUG_ON(offsetof(struct ccat_eth_frame, data) != offsetof(CCatRxDesc, data));
+	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 	return pci_register_driver(&pci_driver);
 }
 
 module_exit(ccat_eth_exit_module);
 module_init(ccat_eth_init_module);
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
-MODULE_DESCRIPTION("Beckhoff CCAT ethernet driver");
-
