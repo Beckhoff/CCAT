@@ -40,8 +40,6 @@ MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 
-#define DO_JITTER_TEST 1
-
 #define TESTING_ENABLED 0
 #if TESTING_ENABLED
 static void print_mem(const unsigned char* p, size_t lines)
@@ -71,26 +69,6 @@ static const UINT8 frameForwardEthernetFrames[] = {
 	0x00, 0x00,
 	0x00, 0x00
 };
-
-#if DO_JITTER_TEST
-/**
- * EtherCAT frame to read systemtime from DC slave 0
- */
-static const UINT8 frameGetTime[] = {
-	0x01, 0x01, 0x05, 0x01, 0x00, 0x00,
-	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
-	0x88, 0xa4, //ethertype
-	0x10, 0x10, //length[11] r[1] type [4]
-	0x01,		//cmd
-	0xA,	//index
-	0x00, 0x00, // position
-	0x10, 0x09, // offset
-	0x04, 0x00, //len[11] flags[5]
-	0x00, 0x00, // irq
-	0x00, 0x00,0x00, 0x00, // payload
-	0x00, 0x00 //working counter
-};
-#endif /* #if DO_JITTER_TEST */
 
 static int run_poll_thread(void *data);
 static int run_rx_thread(void *data);
@@ -643,52 +621,9 @@ static int ccat_eth_open(struct net_device *dev)
 	return 0;
 }
 
-#pragma pack(1)
-struct ETHERCAT_FRAME {
-	uint8_t dst[6];
-	uint8_t src[6];
-	uint8_t ether_type[2];
-	uint16_t len :11;
-	uint16_t res : 1;
-	uint16_t ecat : 4;
-	uint8_t cmd;
-	uint8_t idx;
-	union {
-		struct {
-			uint16_t adp;
-			uint16_t ado;
-		};
-		uint32_t laddr;
-	};
-	uint16_t datalen :11;
-	uint16_t res_2: 4;
-	uint16_t next : 1;
-	uint16_t irq;	
-};
-#pragma pack(pop)
-
 static const size_t CCATRXDESC_HEADER_LEN = 20;
 static void ccat_eth_receive(struct net_device *const dev, const struct ccat_eth_frame *const frame)
 {
-#if DO_JITTER_TEST
-	// XXX
-	static int stop = 10;
-	static uint32_t lastTime = 0;
-	if(stop > 0) {
-		//--stop;
-		const struct ETHERCAT_FRAME *const pFrame = (const struct ETHERCAT_FRAME *const)frame->data;
-		const uint32_t *const pTime = (uint32_t*)(pFrame + 1);
-		const uint16_t *const pWC = (uint16_t*)(pTime + 1);
-		
-		if(pFrame->idx == 0xA && 1 == *pWC) {			
-			uint32_t timeDiff = *pTime - lastTime;
-			lastTime = *pTime;
-			printk(KERN_INFO "%s: time: 0x%x diff: %u ns\n", DRV_NAME, lastTime, timeDiff);
-			//printk(KERN_INFO "\n\nsizeof(datagram header): %u time: 0x%x wc: %u\n\n\n", sizeof(struct ETHERCAT_FRAME), ntohl(*pTime), wc);
-			//print_mem(frame->data, 3);
-		}
-	}
-#else
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	const size_t len = frame->length - CCATRXDESC_HEADER_LEN;
 	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
@@ -705,7 +640,6 @@ static void ccat_eth_receive(struct net_device *const dev, const struct ccat_eth
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
 	atomic64_add(len, &priv->rx_bytes);
 	netif_rx(skb);
-#endif
 }
 
 static void ccat_eth_remove_one(struct pci_dev *pdev)
@@ -820,29 +754,6 @@ static void ccat_eth_link_up(struct net_device *const dev)
 	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
 	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
 	ccat_eth_xmit_raw(dev, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
-
-#if DO_JITTER_TEST
-	{
-		#define NUM_TEST_FRAMES 32
-		int i; // XXX
-#if 0
-		struct sk_buff* buffer_cache[NUM_TEST_FRAMES];
-		for(i = 0; i < NUM_TEST_FRAMES; ++i) {
-			buffer_cache[i] = dev_alloc_skb(sizeof(frameGetTime));
-			buffer_cache[i]->dev = dev;
-			skb_copy_to_linear_data(buffer_cache[i], frameGetTime, sizeof(frameGetTime));
-			skb_put(buffer_cache[i], sizeof(frameGetTime));
-		}
-		for(i = 0; i < NUM_TEST_FRAMES; ++i) {
-			ccat_eth_start_xmit(buffer_cache[i], dev);
-		}
-#else
-		for(i = 0; i < NUM_TEST_FRAMES; ++i) {
-			ccat_eth_xmit_raw(dev, frameGetTime, sizeof(frameGetTime));
-		}
-#endif
-	}
-#endif
 	
 	netif_carrier_on(dev);
 	netif_start_queue(dev);
