@@ -44,11 +44,7 @@
 
 // Application parameters
 #define FREQUENCY 100
-#define PRIORITY 1
-
-// Optional features
-#define CONFIGURE_PDOS  1
-#define SDO_ACCESS      0
+#define PRIORITY 0
 
 /****************************************************************************/
 
@@ -71,12 +67,12 @@ static unsigned int user_alarms = 0;
 // process data
 static uint8_t *domain1_pd = NULL;
 
-#define BusCouplerPos  0, 2
-//#define DigOutSlavePos 0, 0
-#define AnaInSlavePos  0, 3
-#define AnaOutSlavePos 0, 4
+#define BusCouplerPos  0, 3
+#define DigOutSlavePos 0, 0
 
-#define Beckhoff_EK1100 0x00000002, 0x044c2c52
+//#define Beckhoff_EK1100 0x00000002, 0x044c2c52
+#define Beckhoff_EK1100 0x00000002, 0x04562c52
+#define Beckhoff_EL1008 0x00000002, 0x03f03052
 #define Beckhoff_EL2004 0x00000002, 0x07d43052
 #define Beckhoff_EL2008 0x00000002, 0x07d83052
 #define Beckhoff_EL2032 0x00000002, 0x07f03052
@@ -85,90 +81,41 @@ static uint8_t *domain1_pd = NULL;
 #define Beckhoff_EL4102 0x00000002, 0x10063052
 
 // offsets for PDO entries
-static unsigned int off_ana_in_status;
-static unsigned int off_ana_in_value;
-static unsigned int off_ana_out;
-static unsigned int off_dig_out;
+static unsigned int off_dig_in[1];
+static unsigned int off_dig_out[2];
 
-const static ec_pdo_entry_reg_t domain1_regs[] = {
-    //{AnaInSlavePos,  Beckhoff_EL3102, 0x3101, 1, &off_ana_in_status},
-    //{AnaInSlavePos,  Beckhoff_EL3102, 0x3101, 2, &off_ana_in_value},
-    //{AnaOutSlavePos, Beckhoff_EL4102, 0x3001, 1, &off_ana_out},
-    //{DigOutSlavePos, Beckhoff_EL2032, 0x3001, 1, &off_dig_out},
-    {0, 0, Beckhoff_EL2008, 0x3001, 1, &off_dig_out},
-    {0, 1, Beckhoff_EL2008, 0x3001, 1, &off_dig_out},
-    {}
-};
-
-static unsigned int counter = 0;
-static unsigned int blink = 0;
 
 /*****************************************************************************/
-
-#if CONFIGURE_PDOS
-
-// Analog in --------------------------
-
-static ec_pdo_entry_info_t el3102_pdo_entries[] = {
-    {0x3101, 1,  8}, // channel 1 status
-    {0x3101, 2, 16}, // channel 1 value
-    {0x3102, 1,  8}, // channel 2 status
-    {0x3102, 2, 16}, // channel 2 value
-    {0x6401, 1, 16}, // channel 1 value (alt.)
-    {0x6401, 2, 16}  // channel 2 value (alt.)
+// Digital in ------------------------
+static ec_pdo_entry_info_t el1008_channels[] = {
+    {0x6000, 1, 1},
+    {0x6010, 1, 1},
+    {0x6020, 1, 1},
+    {0x6030, 1, 1},
+    {0x6040, 1, 1},
+    {0x6050, 1, 1},
+    {0x6060, 1, 1},
+    {0x6070, 1, 1},
 };
 
-static ec_pdo_info_t el3102_pdos[] = {
-    {0x1A00, 2, el3102_pdo_entries},
-    {0x1A01, 2, el3102_pdo_entries + 2}
+static ec_pdo_info_t el1008_pdos[] = {
+    {0x1a00, 1, &el1008_channels[0]},
+    {0x1a01, 1, &el1008_channels[1]},
+    {0x1a02, 1, &el1008_channels[2]},
+    {0x1a03, 1, &el1008_channels[3]},
+    {0x1a04, 1, &el1008_channels[4]},
+    {0x1a05, 1, &el1008_channels[5]},
+    {0x1a06, 1, &el1008_channels[6]},
+    {0x1a07, 1, &el1008_channels[7]}
 };
 
-static ec_sync_info_t el3102_syncs[] = {
+static ec_sync_info_t el1008_syncs[] = {
     {2, EC_DIR_OUTPUT},
-    {3, EC_DIR_INPUT, 2, el3102_pdos},
-    {0xff}
-};
-
-// Analog out -------------------------
-
-static ec_pdo_entry_info_t el4102_pdo_entries[] = {
-    {0x3001, 1, 16}, // channel 1 value
-    {0x3002, 1, 16}, // channel 2 value
-};
-
-static ec_pdo_info_t el4102_pdos[] = {
-    {0x1600, 1, el4102_pdo_entries},
-    {0x1601, 1, el4102_pdo_entries + 1}
-};
-
-static ec_sync_info_t el4102_syncs[] = {
-    {2, EC_DIR_OUTPUT, 2, el4102_pdos},
-    {3, EC_DIR_INPUT},
+    {3, EC_DIR_INPUT, 8, el1008_pdos},
     {0xff}
 };
 
 // Digital out ------------------------
-
-static ec_pdo_entry_info_t el2004_channels[] = {
-    {0x3001, 1, 1}, // Value 1
-    {0x3001, 2, 1}, // Value 2
-    {0x3001, 3, 1}, // Value 3
-    {0x3001, 4, 1}  // Value 4
-};
-
-static ec_pdo_info_t el2004_pdos[] = {
-    {0x1600, 1, &el2004_channels[0]},
-    {0x1601, 1, &el2004_channels[1]},
-    {0x1602, 1, &el2004_channels[2]},
-    {0x1603, 1, &el2004_channels[3]}
-};
-
-static ec_sync_info_t el2004_syncs[] = {
-    {0, EC_DIR_OUTPUT, 4, el2004_pdos},
-    {1, EC_DIR_INPUT},
-    {0xff}
-};
-
 static ec_pdo_entry_info_t el2008_channels[] = {
     {0x7000, 1, 1},
     {0x7010, 1, 1},
@@ -196,13 +143,6 @@ static ec_sync_info_t el2008_syncs[] = {
     {1, EC_DIR_INPUT},
     {0xff}
 };
-#endif
-
-/*****************************************************************************/
-
-#if SDO_ACCESS
-static ec_sdo_request_t *sdo;
-#endif
 
 /*****************************************************************************/
 
@@ -257,74 +197,59 @@ void check_slave_config_states(void)
     sc_ana_in_state = s;
 }
 
-/*****************************************************************************/
-
-#if SDO_ACCESS
-void read_sdo(void)
-{
-    switch (ecrt_sdo_request_state(sdo)) {
-        case EC_REQUEST_UNUSED: // request was not used yet
-            ecrt_sdo_request_read(sdo); // trigger first read
-            break;
-        case EC_REQUEST_BUSY:
-            fprintf(stderr, "Still busy...\n");
-            break;
-        case EC_REQUEST_SUCCESS:
-            fprintf(stderr, "SDO value: 0x%04X\n",
-                    EC_READ_U16(ecrt_sdo_request_data(sdo)));
-            ecrt_sdo_request_read(sdo); // trigger next read
-            break;
-        case EC_REQUEST_ERROR:
-            fprintf(stderr, "Failed to read SDO!\n");
-            ecrt_sdo_request_read(sdo); // retry reading
-            break;
-    }
-}
-#endif
-
 /****************************************************************************/
 
 void cyclic_task()
 {
+    static unsigned int counter = 10;
+    static uint8_t outputValue = 0;
+    static int numAsyncCycles = 0;
+    uint8_t inputValue = 0;
+    static uint8_t error = 0;
+
     // receive process data
     ecrt_master_receive(master);
     ecrt_domain_process(domain1);
 
     // check process data state (optional)
     check_domain1_state();
+    
 
+	inputValue = EC_READ_U8(domain1_pd + off_dig_in[0]);
+	
+	if(inputValue != outputValue) {
+		numAsyncCycles++;
+	} else {
+		numAsyncCycles = 0;
+	}
+	
+	if(numAsyncCycles > 2) {
+		if(error != 0xff) {
+			error++;
+		}
+	}
+	
+	
     if (counter) {
         counter--;
-    } else { // do this at 1 Hz
-        counter = FREQUENCY;
+    } else {
+        counter = 5; //update delay
+        
+        
 
         // calculate new process data
-        blink = !blink;
+        outputValue++;
 
         // check for master state (optional)
         check_master_state();
 
         // check for islave configuration state(s) (optional)
         check_slave_config_states();
-
-#if SDO_ACCESS
-        // read process data SDO
-        read_sdo();
-#endif
-
     }
 
-#if 0
-    // read process data
-    printf("AnaIn: state %u value %u\n",
-            EC_READ_U8(domain1_pd + off_ana_in_status),
-            EC_READ_U16(domain1_pd + off_ana_in_value));
-#endif
-
-#if 1
     // write process data
-    EC_WRITE_U8(domain1_pd + off_dig_out, blink ? 0x06 : 0x09);
-#endif
+    EC_WRITE_U8(domain1_pd + off_dig_out[1], outputValue);
+    EC_WRITE_U8(domain1_pd + off_dig_out[0], error);
 
     // send process data
     ecrt_domain_queue(domain1);
@@ -343,11 +268,31 @@ void signal_handler(int signum) {
 
 /****************************************************************************/
 
+int Init_EL2008(uint16_t position)
+{
+    ec_slave_config_t *sc;
+    if (!(sc = ecrt_master_slave_config(master, 0, position, Beckhoff_EL2008))) {
+        fprintf(stderr, "Failed to get EL2008 configuration #%u.\n", position);
+        return -1;
+    }
+    if (ecrt_slave_config_pdos(sc, EC_END, el2008_syncs)) {
+        fprintf(stderr, "Failed to configure PDOs #%u.\n", position);
+        return -1;
+    }
+    if (0 > (off_dig_out[position] = ecrt_slave_config_reg_pdo_entry(sc, 0x7000, 1, domain1, NULL))) {
+		fprintf(stderr, "Failed to configure reg PDOs #%u.\n", position);
+		return -1;
+	}
+    fprintf(stderr, "EL2008 #%u configured offset: %d.\n", position, off_dig_out[position]);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     ec_slave_config_t *sc;
     struct sigaction sa;
     struct itimerval tv;
+    uint16_t i;
 
     master = ecrt_request_master(0);
     if (!master)
@@ -357,90 +302,33 @@ int main(int argc, char **argv)
     if (!domain1)
         return -1;
 
-    if (!(sc_ana_in = ecrt_master_slave_config(
-                    master, AnaInSlavePos, Beckhoff_EL3102))) {
-        fprintf(stderr, "Failed to get slave configuration.\n");
-        return -1;
-    }
-
-#if SDO_ACCESS
-    fprintf(stderr, "Creating SDO requests...\n");
-    if (!(sdo = ecrt_slave_config_create_sdo_request(sc_ana_in, 0x3102, 2, 2))) {
-        fprintf(stderr, "Failed to create SDO request.\n");
-        return -1;
-    }
-    ecrt_sdo_request_timeout(sdo, 500); // ms
-#endif
-
-#if CONFIGURE_PDOS
     printf("Configuring PDOs...\n");
-#if 0
-    if (ecrt_slave_config_pdos(sc_ana_in, EC_END, el3102_syncs)) {
+    if (!(sc_ana_in = ecrt_master_slave_config(master, 0, 2, Beckhoff_EL1008))) {
+        fprintf(stderr, "Failed to get digital in configuration.\n");
+        return -1;
+    }
+    if (ecrt_slave_config_pdos(sc_ana_in, EC_END, el1008_syncs)) {
         fprintf(stderr, "Failed to configure PDOs.\n");
         return -1;
     }
-
-    if (!(sc = ecrt_master_slave_config(
-                    master, AnaOutSlavePos, Beckhoff_EL4102))) {
-        fprintf(stderr, "Failed to get slave configuration.\n");
-        return -1;
-    }
-
-    if (ecrt_slave_config_pdos(sc, EC_END, el4102_syncs)) {
-        fprintf(stderr, "Failed to configure PDOs.\n");
-        return -1;
-    }
-
-    if (!(sc = ecrt_master_slave_config(
-                    master, DigOutSlavePos, Beckhoff_EL2032))) {
-        fprintf(stderr, "Failed to get slave configuration.\n");
-        return -1;
-    }
-
-    if (ecrt_slave_config_pdos(sc, EC_END, el2004_syncs)) {
-        fprintf(stderr, "Failed to configure PDOs.\n");
-        return -1;
-    }
-#endif
-#endif
-
-    if (!(sc = ecrt_master_slave_config(master, 0, 1, Beckhoff_EL2008))) {
-        fprintf(stderr, "Failed to get EL2008 configuration.\n");
-        return -1;
-    }
-
-    if (ecrt_slave_config_pdos(sc, EC_END, el2008_syncs)) {
-        fprintf(stderr, "Failed to configure PDOs.\n");
-        return -1;
-    }
-    fprintf(stderr, "first EL2008 configured.\n");
-    if (!(sc = ecrt_master_slave_config(master, 0, 0, Beckhoff_EL2008))) {
-        fprintf(stderr, "Failed to get EL2008 configuration.\n");
-        return -1;
-    }
-
-    if (ecrt_slave_config_pdos(sc, EC_END, el2008_syncs)) {
-        fprintf(stderr, "Failed to configure PDOs.\n");
-        return -1;
-    }
-    if (ecrt_slave_config_reg_pdo_entry(sc, 0x7000, 1, domain1, NULL)) {
+    if (0 > (off_dig_in[0] = ecrt_slave_config_reg_pdo_entry(sc_ana_in, 0x6000, 1, domain1, NULL))) {
 		fprintf(stderr, "Failed to configure reg PDOs.\n");
 		return -1;
 	}
-    fprintf(stderr, "second EL2008 configured.\n");
+    printf("EL1008 configured.\n");
+
+    for(i = 0; i < 2; ++i) {
+        if(Init_EL2008(i)) {
+            fprintf(stderr, "Failed to initialize EL2008 #%u.\n", i);
+            return -1;
+        }
+    }
 
     // Create configuration for bus coupler
     sc = ecrt_master_slave_config(master, BusCouplerPos, Beckhoff_EK1100);
     if (!sc)
         return -1;
     fprintf(stderr, "EK1100 configured.\n");
-
-#if 0
-    if (ecrt_domain_reg_pdo_entry_list(domain1, domain1_regs)) {
-        fprintf(stderr, "PDO entry registration failed!\n");
-        return -1;
-    }
-#endif
 
     printf("Activating master...\n");
     if (ecrt_master_activate(master))

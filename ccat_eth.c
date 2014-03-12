@@ -33,7 +33,7 @@
 
 #define DRV_NAME         "ccat_eth"
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.2-2" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.2-3" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
