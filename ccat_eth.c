@@ -33,7 +33,7 @@
 
 #define DRV_NAME         "ccat_eth"
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.2" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.2-2" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -219,7 +219,7 @@ struct ccat_eth_priv {
 	struct task_struct *poll_thread; /* since there are no IRQs we pool things like "link state" */
 	struct task_struct *rx_thread; /* housekeeper for rx dma descriptors */
 	struct task_struct *tx_thread; /* housekeeper for tx dma descriptors */
-	struct ccat_eth_frame *next_tx_frame; /* next frame the tx_thread should check for availability*/
+	const struct ccat_eth_frame *next_tx_frame; /* next frame the tx_thread should check for availability*/
 	struct ccat_bar bar[3];
 	CCatInfoBlock info;
 	struct ccat_eth_register reg;
@@ -244,6 +244,14 @@ static void ccat_eth_tx_fifo_add_free(struct ccat_eth_frame *frame, struct ccat_
 {
 	/* mark frame as ready to use for tx */
 	frame->sent = 1;
+}
+
+static void ccat_eth_tx_fifo_full(struct net_device *const dev, const struct ccat_eth_frame *const frame)
+{
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	netif_stop_queue(dev);
+	priv->next_tx_frame = frame;
+	wake_up_process(priv->tx_thread);
 }
 
 static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo* fifo)
@@ -692,9 +700,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 
 	if(!frame[next].sent) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
-		netif_stop_queue(dev);
-		priv->next_tx_frame = &frame[next];
-		wake_up_process(priv->tx_thread);
+		ccat_eth_tx_fifo_full(dev, &frame[next]);
 		return NETDEV_TX_BUSY;
 	}
 
@@ -714,9 +720,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	next = (next + 1) % FIFO_LENGTH;
 	/* stop queue if tx ring is full */
 	if(!frame[next].sent) {
-		netif_stop_queue(dev);
-		priv->next_tx_frame = &frame[next];
-		wake_up_process(priv->tx_thread);
+		ccat_eth_tx_fifo_full(dev, &frame[next]);
 	}
 	return NETDEV_TX_OK;
 }
