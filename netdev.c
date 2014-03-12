@@ -18,7 +18,6 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include <asm/dma.h>
 #include <linux/etherdevice.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -26,20 +25,10 @@
 #include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
-#include <linux/pci.h>
 #include <linux/spinlock.h>
 
-#include "CCatDefinitions.h"
-
-#define DRV_NAME         "ccat_eth"
-#define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.2-3" DRV_EXTRAVERSION
-#define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
-
-MODULE_DESCRIPTION(DRV_DESCRIPTION);
-MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
-MODULE_LICENSE("GPL");
-MODULE_VERSION(DRV_VERSION);
+#include "ccat.h"
+#include "print.h"
 
 #define TESTING_ENABLED 0
 #if TESTING_ENABLED
@@ -75,161 +64,7 @@ static int run_poll_thread(void *data);
 static int run_rx_thread(void *data);
 static int run_tx_thread(void *data);
 
-struct ccat_eth_register {
-	void __iomem *mii;
-	void __iomem *tx_fifo;
-	void __iomem *rx_fifo;
-	void __iomem *mac;
-	void __iomem *rx_mem;
-	void __iomem *tx_mem;
-	void __iomem *misc;
-};
-
-struct ccat_bar {
-	unsigned long start;
-	unsigned long end;
-	unsigned long len;
-	unsigned long flags;
-	void __iomem *ioaddr;
-};
-
-static void ccat_bar_free(struct ccat_bar *bar)
-{
-	const struct ccat_bar tmp = {
-		.start = bar->start,
-		.len = bar->len,
-		.ioaddr = bar->ioaddr
-	};
-	memset(bar, 0, sizeof(*bar));
-	iounmap(tmp.ioaddr);
-	release_mem_region(tmp.start, tmp.len);
-}
-
-static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pdev)
-{
-	struct resource *res;
-	bar->start = pci_resource_start(pdev, index);
-	bar->end = pci_resource_end(pdev, index);
-	bar->len = pci_resource_len(pdev, index);
-	bar->flags = pci_resource_flags(pdev, index);
-	if(!(IORESOURCE_MEM & bar->flags)) {
-		printk(KERN_INFO "%s: bar%d should be memory space, but it isn't -> abort CCAT initialization.\n", DRV_NAME, index);
-		return -EIO;
-	}
-	
-	res = request_mem_region(bar->start, bar->len, DRV_NAME);
-	if(!res) {
-		printk(KERN_INFO "%s: allocate mem_region failed.\n", DRV_NAME);
-		return -EIO;
-	}
-	printk(KERN_INFO "%s: bar%d at [%lx,%lx] len=%lu.\n", DRV_NAME, index, bar->start, bar->end, bar->len);
-	printk(KERN_INFO "%s: bar%d mem_region resource allocated as %p.\n", DRV_NAME, index, res);
-	
-	bar->ioaddr = ioremap(bar->start, bar->len);
-	if(!bar->ioaddr) {
-		printk(KERN_INFO "%s: bar%d ioremap failed.\n", DRV_NAME, index);
-		release_mem_region(bar->start, bar->len);
-		return -EIO;
-	}
-	printk(KERN_INFO "%s: bar%d I/O mem mapped to %p.\n", DRV_NAME, index, bar->ioaddr);
-	return 0;
-}
-
-struct ccat_dma {
-	dma_addr_t phys;
-	void *virt;
-	size_t size;
-	size_t channel;
-	struct device *dev;
-};
-
-static void ccat_dma_free(struct ccat_dma *const dma)
-{
-	const struct ccat_dma tmp = *dma;
-	free_dma(dma->channel);
-	memset(dma, 0, sizeof(*dma));	
-	dma_free_coherent(tmp.dev, tmp.size, tmp.virt, tmp.phys);
-}
-
-static int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iomem *const ioaddr, struct device *const dev)
-{
-	void *frame;
-	uint64_t addr;
-	uint32_t translateAddr;
-	uint32_t memTranslate;
-	uint32_t memSize;
-	uint32_t data = 0xffffffff;
-	uint32_t offset = (sizeof(uint64_t) * channel) + 0x1000;
-	
-	dma->channel = channel;
-	dma->dev = dev;
-	
-	/* calculate size and alignments */
-	iowrite32(data, ioaddr + offset);
-	wmb();
-	data = ioread32(ioaddr + offset);	
-	memTranslate = data & 0xfffffffc;
-	memSize = (~memTranslate) + 1;
-	dma->size = 2*memSize - PAGE_SIZE;
-	
-	dma->virt = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
-	if(!dma->virt || !dma->phys) {
-		printk(KERN_INFO "%s: init DMA%d memory failed.\n", DRV_NAME, channel);
-		return -1;
-	}
-	
-	if(request_dma(channel, DRV_NAME)) {
-		printk(KERN_INFO "%s: request dma channel %d failed\n", DRV_NAME, channel);
-		ccat_dma_free(dma);
-		return -1;
-	}
-	
-	translateAddr = (dma->phys + memSize - PAGE_SIZE) & memTranslate;
-	addr = translateAddr;
-	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
-	frame = dma->virt + translateAddr - dma->phys;
-	
-	printk(KERN_INFO "%s: DMA%d mem initialized\n virt:         0x%p\n phys:         0x%llx\n translated:   0x%llx\n pci addr:     0x%08x%x\n memTranslate: 0x%x\n size:         %u bytes.\n", DRV_NAME, channel, dma->virt, (uint64_t)(dma->phys), addr, ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset), memTranslate, dma->size);
-	return 0;
-}
-
 #define FIFO_LENGTH 64
-
-struct ccat_eth_frame {
-	uint32_t reserved1;
-	uint32_t received :1;
-	uint32_t reserved2    :31;
-	uint16_t length;
-	uint16_t reserved3;
-	uint32_t sent    :1;
-	uint32_t reserved4    :31;
-	uint64_t timestamp;
-	uint8_t data[0x800 - 3 * sizeof(uint64_t)];
-};
-
-struct ccat_eth_dma_fifo {
-	void (*add)(struct ccat_eth_frame *, struct ccat_eth_dma_fifo*);
-	void __iomem *reg;
-	struct ccat_dma dma;
-};
-
-struct ccat_eth_priv {
-	struct pci_dev *pdev;
-	struct net_device *netdev;
-	struct task_struct *poll_thread; /* since there are no IRQs we pool things like "link state" */
-	struct task_struct *rx_thread; /* housekeeper for rx dma descriptors */
-	struct task_struct *tx_thread; /* housekeeper for tx dma descriptors */
-	const struct ccat_eth_frame *next_tx_frame; /* next frame the tx_thread should check for availability*/
-	struct ccat_bar bar[3];
-	CCatInfoBlock info;
-	struct ccat_eth_register reg;
-	struct ccat_eth_dma_fifo rx_fifo;
-	struct ccat_eth_dma_fifo tx_fifo;
-	atomic64_t rx_bytes;
-	atomic64_t rx_dropped;
-	atomic64_t tx_bytes;
-	atomic64_t tx_dropped;
-};
 
 typedef void (*fifo_add_function)(struct ccat_eth_frame *, struct ccat_eth_dma_fifo*);
 
@@ -282,12 +117,6 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo* fifo, void __iomem *
 	return 0;
 }
 
-static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
-{
-	ccat_dma_free(&priv->tx_fifo.dma);
-	ccat_dma_free(&priv->rx_fifo.dma);
-}
-
 /**
  * Initalizes both (Rx/Tx) DMA fifo's and related management structures
  */
@@ -335,127 +164,6 @@ static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 inline static size_t ccat_eth_priv_read_link_state(const struct ccat_eth_priv *const priv)
 {
 	return (1 << 24) == (ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
-}
-
-static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
-	"not used",
-	"Informationblock",
-	"EtherCAT Slave",
-	"EtherCAT Master without DMA",
-	"Ethernet MAC without DMA",
-	"Ethernet Switch",
-	"Sercos III",
-	"Profibus",
-	"CAN Controller",
-	"KBUS Master",
-	"IP-Link Master (planned)",
-	"SPI Master",
-	"I²C",
-	"GPIO",
-	"Drive",
-	"CCAT Update",
-	"Systemtime",
-	"Interrupt Controller",
-	"EEPROM Controller",
-	"DMA Controller",
-	"EtherCAT Master with DMA",
-	"Ethernet MAC with DMA",
-	"SRAM Interface",
-	"Internal Copy block",
-	"unknown"
-};
-
-static void print_CCatDmaRxActBuf(const struct ccat_eth_priv *const priv)
-{
-	CCatDmaRxActBuf rx_fifo;
-	memcpy_fromio(&rx_fifo, priv->reg.rx_fifo, sizeof(rx_fifo));
-	printk(KERN_INFO "%s: Rx FIFO base address: %p\n", DRV_NAME, priv->reg.rx_fifo);
-	printk(KERN_INFO "%s:     Rx Frame Header start:   0x%08x\n", DRV_NAME, rx_fifo.startAddr);
-	printk(KERN_INFO "%s:     reserved:                0x%08x\n", DRV_NAME, rx_fifo.reserved1);
-	printk(KERN_INFO "%s:     Rx start address:        %s\n", DRV_NAME, rx_fifo.nextValid ? "valid" : "invalid");
-	printk(KERN_INFO "%s:     reserved:                0x%08x\n", DRV_NAME, rx_fifo.reserved2);
-	printk(KERN_INFO "%s:     FIFO level:              0x%08x\n", DRV_NAME, rx_fifo.FifoLevel);
-	printk(KERN_INFO "%s:     Buffer level:            0x%08x\n", DRV_NAME, rx_fifo.bufferLevel);
-	printk(KERN_INFO "%s:     next address:            0x%08x\n", DRV_NAME, rx_fifo.nextAddr);	
-}
-
-static void print_CCatDmaTxFifo(const struct ccat_eth_priv *const priv)
-{
-	CCatDmaTxFifo tx_fifo;
-	memcpy_fromio(&tx_fifo, priv->reg.tx_fifo, sizeof(tx_fifo));
-	printk(KERN_INFO "%s: Tx FIFO base address: %p\n", DRV_NAME, priv->reg.tx_fifo);
-	printk(KERN_INFO "%s:     Tx Frame Header start:   0x%08x\n", DRV_NAME, tx_fifo.startAddr);
-	printk(KERN_INFO "%s:     # 64 bit words:          %10d\n", DRV_NAME, tx_fifo.numQuadWords);
-	printk(KERN_INFO "%s:     reserved:                0x%08x\n", DRV_NAME, tx_fifo.reserved1);
-	printk(KERN_INFO "%s:     FIFO reset:              0x%08x\n", DRV_NAME, tx_fifo.fifoReset);
-}
-
-static void print_CCatInfoBlock(const CCatInfoBlock *pInfo, const void __iomem *const base_addr)
-{
-	const size_t index = min((int)pInfo->eCCatInfoType, CCATINFO_MAX);
-	printk(KERN_INFO "%s: %s\n", DRV_NAME, CCatFunctionTypes[index]);
-	printk(KERN_INFO "%s:     revision:     0x%x\n", DRV_NAME, pInfo->nRevision);
-	printk(KERN_INFO "%s:     RX channel:   %d\n", DRV_NAME, pInfo->rxDmaChn);
-	printk(KERN_INFO "%s:     TX channel:   %d\n", DRV_NAME, pInfo->txDmaChn);
-	printk(KERN_INFO "%s:     baseaddr:     0x%lx\n", DRV_NAME, pInfo->nAddr);
-	printk(KERN_INFO "%s:     size:         0x%lx\n", DRV_NAME, pInfo->nSize);
-	printk(KERN_INFO "%s:     subfunction:  %p\n", DRV_NAME, base_addr);
-}
-
-static void print_CCatMacRegs(const struct ccat_eth_priv *const priv)
-{
-	CCatMacRegs mac;
-	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
-	printk(KERN_INFO "%s: MAC base address: %p\n", DRV_NAME, priv->reg.mac);
-	printk(KERN_INFO "%s:     frame length error count:   %10d\n", DRV_NAME, mac.frameLenErrCnt);
-	printk(KERN_INFO "%s:     RX error count:             %10d\n", DRV_NAME, mac.rxErrCnt);
-	printk(KERN_INFO "%s:     CRC error count:            %10d\n", DRV_NAME, mac.crcErrCnt);
-	printk(KERN_INFO "%s:     Link lost error count:      %10d\n", DRV_NAME, mac.linkLostErrCnt);
-	printk(KERN_INFO "%s:     reserved:                   0x%08x\n", DRV_NAME, mac.reserved1);
-	printk(KERN_INFO "%s:     RX overflow count:          %10d\n", DRV_NAME, mac.dropFrameErrCnt);
-	printk(KERN_INFO "%s:     DMA overflow count:         %10d\n", DRV_NAME, mac.reserved2[0]);
-	//printk(KERN_INFO "%s:     reserverd:         %10d\n", DRV_NAME, mac.reserved2[1]);
-	printk(KERN_INFO "%s:     TX frame counter:           %10d\n", DRV_NAME, mac.txFrameCnt);
-	printk(KERN_INFO "%s:     RX frame counter:           %10d\n", DRV_NAME, mac.rxFrameCnt);
-	printk(KERN_INFO "%s:     TX-FIFO level:              0x%08x\n", DRV_NAME, mac.txFifoLevel);
-	printk(KERN_INFO "%s:     MII connection:             0x%08x\n", DRV_NAME, mac.miiConnected);
-}
-
-static void print_CCatMii(const struct ccat_eth_priv *const priv)
-{
-	CCatMii mii;
-	memcpy_fromio(&mii, priv->reg.mii, sizeof(mii));
-	printk(KERN_INFO "%s: MII base address: %p\n", DRV_NAME, priv->reg.mii);
-	printk(KERN_INFO "%s:     MII cycle:    %s\n", DRV_NAME, mii.startMiCycle ? "running" : "no cycle");
-	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, mii.reserved1);
-	printk(KERN_INFO "%s:     cmd valid:    %s\n", DRV_NAME, mii.cmdErr ? "no" : "yes");
-	printk(KERN_INFO "%s:     cmd:          0x%x\n", DRV_NAME, mii.cmd);
-	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, mii.reserved2);
-	printk(KERN_INFO "%s:     PHY addr:     0x%x\n", DRV_NAME, mii.phyAddr);
-	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, mii.reserved3);
-	printk(KERN_INFO "%s:     PHY reg:      0x%x\n", DRV_NAME, mii.phyReg);
-	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, mii.reserved4);
-	printk(KERN_INFO "%s:     PHY write:    0x%x\n", DRV_NAME, mii.phyWriteData);
-	printk(KERN_INFO "%s:     PHY read:     0x%x\n", DRV_NAME, mii.phyReadData);
-	printk(KERN_INFO "%s:     MAC addr:     %02x:%02x:%02x:%02x:%02x:%02x\n", DRV_NAME, mii.macAddr.b[0], mii.macAddr.b[1], mii.macAddr.b[2], mii.macAddr.b[3], mii.macAddr.b[4], mii.macAddr.b[5]);
-	printk(KERN_INFO "%s:     MAC filter:   %s\n", DRV_NAME, mii.macFilterEnabled ? "enabled" : "disabled");
-	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, mii.reserved6);
-	printk(KERN_INFO "%s:     Link State:   %s\n", DRV_NAME, mii.linkStatus ? "link" : "no link");
-	printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, mii.reserved7);
-	//printk(KERN_INFO "%s:     reserved:     0x%x\n", DRV_NAME, mii.reserved8);
-	//TODO add leds, systemtime insertion and interrupts
-}
-
-static void ccat_print_function_info(struct ccat_eth_priv* priv)
-{
-	print_CCatInfoBlock(&priv->info, priv->bar[0].ioaddr);
-	print_CCatMii(priv);
-	print_CCatDmaTxFifo(priv);
-	print_CCatDmaRxActBuf(priv);
-	print_CCatMacRegs(priv);
-	printk(KERN_INFO "%s:  RX window:    %p\n", DRV_NAME, priv->reg.rx_mem);
-	printk(KERN_INFO "%s:  TX memory:    %p\n", DRV_NAME, priv->reg.tx_mem);
-	printk(KERN_INFO "%s:  misc:         %p\n", DRV_NAME, priv->reg.misc);
 }
 
 #define PCI_DEVICE_ID_BECKHOFF_CCAT 0x5000
@@ -671,7 +379,8 @@ static void ccat_eth_remove_one(struct pci_dev *pdev)
 
 static void ccat_eth_remove_pci(struct ccat_eth_priv *priv)
 {
-	ccat_eth_priv_free_dma(priv);
+	ccat_dma_free(&priv->tx_fifo.dma);
+	ccat_dma_free(&priv->rx_fifo.dma);
 	ccat_bar_free(&priv->bar[2]);
 	ccat_bar_free(&priv->bar[0]);
 	priv->pdev = NULL;
