@@ -709,7 +709,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	frame[next].length = skb->len;
 	memcpy(frame[next].data, skb->data, skb->len);
 	
-	dev_kfree_skb_any(skb); /* we don't need this anymore */
+	dev_kfree_skb_any(skb);
 
 	addr_and_length = 8 + (next * sizeof(*frame));
 	addr_and_length += ((frame[next].length + sizeof(CCAT_HEADER_TAG) + 8) / 8) << 24;
@@ -758,7 +758,6 @@ static void ccat_eth_link_up(struct net_device *const dev)
 	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
 	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
 	ccat_eth_xmit_raw(dev, frameForwardEthernetFrames, sizeof(frameForwardEthernetFrames));
-	
 	netif_carrier_on(dev);
 	netif_start_queue(dev);
 }
