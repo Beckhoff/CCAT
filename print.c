@@ -24,6 +24,19 @@
 #include "ccat.h"
 #include "print.h"
 
+#define TESTING_ENABLED 0
+#if TESTING_ENABLED
+static void print_mem(const unsigned char* p, size_t lines)
+{
+	printk(KERN_INFO "%s: mem at: %p\n", DRV_NAME, p);
+	while(lines > 0) {
+		printk(KERN_INFO "%s: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x\n", DRV_NAME, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
+		p+=16;
+		--lines;
+	}
+}
+#endif /* #if TESTING_ENABLED */
+
 static const char* CCatFunctionTypes[CCATINFO_MAX+1] = {
 	"not used",
 	"Informationblock",
