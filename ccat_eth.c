@@ -32,7 +32,8 @@
 #include "CCatDefinitions.h"
 
 #define DRV_NAME         "ccat_eth"
-#define DRV_VERSION      "0.1"
+#define DRV_EXTRAVERSION ""
+#define DRV_VERSION      "0.2" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -113,13 +114,13 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pde
 	bar->flags = pci_resource_flags(pdev, index);
 	if(!(IORESOURCE_MEM & bar->flags)) {
 		printk(KERN_INFO "%s: bar%d should be memory space, but it isn't -> abort CCAT initialization.\n", DRV_NAME, index);
-		return -1;
+		return -EIO;
 	}
 	
 	res = request_mem_region(bar->start, bar->len, DRV_NAME);
 	if(!res) {
 		printk(KERN_INFO "%s: allocate mem_region failed.\n", DRV_NAME);
-		return -1;
+		return -EIO;
 	}
 	printk(KERN_INFO "%s: bar%d at [%lx,%lx] len=%lu.\n", DRV_NAME, index, bar->start, bar->end, bar->len);
 	printk(KERN_INFO "%s: bar%d mem_region resource allocated as %p.\n", DRV_NAME, index, res);
@@ -128,7 +129,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pde
 	if(!bar->ioaddr) {
 		printk(KERN_INFO "%s: bar%d ioremap failed.\n", DRV_NAME, index);
 		release_mem_region(bar->start, bar->len);
-		return -1;
+		return -EIO;
 	}
 	printk(KERN_INFO "%s: bar%d I/O mem mapped to %p.\n", DRV_NAME, index, bar->ioaddr);
 	return 0;
@@ -534,17 +535,19 @@ static int ccat_eth_init_one(struct pci_dev *pdev, const struct pci_device_id *i
 	if(ccat_eth_init_pci(priv)) {
 		printk(KERN_INFO "%s: CCAT pci init failed.\n", DRV_NAME);
 		ccat_eth_remove_one(priv->pdev);		
-		return -1;		
+		return -EIO;
 	}
-	SET_NETDEV_DEV(netdev, &pdev->dev);	
+	SET_NETDEV_DEV(netdev, &pdev->dev);
 
 	/* complete ethernet device initialization */
 	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, 6); /* init MAC address */
 	netdev->netdev_ops = &ccat_eth_netdev_ops;
+	priv->rx_thread = kthread_run(run_rx_thread, priv->netdev, "%s_rx", DRV_NAME);
+	priv->tx_thread = kthread_run(run_tx_thread, priv->netdev, "%s_tx", DRV_NAME);
 	if(0 != register_netdev(netdev)) {
 		printk(KERN_INFO "%s: unable to register network device.\n", DRV_NAME);
 		ccat_eth_remove_one(pdev);
-		return -ENODEV;
+		return -EINVAL;
 	}
 	printk(KERN_INFO "%s: registered %s as network device.\n", DRV_NAME, netdev->name);
 	return 0;
@@ -565,7 +568,6 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 	}
 	
 	pci_set_master(pdev);
-	
 	status = pci_read_config_byte(pdev, PCI_REVISION_ID, &revision);
 	if(status) {
 		printk(KERN_INFO "%s: read CCAT pci revision failed with %d\n", DRV_NAME, status);
@@ -586,12 +588,12 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 	
 	if(ccat_bar_init(&priv->bar[0], 0, priv->pdev)) {
 		printk(KERN_WARNING "%s: initialization of bar0 failed.\n", DRV_NAME);
-		return -1;
+		return -EIO;
 	}
 	
 	if(ccat_bar_init(&priv->bar[2], 2, priv->pdev)) {
 		printk(KERN_WARNING "%s: initialization of bar2 failed.\n", DRV_NAME);
-		return -1;
+		return -EIO;
 	}
 	
 	num_functions = ioread8(priv->bar[0].ioaddr + 4); /* jump to CCatInfoBlock.nMaxEntries */
@@ -603,8 +605,6 @@ static int ccat_eth_init_pci(struct ccat_eth_priv *priv)
 			ccat_eth_priv_init_mappings(priv);
 			ccat_print_function_info(priv);
 			status = ccat_eth_priv_init_dma(priv);
-			priv->rx_thread = kthread_run(run_rx_thread, priv->netdev, "%s_rx", DRV_NAME);
-			priv->tx_thread = kthread_run(run_tx_thread, priv->netdev, "%s_tx", DRV_NAME);
 			break;
 		}
 	}
@@ -784,7 +784,7 @@ static void (* const link_changed_callback[])(struct net_device *) = {
 
 /**
  * Since CCAT doesn't support interrupts until now, we have to poll
- * some status bits to recognize thinks like link change etc.
+ * some status bits to recognize things like link change etc.
  */
 static int run_poll_thread(void *data)
 {
@@ -830,6 +830,10 @@ static int run_rx_thread(void *data)
 	return 0;
 }
 
+/**
+ * Polling of tx dma descriptors in ethernet operating mode
+ * Disabled in EtherCAT operating mode
+ */
 static int run_tx_thread(void *data)
 {
 	struct net_device *const dev = (struct net_device *)data;
