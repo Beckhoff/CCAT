@@ -37,8 +37,6 @@ struct ccat_bar {
 	unsigned long flags;
 	void __iomem *ioaddr;
 };
-extern void ccat_bar_free(struct ccat_bar *bar);
-extern int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pdev);
 
 struct ccat_dma {
 	dma_addr_t phys;
@@ -47,7 +45,6 @@ struct ccat_dma {
 	size_t channel;
 	struct device *dev;
 };
-extern void ccat_dma_free(struct ccat_dma *const dma);
 extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel, void __iomem *const ioaddr, struct device *const dev);
 
 struct ccat_eth_frame {

@@ -25,7 +25,7 @@
 #include "ccat.h"
 #include "netdev.h"
 
-void ccat_bar_free(struct ccat_bar *bar)
+static void ccat_bar_free(struct ccat_bar *bar)
 {
 	const struct ccat_bar tmp = {
 		.start = bar->start,
@@ -37,7 +37,7 @@ void ccat_bar_free(struct ccat_bar *bar)
 	release_mem_region(tmp.start, tmp.len);
 }
 
-int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pdev)
+static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pdev)
 {
 	struct resource *res;
 	bar->start = pci_resource_start(pdev, index);
@@ -67,7 +67,7 @@ int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pdev)
 	return 0;
 }
 
-void ccat_dma_free(struct ccat_dma *const dma)
+static void ccat_dma_free(struct ccat_dma *const dma)
 {
 	const struct ccat_dma tmp = *dma;
 	free_dma(dma->channel);
