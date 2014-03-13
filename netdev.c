@@ -307,7 +307,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	if (skb->len > sizeof(frame->data)) {
 		pr_warn("skb.len %llu exceeds dma buffer %llu -> drop frame.\n",
-			(uint64_t)skb->len, (uint64_t)sizeof(frame->data));
+			(uint64_t) skb->len, (uint64_t) sizeof(frame->data));
 		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
