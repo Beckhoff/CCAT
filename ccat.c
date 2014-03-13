@@ -48,7 +48,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pde
 		printk(KERN_INFO "%s: bar%d should be memory space, but it isn't -> abort CCAT initialization.\n", DRV_NAME, index);
 		return -EIO;
 	}
-	
+
 	res = request_mem_region(bar->start, bar->len, DRV_NAME);
 	if(!res) {
 		printk(KERN_INFO "%s: allocate mem_region failed.\n", DRV_NAME);
@@ -56,7 +56,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index, struct pci_dev *pde
 	}
 	printk(KERN_INFO "%s: bar%d at [%lx,%lx] len=%lu.\n", DRV_NAME, index, bar->start, bar->end, bar->len);
 	printk(KERN_INFO "%s: bar%d mem_region resource allocated as %p.\n", DRV_NAME, index, res);
-	
+
 	bar->ioaddr = ioremap(bar->start, bar->len);
 	if(!bar->ioaddr) {
 		printk(KERN_INFO "%s: bar%d ioremap failed.\n", DRV_NAME, index);
@@ -71,7 +71,7 @@ static void ccat_dma_free(struct ccat_dma *const dma)
 {
 	const struct ccat_dma tmp = *dma;
 	free_dma(dma->channel);
-	memset(dma, 0, sizeof(*dma));	
+	memset(dma, 0, sizeof(*dma));
 	dma_free_coherent(tmp.dev, tmp.size, tmp.virt, tmp.phys);
 }
 

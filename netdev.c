@@ -36,10 +36,10 @@
  */
 static const UINT8 frameForwardEthernetFrames[] = {
 	0x01, 0x01, 0x05, 0x01, 0x00, 0x00,
-	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce, 
+	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce,
 	0x88, 0xa4, 0x0e, 0x10,
-	0x08,		
-	0x00,	
+	0x08,
+	0x00,
 	0x00, 0x00,
 	0x00, 0x01,
 	0x02, 0x00,
@@ -101,7 +101,7 @@ static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo* fifo)
 	/* reset hw fifo */
 	iowrite32(0, fifo->reg + 0x8);
 	wmb();
-	
+
 	if(fifo->add) {
 		while(frame < end) {
 			fifo->add(frame, fifo);
@@ -130,12 +130,12 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		printk(KERN_INFO "%s: init Rx DMA fifo failed.\n", DRV_NAME);
 		return -1;
 	}
-	
+
 	if(ccat_eth_dma_fifo_init(&priv->tx_fifo, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free, priv->info.txDmaChn, priv)) {
 		printk(KERN_INFO "%s: init Tx DMA fifo failed.\n", DRV_NAME);
 		return -1;
 	}
-	
+
 	/* disable MAC filter */
 	iowrite8(0, priv->reg.mii + 0x8 + 6);
 	wmb();
@@ -151,7 +151,6 @@ static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 	CCatInfoBlockOffs offsets;
 	void __iomem *const func_base = priv->bar[0].ioaddr + priv->info.nAddr;
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
-	
 	priv->reg.mii = func_base + offsets.nMMIOffs;
 	priv->reg.tx_fifo = func_base + offsets.nTxFifoOffs;
 	priv->reg.rx_fifo = func_base + offsets.nTxFifoOffs + 0x10;
@@ -175,7 +174,6 @@ static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, st
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	CCatMacRegs mac;
 	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
-	
 	storage->rx_packets = mac.rxFrameCnt;		/* total packets received	*/
 	storage->tx_packets = mac.txFrameCnt;		/* total packets transmitted	*/
 	storage->rx_bytes = atomic64_read(&priv->rx_bytes);		/* total bytes received 	*/
@@ -231,7 +229,7 @@ static int ccat_eth_open(struct net_device *dev)
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	netif_carrier_off(dev);
 	priv->poll_thread = kthread_run(run_poll_thread, dev, "%s_poll", DRV_NAME);
-	
+
 	//TODO
 	return 0;
 }
@@ -275,14 +273,14 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	struct ccat_eth_frame *const frame = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt);
 	uint32_t addr_and_length;
-	
+
 	if(skb_is_nonlinear(skb)) {
 		printk(KERN_WARNING "%s: Non linear skb's are not supported and will be dropped.\n", DRV_NAME);
 		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
-	
+
 	if(skb->len > sizeof(frame->data)) {
 		printk(KERN_WARNING "%s: skb->len 0x%x exceeds our dma buffer 0x%x -> frame dropped.\n", DRV_NAME, skb->len, sizeof(frame->data));
 		atomic64_inc(&priv->tx_dropped);
@@ -300,13 +298,12 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *d
 	frame[next].sent = 0;
 	frame[next].length = skb->len;
 	memcpy(frame[next].data, skb->data, skb->len);
-	
+
 	dev_kfree_skb_any(skb);
 
 	addr_and_length = 8 + (next * sizeof(*frame));
 	addr_and_length += ((frame[next].length + sizeof(CCAT_HEADER_TAG) + 8) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo); /* add to DMA fifo */
-	
 	atomic64_add(frame[next].length, &priv->tx_bytes); /* update stats */
 
 	next = (next + 1) % FIFO_LENGTH;
