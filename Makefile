@@ -13,6 +13,9 @@ install:
 	env sleep 1
 	sudo ifconfig eth2 debug
 
+indent: ccat.c netdev.c print.c
+	./Lindent $?
+
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 	rm -f *.c~ *.h~
