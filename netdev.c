@@ -48,11 +48,27 @@ static const UINT8 frameForwardEthernetFrames[] = {
 	0x00, 0x00
 };
 
+
+#define FIFO_LENGTH 64
+static const unsigned int DMA_POLL_DELAY_USECS = 100; /* time to sleep between rx/tx DMA polls */
+static const unsigned int POLL_DELAY_USECS = 1000; /* time to sleep between link state polls */
+
 static int run_poll_thread(void *data);
 static int run_rx_thread(void *data);
 static int run_tx_thread(void *data);
 
-#define FIFO_LENGTH 64
+static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage);
+static int ccat_eth_open(struct net_device *dev);
+static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *dev);
+static int ccat_eth_stop(struct net_device *dev);
+static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data, size_t len);
+
+static const struct net_device_ops ccat_eth_netdev_ops = {
+	.ndo_get_stats64 = ccat_eth_get_stats64,
+	.ndo_open = ccat_eth_open,
+	.ndo_start_xmit = ccat_eth_start_xmit,
+	.ndo_stop = ccat_eth_stop,
+};
 
 typedef void (*fifo_add_function)(struct ccat_eth_frame *, struct ccat_eth_dma_fifo*);
 
@@ -153,21 +169,6 @@ inline static size_t ccat_eth_priv_read_link_state(const struct ccat_eth_priv *c
 {
 	return (1 << 24) == (ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
 }
-
-
-static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage);
-static int ccat_eth_open(struct net_device *dev);
-static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb, struct net_device *dev);
-static int ccat_eth_stop(struct net_device *dev);
-static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data, size_t len);
-
-
-static const struct net_device_ops ccat_eth_netdev_ops = {
-	.ndo_get_stats64 = ccat_eth_get_stats64,
-	.ndo_open = ccat_eth_open,
-	.ndo_start_xmit = ccat_eth_start_xmit,
-	.ndo_stop = ccat_eth_stop,
-};
 
 static struct rtnl_link_stats64* ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 {
@@ -368,14 +369,6 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data, si
 	ccat_eth_start_xmit(skb, dev);
 }
 
-static const unsigned int DMA_POLL_DELAY_USECS = 100; /* time to sleep between rx/tx DMA polls */
-static const unsigned int POLL_DELAY_USECS = 1000; /* time to sleep between link state polls */
-
-static void (* const link_changed_callback[])(struct net_device *) = {
-	ccat_eth_link_down,
-	ccat_eth_link_up
-};
-
 /**
  * Since CCAT doesn't support interrupts until now, we have to poll
  * some status bits to recognize things like link change etc.
@@ -389,7 +382,7 @@ static int run_poll_thread(void *data)
 	while(!kthread_should_stop()) {
 		if(ccat_eth_priv_read_link_state(priv) != link) {
 			link = !link;
-			link_changed_callback[link](dev);
+			link ? ccat_eth_link_up(dev) : ccat_eth_link_down(dev);
 		}
 		usleep_range(POLL_DELAY_USECS, POLL_DELAY_USECS);
 	}
