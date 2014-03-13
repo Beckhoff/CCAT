@@ -142,8 +142,8 @@ static void print_CCatMii(const struct ccat_eth_priv *const priv)
 	pr_info("     PHY write:    0x%x\n", mii.phyWriteData);
 	pr_info("     PHY read:     0x%x\n", mii.phyReadData);
 	pr_info("     MAC addr:     %02x:%02x:%02x:%02x:%02x:%02x\n",
-	       mii.macAddr.b[0], mii.macAddr.b[1], mii.macAddr.b[2],
-	       mii.macAddr.b[3], mii.macAddr.b[4], mii.macAddr.b[5]);
+		mii.macAddr.b[0], mii.macAddr.b[1], mii.macAddr.b[2],
+		mii.macAddr.b[3], mii.macAddr.b[4], mii.macAddr.b[5]);
 	pr_info("     MAC filter enable:   %s\n",
 		mii.macFilterEnabled ? "enabled" : "disabled");
 	pr_info("     reserved:     0x%x\n", mii.reserved6);
