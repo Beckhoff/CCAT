@@ -20,5 +20,5 @@
 
 #ifndef _PRINT_H_
 #define _PRINT_H_
-extern void ccat_print_function_info(struct ccat_eth_priv* priv);
+extern void ccat_print_function_info(struct ccat_eth_priv *priv);
 #endif /* #ifndef _PRINT_H_ */

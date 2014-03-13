@@ -13,7 +13,7 @@ install:
 	env sleep 1
 	sudo ifconfig eth2 debug
 
-indent: ccat.c netdev.c print.c
+indent: ccat.c ccat.h netdev.c netdev.h print.c print.h
 	./Lindent $?
 
 clean:
