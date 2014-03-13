@@ -46,31 +46,25 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 	bar->len = pci_resource_len(pdev, index);
 	bar->flags = pci_resource_flags(pdev, index);
 	if (!(IORESOURCE_MEM & bar->flags)) {
-		printk(KERN_INFO
-		       "%s: bar%d should be memory space, but it isn't -> abort CCAT initialization.\n",
-		       DRV_NAME, index);
+		pr_info("bar%d is no mem_region -> abort.\n", index);
 		return -EIO;
 	}
 
 	res = request_mem_region(bar->start, bar->len, DRV_NAME);
 	if (!res) {
-		printk(KERN_INFO "%s: allocate mem_region failed.\n", DRV_NAME);
+		pr_info("allocate mem_region failed.\n");
 		return -EIO;
 	}
-	printk(KERN_INFO "%s: bar%d at [%lx,%lx] len=%lu.\n", DRV_NAME, index,
-	       bar->start, bar->end, bar->len);
-	printk(KERN_INFO "%s: bar%d mem_region resource allocated as %p.\n",
-	       DRV_NAME, index, res);
+	pr_info("bar%d at [%lx,%lx] len=%lu allocated as %p.\n", index,
+		bar->start, bar->end, bar->len, res);
 
 	bar->ioaddr = ioremap(bar->start, bar->len);
 	if (!bar->ioaddr) {
-		printk(KERN_INFO "%s: bar%d ioremap failed.\n", DRV_NAME,
-		       index);
+		pr_info("bar%d ioremap failed.\n", index);
 		release_mem_region(bar->start, bar->len);
 		return -EIO;
 	}
-	printk(KERN_INFO "%s: bar%d I/O mem mapped to %p.\n", DRV_NAME, index,
-	       bar->ioaddr);
+	pr_info("bar%d I/O mem mapped to %p.\n", index, bar->ioaddr);
 	return 0;
 }
 
@@ -105,14 +99,12 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	dma->size = 2 * memSize - PAGE_SIZE;
 	dma->virt = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
 	if (!dma->virt || !dma->phys) {
-		printk(KERN_INFO "%s: init DMA%d memory failed.\n", DRV_NAME,
-		       channel);
+		pr_info("init DMA%d memory failed.\n", channel);
 		return -1;
 	}
 
 	if (request_dma(channel, DRV_NAME)) {
-		printk(KERN_INFO "%s: request dma channel %d failed\n",
-		       DRV_NAME, channel);
+		pr_info("request dma channel %d failed\n", channel);
 		ccat_dma_free(dma);
 		return -1;
 	}
@@ -121,11 +113,11 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	addr = translateAddr;
 	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
 	frame = dma->virt + translateAddr - dma->phys;
-	printk(KERN_INFO
-	       "%s: DMA%d mem initialized\n virt:         0x%p\n phys:         0x%llx\n translated:   0x%llx\n pci addr:     0x%08x%x\n memTranslate: 0x%x\n size:         %u bytes.\n",
-	       DRV_NAME, channel, dma->virt, (uint64_t) (dma->phys), addr,
-	       ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset),
-	       memTranslate, dma->size);
+	pr_info
+	    ("DMA%d mem initialized\n virt:         0x%p\n phys:         0x%llx\n translated:   0x%llx\n pci addr:     0x%08x%x\n memTranslate: 0x%x\n size:         %u bytes.\n",
+	     channel, dma->virt, (uint64_t) (dma->phys), addr,
+	     ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset),
+	     memTranslate, dma->size);
 	return 0;
 }
 
@@ -147,7 +139,7 @@ static void ccat_remove_one(struct pci_dev *pdev)
 		ccat_remove_pci(priv);
 		free_netdev(netdev);
 		pci_disable_device(pdev);
-		printk(KERN_INFO "%s: cleanup done.\n\n", DRV_NAME);
+		pr_info("cleanup done.\n\n");
 	}
 }
 
@@ -194,7 +186,8 @@ static int ccat_init_pci(struct ccat_eth_priv *priv)
 		return -EIO;
 	}
 
-	num_functions = ioread8(priv->bar[0].ioaddr + 4);	/* jump to CCatInfoBlock.nMaxEntries */
+	/* read CCatInfoBlock.nMaxEntries from ccat */
+	num_functions = ioread8(priv->bar[0].ioaddr + 4);
 
 	/* find CCATINFO_ETHERCAT_MASTER_DMA function */
 	for (i = 0, addr = priv->bar[0].ioaddr; i < num_functions;
