@@ -49,8 +49,8 @@ static const UINT8 frameForwardEthernetFrames[] = {
 };
 
 #define FIFO_LENGTH 64
-static const unsigned int DMA_POLL_DELAY_USECS = 100;	/* time to sleep between rx/tx DMA polls */
-static const unsigned int POLL_DELAY_USECS = 1000;	/* time to sleep between link state polls */
+#define DMA_POLL_DELAY_RANGE_USECS 100, 100	/* time to sleep between rx/tx DMA polls */
+#define POLL_DELAY_RANGE_USECS 500, 1000	/* time to sleep between link state polls */
 
 static int run_poll_thread(void *data);
 static int run_rx_thread(void *data);
@@ -142,14 +142,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	if (ccat_eth_dma_fifo_init
 	    (&priv->rx_fifo, priv->reg.rx_fifo, ccat_eth_rx_fifo_add,
 	     priv->info.rxDmaChn, priv)) {
-		printk(KERN_INFO "%s: init Rx DMA fifo failed.\n", DRV_NAME);
+		pr_warn("init Rx DMA fifo failed.\n");
 		return -1;
 	}
 
 	if (ccat_eth_dma_fifo_init
 	    (&priv->tx_fifo, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free,
 	     priv->info.txDmaChn, priv)) {
-		printk(KERN_INFO "%s: init Tx DMA fifo failed.\n", DRV_NAME);
+		pr_warn("init Tx DMA fifo failed.\n");
 		return -1;
 	}
 
@@ -239,10 +239,8 @@ int ccat_eth_init_netdev(struct net_device *dev)
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	memcpy_fromio(dev->dev_addr, priv->reg.mii + 8, 6);	/* init MAC address */
 	dev->netdev_ops = &ccat_eth_netdev_ops;
-	priv->rx_thread =
-	    kthread_run(run_rx_thread, priv->netdev, "%s_rx", DRV_NAME);
-	priv->tx_thread =
-	    kthread_run(run_tx_thread, priv->netdev, "%s_tx", DRV_NAME);
+	priv->rx_thread = kthread_run(run_rx_thread, dev, "%s_rx", DRV_NAME);
+	priv->tx_thread = kthread_run(run_tx_thread, dev, "%s_tx", DRV_NAME);
 	return register_netdev(dev);
 }
 
@@ -265,8 +263,7 @@ static void ccat_eth_receive(struct net_device *const dev,
 	const size_t len = frame->length - CCATRXDESC_HEADER_LEN;
 	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
 	if (!skb) {
-		printk(KERN_INFO "%s: %s() out of memory :-(\n", DRV_NAME,
-		       __FUNCTION__);
+		pr_info("%s() out of memory :-(\n", __FUNCTION__);
 		atomic64_inc(&priv->rx_dropped);
 		return;
 	}
@@ -302,18 +299,15 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	uint32_t addr_and_length;
 
 	if (skb_is_nonlinear(skb)) {
-		printk(KERN_WARNING
-		       "%s: Non linear skb's are not supported and will be dropped.\n",
-		       DRV_NAME);
+		pr_warn("Non linear skb not supported -> drop frame.\n");
 		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
 
 	if (skb->len > sizeof(frame->data)) {
-		printk(KERN_WARNING
-		       "%s: skb->len 0x%x exceeds our dma buffer 0x%x -> frame dropped.\n",
-		       DRV_NAME, skb->len, sizeof(frame->data));
+		pr_warn("skb.len %llu exceeds dma buffer %llu -> drop frame.\n",
+			(uint64_t)skb->len, (uint64_t)sizeof(frame->data));
 		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
@@ -355,8 +349,7 @@ static int ccat_eth_stop(struct net_device *dev)
 		kthread_stop(priv->poll_thread);
 		priv->poll_thread = NULL;
 	}
-	printk(KERN_INFO "%s: %s stopped.\n", DRV_NAME, dev->name);
-	//TODO
+	netdev_info(dev, "stopped.\n");
 	return 0;
 }
 
@@ -415,9 +408,9 @@ static int run_poll_thread(void *data)
 			link = !link;
 			link ? ccat_eth_link_up(dev) : ccat_eth_link_down(dev);
 		}
-		usleep_range(POLL_DELAY_USECS, POLL_DELAY_USECS);
+		usleep_range(POLL_DELAY_RANGE_USECS);
 	}
-	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
+	pr_info("%s() stopped.\n", __FUNCTION__);
 	return 0;
 }
 
@@ -431,8 +424,7 @@ static int run_rx_thread(void *data)
 	while (!kthread_should_stop()) {
 		/* wait until frame was used by DMA for Rx */
 		while (!kthread_should_stop() && !frame->received) {
-			usleep_range(DMA_POLL_DELAY_USECS,
-				     DMA_POLL_DELAY_USECS);
+			usleep_range(DMA_POLL_DELAY_RANGE_USECS);
 		}
 
 		/* can be NULL, if we are asked to stop! */
@@ -445,7 +437,7 @@ static int run_rx_thread(void *data)
 			frame = priv->rx_fifo.dma.virt;
 		}
 	}
-	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
+	pr_info("%s() stopped.\n", __FUNCTION__);
 	return 0;
 }
 
@@ -463,8 +455,7 @@ static int run_tx_thread(void *data)
 		const struct ccat_eth_frame *const frame = priv->next_tx_frame;
 		if (frame) {
 			while (!kthread_should_stop() && !frame->sent) {
-				usleep_range(DMA_POLL_DELAY_USECS,
-					     DMA_POLL_DELAY_USECS);
+				usleep_range(DMA_POLL_DELAY_RANGE_USECS);
 			}
 		}
 		netif_wake_queue(dev);
@@ -472,6 +463,6 @@ static int run_tx_thread(void *data)
 		set_current_state(TASK_INTERRUPTIBLE);
 	}
 	set_current_state(TASK_RUNNING);
-	printk(KERN_INFO "%s: %s() stopped.\n", DRV_NAME, __FUNCTION__);
+	pr_info("%s() stopped.\n", __FUNCTION__);
 	return 0;
 }
