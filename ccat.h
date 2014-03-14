@@ -27,7 +27,7 @@
 
 #define DRV_NAME         "ccat_eth"
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.3" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.4" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 struct ccat_bar {
