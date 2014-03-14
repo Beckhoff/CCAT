@@ -237,7 +237,13 @@ static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, st
 	return storage;
 }
 
-int ccat_eth_init(struct ccat_eth_priv *const priv,
+struct ccat_eth_priv* ccat_eth_init(const struct ccat_device *const ccatdev)
+{
+	return NULL;
+}
+
+#if 0
+int __ccat_eth_init(struct ccat_eth_priv *const priv,
 		  const void __iomem * const addr)
 {
 	memcpy_fromio(&priv->info, addr, sizeof(priv->info));
@@ -246,7 +252,7 @@ int ccat_eth_init(struct ccat_eth_priv *const priv,
 	return ccat_eth_priv_init_dma(priv);
 }
 
-int ccat_eth_init_netdev(struct net_device *dev)
+int __ccat_eth_init_netdev(struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	memcpy_fromio(dev->dev_addr, priv->reg.mii + 8, 6);	/* init MAC address */
@@ -255,6 +261,7 @@ int ccat_eth_init_netdev(struct net_device *dev)
 	priv->tx_thread = kthread_run(run_tx_thread, dev, "%s_tx", DRV_NAME);
 	return register_netdev(dev);
 }
+#endif
 
 static int ccat_eth_open(struct net_device *dev)
 {
@@ -289,6 +296,13 @@ static void ccat_eth_receive(struct net_device *const dev,
 	netif_rx(skb);
 }
 
+#if 1
+void ccat_eth_remove(struct ccat_eth_priv *const priv)
+{
+	pr_info("%s(): done\n", __FUNCTION__);
+}
+
+#else
 void ccat_eth_remove(struct net_device *const netdev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(netdev);
@@ -301,6 +315,7 @@ void ccat_eth_remove(struct net_device *const netdev)
 	}
 	ccat_eth_priv_free_dma(priv);
 }
+#endif
 
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 				       struct net_device *dev)

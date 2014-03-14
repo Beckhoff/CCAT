@@ -28,14 +28,12 @@
 static void ccat_bar_free(struct ccat_bar *bar)
 {
 	if(bar->ioaddr) {
-		const struct ccat_bar tmp = {
-			.start = bar->start,
-			.len = bar->len,
-			.ioaddr = bar->ioaddr
-		};
+		const struct ccat_bar tmp = *bar;
 		memset(bar, 0, sizeof(*bar));
 		iounmap(tmp.ioaddr);
 		release_mem_region(tmp.start, tmp.len);
+	} else {
+		pr_warn("%s(): %p was already done.\n", __FUNCTION__, bar);
 	}
 }
 
@@ -123,116 +121,43 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	return 0;
 }
 
-static void ccat_remove_pci(struct ccat_eth_priv *priv)
+static int ccat_functions_init(struct ccat_device *const ccatdev)
 {
-	ccat_dma_free(&priv->tx_fifo.dma);
-	ccat_dma_free(&priv->rx_fifo.dma);
-	ccat_bar_free(&priv->bar[2]);
-	ccat_bar_free(&priv->bar[0]);
-	priv->pdev = NULL;
-}
-
-static void ccat_remove_one(struct pci_dev *pdev)
-{
-	struct net_device *const netdev = pci_get_drvdata(pdev);
-	if (netdev) {
-		struct ccat_eth_priv *const priv = netdev_priv(netdev);
-		ccat_eth_remove(netdev);
-		ccat_remove_pci(priv);
-		free_netdev(netdev);
-		pci_disable_device(pdev);
-		pr_info("cleanup done.\n\n");
-	}
-}
-
-static int ccat_init_pci(struct ccat_eth_priv *priv)
-{
-	struct pci_dev *pdev = priv->pdev;
-	void __iomem *addr;
-	size_t i;
-	int status;
-	uint8_t revision;
-	uint8_t num_functions;
-	status = pci_enable_device(pdev);
-	if (status) {
-		pr_info("enable %s failed: %d\n", pdev->dev.kobj.name, status);
-		return status;
-	}
-
-	pci_set_master(pdev);
-	status = pci_read_config_byte(pdev, PCI_REVISION_ID, &revision);
-	if (status) {
-		pr_warn("read CCAT pci revision failed with %d\n", status);
-		return status;
-	}
-
-	/* FIXME upgrade to a newer kernel to get support of dma_set_mask_and_coherent()
-	 * (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64))) {
-	 */
-	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) {
-		pr_info("64 bit DMA supported.\n");
-		/*} else if (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(32))) { */
-	} else if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
-		pr_info("32 bit DMA supported.\n");
-	} else {
-		pr_warn("No suitable DMA available.\n");
-	}
-
-	if (ccat_bar_init(&priv->bar[0], 0, priv->pdev)) {
-		pr_warn("initialization of bar0 failed.\n");
-		return -EIO;
-	}
-
-	if (ccat_bar_init(&priv->bar[2], 2, priv->pdev)) {
-		pr_warn("initialization of bar2 failed.\n");
-		return -EIO;
-	}
-
 	/* read CCatInfoBlock.nMaxEntries from ccat */
-	num_functions = ioread8(priv->bar[0].ioaddr + 4);
+	const uint8_t num_func = ioread8(ccatdev->bar[0].ioaddr + 4);
+	void __iomem *addr = ccatdev->bar[0].ioaddr;
+	const void __iomem *end = addr + (sizeof(CCatInfoBlock) * num_func);
+	int status = 0;
 
 	/* find CCATINFO_ETHERCAT_MASTER_DMA function */
-	for (i = 0, addr = priv->bar[0].ioaddr; i < num_functions;
-	     ++i, addr += sizeof(priv->info)) {
-		if (CCATINFO_ETHERCAT_MASTER_DMA == ioread16(addr)) {
-			status = ccat_eth_init(priv, addr);
-			break;
+	while (addr < end) {
+		const uint8_t type = ioread16(addr);
+		switch (type) {
+			case CCATINFO_NOTUSED:
+				break;
+			case CCATINFO_ETHERCAT_MASTER_DMA:
+				pr_info("Found: ETHERCAT_MASTER_DMA -> initializing\n");
+				ccatdev->ethdev = ccat_eth_init(ccatdev);
+				status = (NULL == ccatdev->ethdev);
+				break;
+			default:
+				pr_info("Found: 0x%04x not supported\n", type);
+				break;
 		}
+		addr += sizeof(CCatInfoBlock);
 	}
 	return status;
 }
 
-static int ccat_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
+static void ccat_functions_remove(struct ccat_device *const ccatdev)
 {
-	struct net_device *netdev;
-	struct ccat_eth_priv *priv;
-
-	netdev = alloc_etherdev(sizeof(*priv));
-	if (!netdev) {
-		pr_info("mem alloc failed.\n");
-		return -ENOMEM;
+	if(!ccatdev->ethdev) {
+		pr_warn("%s(): 'ethdev' was not initialized.\n", __FUNCTION__);
+	} else {
+		struct ccat_eth_priv *const ethdev = ccatdev->ethdev;
+		ccatdev->ethdev = NULL;
+		ccat_eth_remove(ethdev);
 	}
-	priv = netdev_priv(netdev);
-	priv->pdev = pdev;
-	priv->netdev = netdev;
-	pci_set_drvdata(pdev, netdev);
-
-	/* pci initialization */
-	if (ccat_init_pci(priv)) {
-		pr_info("CCAT pci init failed.\n");
-		ccat_remove_one(priv->pdev);
-		return -EIO;
-	}
-	SET_NETDEV_DEV(netdev, &pdev->dev);
-
-	/* complete ethernet device initialization */
-	if (ccat_eth_init_netdev(netdev)) {
-		pr_info("unable to register network device.\n");
-		ccat_remove_one(pdev);
-		return -EINVAL;
-	}
-	pr_info("registered %s as network device.\n", netdev->name);
-	return 0;
 }
 
 static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -264,12 +189,12 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	 * (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64))) {
 	 */
 	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) {
-		pr_info("64 bit DMA supported.\n");
+		pr_info("64 bit DMA supported, pci rev: %u\n", revision);
 		/*} else if (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(32))) { */
 	} else if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
-		pr_info("32 bit DMA supported.\n");
+		pr_info("32 bit DMA supported, pci rev: %u\n", revision);
 	} else {
-		pr_warn("No suitable DMA available.\n");
+		pr_warn("No suitable DMA available, pci rev: %u\n", revision);
 	}
 
 	if (ccat_bar_init(&ccatdev->bar[0], 0, pdev)) {
@@ -283,10 +208,7 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	pci_set_master(pdev);
-
-	//TODO
-	pr_info("%s() done.\n", __FUNCTION__);
-	return 0;
+	return ccat_functions_init(ccatdev);
 }
 
 static void ccat_remove(struct pci_dev *pdev)
@@ -294,6 +216,7 @@ static void ccat_remove(struct pci_dev *pdev)
 	struct ccat_device *ccatdev = pci_get_drvdata(pdev);
 	if(ccatdev) {
 		//TODO
+		ccat_functions_remove(ccatdev);
 		ccat_bar_free(&ccatdev->bar[2]);
 		ccat_bar_free(&ccatdev->bar[0]);
 		pci_disable_device(pdev);

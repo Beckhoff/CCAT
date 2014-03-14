@@ -78,6 +78,7 @@ struct ccat_eth_dma_fifo {
 
 struct ccat_device {
 	struct pci_dev *pdev;
+	struct ccat_eth_priv *ethdev;
 	struct ccat_bar bar[3];
 };
 
