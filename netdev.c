@@ -123,8 +123,8 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 				  struct ccat_eth_priv *const priv)
 {
 	if (0 !=
-	    ccat_dma_init(&fifo->dma, channel, priv->bar[2].ioaddr,
-			  &priv->pdev->dev)) {
+	    ccat_dma_init(&fifo->dma, channel, priv->ccatdev->bar[2].ioaddr,
+			  &priv->ccatdev->pdev->dev)) {
 		pr_info("init DMA%d memory failed.\n", channel);
 		return -1;
 	}
@@ -142,6 +142,10 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 	iowrite32(0, priv->rx_fifo.reg + 0x8);
 	iowrite32(0, priv->tx_fifo.reg + 0x8);
 	wmb();
+
+	/* release dma */
+	ccat_dma_free(&priv->rx_fifo.dma);
+	ccat_dma_free(&priv->tx_fifo.dma);
 	pr_info("DMA fifo's stopped.\n");
 }
 
@@ -162,6 +166,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	    (&priv->tx_fifo, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free,
 	     priv->info.txDmaChn, priv)) {
 		pr_warn("init Tx DMA fifo failed.\n");
+		ccat_dma_free(&priv->rx_fifo.dma);
 		return -1;
 	}
 
@@ -178,7 +183,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 {
 	CCatInfoBlockOffs offsets;
-	void __iomem *const func_base = priv->bar[0].ioaddr + priv->info.nAddr;
+	void __iomem *const func_base = priv->ccatdev->bar[0].ioaddr + priv->info.nAddr;
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	priv->reg.mii = func_base + offsets.nMMIOffs;
 	priv->reg.tx_fifo = func_base + offsets.nTxFifoOffs;
@@ -237,31 +242,33 @@ static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, st
 	return storage;
 }
 
-struct ccat_eth_priv* ccat_eth_init(const struct ccat_device *const ccatdev)
+struct ccat_eth_priv* ccat_eth_init(const struct ccat_device *const ccatdev, const void __iomem * const addr)
 {
-	return NULL;
-}
+	struct ccat_eth_priv* priv;
+	struct net_device *const netdev = alloc_etherdev(sizeof(*priv));
+	priv = netdev_priv(netdev);
+	priv->netdev = netdev;
+	priv->ccatdev = ccatdev;
 
-#if 0
-int __ccat_eth_init(struct ccat_eth_priv *const priv,
-		  const void __iomem * const addr)
-{
+	/* ccat register mappings */
 	memcpy_fromio(&priv->info, addr, sizeof(priv->info));
 	ccat_eth_priv_init_mappings(priv);
 	ccat_print_function_info(priv);
-	return ccat_eth_priv_init_dma(priv);
+
+	if(ccat_eth_priv_init_dma(priv)) {
+		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
+		free_netdev(netdev);
+		return NULL;
+	}
+	return priv;
 }
 
-int __ccat_eth_init_netdev(struct net_device *dev)
+void ccat_eth_remove(struct ccat_eth_priv *const priv)
 {
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	memcpy_fromio(dev->dev_addr, priv->reg.mii + 8, 6);	/* init MAC address */
-	dev->netdev_ops = &ccat_eth_netdev_ops;
-	priv->rx_thread = kthread_run(run_rx_thread, dev, "%s_rx", DRV_NAME);
-	priv->tx_thread = kthread_run(run_tx_thread, dev, "%s_tx", DRV_NAME);
-	return register_netdev(dev);
+	ccat_eth_priv_free_dma(priv);
+	free_netdev(priv->netdev);
+	pr_info("%s(): done\n", __FUNCTION__);
 }
-#endif
 
 static int ccat_eth_open(struct net_device *dev)
 {
@@ -295,27 +302,6 @@ static void ccat_eth_receive(struct net_device *const dev,
 	atomic64_add(len, &priv->rx_bytes);
 	netif_rx(skb);
 }
-
-#if 1
-void ccat_eth_remove(struct ccat_eth_priv *const priv)
-{
-	pr_info("%s(): done\n", __FUNCTION__);
-}
-
-#else
-void ccat_eth_remove(struct net_device *const netdev)
-{
-	struct ccat_eth_priv *const priv = netdev_priv(netdev);
-	if (priv->rx_thread) {
-		kthread_stop(priv->rx_thread);
-	}
-	unregister_netdev(netdev);
-	if (priv->tx_thread) {
-		kthread_stop(priv->tx_thread);
-	}
-	ccat_eth_priv_free_dma(priv);
-}
-#endif
 
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 				       struct net_device *dev)

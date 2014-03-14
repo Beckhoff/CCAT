@@ -68,7 +68,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 	return 0;
 }
 
-static void ccat_dma_free(struct ccat_dma *const dma)
+void ccat_dma_free(struct ccat_dma *const dma)
 {
 	const struct ccat_dma tmp = *dma;
 	free_dma(dma->channel);
@@ -121,13 +121,17 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	return 0;
 }
 
+/**
+ * Initialize all available CCAT functions.
+ * @return count of failed functions
+ */
 static int ccat_functions_init(struct ccat_device *const ccatdev)
 {
 	/* read CCatInfoBlock.nMaxEntries from ccat */
 	const uint8_t num_func = ioread8(ccatdev->bar[0].ioaddr + 4);
 	void __iomem *addr = ccatdev->bar[0].ioaddr;
 	const void __iomem *end = addr + (sizeof(CCatInfoBlock) * num_func);
-	int status = 0;
+	int status = 0; //count init function failures
 
 	/* find CCATINFO_ETHERCAT_MASTER_DMA function */
 	while (addr < end) {
@@ -137,8 +141,8 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 				break;
 			case CCATINFO_ETHERCAT_MASTER_DMA:
 				pr_info("Found: ETHERCAT_MASTER_DMA -> initializing\n");
-				ccatdev->ethdev = ccat_eth_init(ccatdev);
-				status = (NULL == ccatdev->ethdev);
+				ccatdev->ethdev = ccat_eth_init(ccatdev, addr);
+				status += (NULL == ccatdev->ethdev);
 				break;
 			default:
 				pr_info("Found: 0x%04x not supported\n", type);
@@ -208,7 +212,10 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	pci_set_master(pdev);
-	return ccat_functions_init(ccatdev);
+	if(ccat_functions_init(ccatdev)) {
+		pr_warn("some functions couldn't be initialized\n");
+	}
+	return 0;
 }
 
 static void ccat_remove(struct pci_dev *pdev)

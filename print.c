@@ -155,7 +155,7 @@ static void print_CCatMii(const struct ccat_eth_priv *const priv)
 
 void ccat_print_function_info(struct ccat_eth_priv *priv)
 {
-	print_CCatInfoBlock(&priv->info, priv->bar[0].ioaddr);
+	print_CCatInfoBlock(&priv->info, priv->ccatdev->bar[0].ioaddr);
 	print_CCatMii(priv);
 	print_CCatDmaTxFifo(priv);
 	print_CCatDmaRxActBuf(priv);

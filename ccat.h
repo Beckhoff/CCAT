@@ -45,6 +45,7 @@ struct ccat_dma {
 	size_t channel;
 	struct device *dev;
 };
+extern void ccat_dma_free(struct ccat_dma *const dma);
 extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 			 void __iomem * const ioaddr, struct device *const dev);
 
@@ -83,13 +84,12 @@ struct ccat_device {
 };
 
 struct ccat_eth_priv {
-	struct pci_dev *pdev;	//TODO REPLACE WITH ccat_device
+	const struct ccat_device *ccatdev;
 	struct net_device *netdev;
 	struct task_struct *poll_thread;	/* since there are no IRQs we pool things like "link state" */
 	struct task_struct *rx_thread;	/* housekeeper for rx dma descriptors */
 	struct task_struct *tx_thread;	/* housekeeper for tx dma descriptors */
 	const struct ccat_eth_frame *next_tx_frame;	/* next frame the tx_thread should check for availability */
-	struct ccat_bar bar[3];//TODO REMOVE
 	CCatInfoBlock info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
