@@ -27,14 +27,16 @@
 
 static void ccat_bar_free(struct ccat_bar *bar)
 {
-	const struct ccat_bar tmp = {
-		.start = bar->start,
-		.len = bar->len,
-		.ioaddr = bar->ioaddr
-	};
-	memset(bar, 0, sizeof(*bar));
-	iounmap(tmp.ioaddr);
-	release_mem_region(tmp.start, tmp.len);
+	if(bar->ioaddr) {
+		const struct ccat_bar tmp = {
+			.start = bar->start,
+			.len = bar->len,
+			.ioaddr = bar->ioaddr
+		};
+		memset(bar, 0, sizeof(*bar));
+		iounmap(tmp.ioaddr);
+		release_mem_region(tmp.start, tmp.len);
+	}
 }
 
 static int ccat_bar_init(struct ccat_bar *bar, size_t index,
@@ -55,7 +57,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 		pr_info("allocate mem_region failed.\n");
 		return -EIO;
 	}
-	pr_info("bar%d at [%lx,%lx] len=%lu allocated as %p.\n", index,
+	pr_info("bar%d at [%lx,%lx] len=%lu res: %p.\n", index,
 		bar->start, bar->end, bar->len, res);
 
 	bar->ioaddr = ioremap(bar->start, bar->len);
@@ -233,6 +235,74 @@ static int ccat_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	return 0;
 }
 
+static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+{
+	int status;
+	u8 revision;
+	struct ccat_device *ccatdev = kmalloc(sizeof(*ccatdev), GFP_KERNEL);
+	if(!ccatdev) {
+		pr_err("%s() out of memory.\n", __FUNCTION__);
+		return -ENOMEM;
+	}
+	memset(ccatdev, 0, sizeof(*ccatdev));
+	ccatdev->pdev = pdev;
+	pci_set_drvdata(pdev, ccatdev);
+
+	status = pci_enable_device_mem(pdev);
+	if (status) {
+		pr_info("enable %s failed: %d\n", pdev->dev.kobj.name, status);
+		return status;
+	}
+
+	status = pci_read_config_byte(pdev, PCI_REVISION_ID, &revision);
+	if (status) {
+		pr_warn("read CCAT pci revision failed with %d\n", status);
+		return status;
+	}
+
+	/* FIXME upgrade to a newer kernel to get support of dma_set_mask_and_coherent()
+	 * (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64))) {
+	 */
+	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) {
+		pr_info("64 bit DMA supported.\n");
+		/*} else if (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(32))) { */
+	} else if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
+		pr_info("32 bit DMA supported.\n");
+	} else {
+		pr_warn("No suitable DMA available.\n");
+	}
+
+	if (ccat_bar_init(&ccatdev->bar[0], 0, pdev)) {
+		pr_warn("initialization of bar0 failed.\n");
+		return -EIO;
+	}
+
+	if (ccat_bar_init(&ccatdev->bar[2], 2, pdev)) {
+		pr_warn("initialization of bar2 failed.\n");
+		return -EIO;
+	}
+
+	pci_set_master(pdev);
+
+	//TODO
+	pr_info("%s() done.\n", __FUNCTION__);
+	return 0;
+}
+
+static void ccat_remove(struct pci_dev *pdev)
+{
+	struct ccat_device *ccatdev = pci_get_drvdata(pdev);
+	if(ccatdev) {
+		//TODO
+		ccat_bar_free(&ccatdev->bar[2]);
+		ccat_bar_free(&ccatdev->bar[0]);
+		pci_disable_device(pdev);
+		pci_set_drvdata(pdev, NULL);
+		kfree(ccatdev);
+	}
+	pr_info("%s() done.\n", __FUNCTION__);
+}
+
 #define PCI_DEVICE_ID_BECKHOFF_CCAT 0x5000
 #define PCI_VENDOR_ID_BECKHOFF 0x15EC
 
@@ -246,8 +316,8 @@ MODULE_DEVICE_TABLE(pci, pci_ids);
 static struct pci_driver pci_driver = {
 	.name = DRV_NAME,
 	.id_table = pci_ids,
-	.probe = ccat_init_one,
-	.remove = ccat_remove_one,
+	.probe = ccat_probe,
+	.remove = ccat_remove,
 };
 
 static void ccat_exit_module(void)

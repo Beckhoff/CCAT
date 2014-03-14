@@ -11,7 +11,7 @@ install:
 	sudo depmod -a
 	sudo modprobe $(TARGET)
 	env sleep 1
-	sudo ifconfig eth2 debug
+	#sudo ifconfig eth2 debug
 
 indent: ccat.c ccat.h netdev.c netdev.h print.c print.h
 	./Lindent $?

@@ -27,7 +27,7 @@
 
 #define DRV_NAME         "ccat_eth"
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.2-3" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.3" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 struct ccat_bar {
@@ -76,14 +76,19 @@ struct ccat_eth_dma_fifo {
 	struct ccat_dma dma;
 };
 
-struct ccat_eth_priv {
+struct ccat_device {
 	struct pci_dev *pdev;
+	struct ccat_bar bar[3];
+};
+
+struct ccat_eth_priv {
+	struct pci_dev *pdev;	//TODO REPLACE WITH ccat_device
 	struct net_device *netdev;
 	struct task_struct *poll_thread;	/* since there are no IRQs we pool things like "link state" */
 	struct task_struct *rx_thread;	/* housekeeper for rx dma descriptors */
 	struct task_struct *tx_thread;	/* housekeeper for tx dma descriptors */
 	const struct ccat_eth_frame *next_tx_frame;	/* next frame the tx_thread should check for availability */
-	struct ccat_bar bar[3];
+	struct ccat_bar bar[3];//TODO REMOVE
 	CCatInfoBlock info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
