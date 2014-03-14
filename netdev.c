@@ -260,11 +260,32 @@ struct ccat_eth_priv* ccat_eth_init(const struct ccat_device *const ccatdev, con
 		free_netdev(netdev);
 		return NULL;
 	}
+
+	/* init netdev with MAC and stack callbacks */
+	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, 6);
+	netdev->netdev_ops = &ccat_eth_netdev_ops;
+
+	if(register_netdev(netdev)) {
+		pr_info("unable to register network device.\n");
+		ccat_eth_priv_free_dma(priv);
+		free_netdev(netdev);
+		return NULL;
+	}
+	pr_info("registered %s as network device.\n", netdev->name);
+	priv->rx_thread = kthread_run(run_rx_thread, netdev, "%s_rx", DRV_NAME);
+	priv->tx_thread = kthread_run(run_tx_thread, netdev, "%s_tx", DRV_NAME);
 	return priv;
 }
 
 void ccat_eth_remove(struct ccat_eth_priv *const priv)
 {
+	if (priv->rx_thread) {
+		kthread_stop(priv->rx_thread);
+	}
+	if (priv->tx_thread) {
+		kthread_stop(priv->tx_thread);
+	}
+	unregister_netdev(priv->netdev);
 	ccat_eth_priv_free_dma(priv);
 	free_netdev(priv->netdev);
 	pr_info("%s(): done\n", __FUNCTION__);
