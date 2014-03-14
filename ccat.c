@@ -27,7 +27,7 @@
 
 static void ccat_bar_free(struct ccat_bar *bar)
 {
-	if(bar->ioaddr) {
+	if (bar->ioaddr) {
 		const struct ccat_bar tmp = *bar;
 		memset(bar, 0, sizeof(*bar));
 		iounmap(tmp.ioaddr);
@@ -131,22 +131,22 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 	const uint8_t num_func = ioread8(ccatdev->bar[0].ioaddr + 4);
 	void __iomem *addr = ccatdev->bar[0].ioaddr;
 	const void __iomem *end = addr + (sizeof(CCatInfoBlock) * num_func);
-	int status = 0; //count init function failures
+	int status = 0;		//count init function failures
 
 	/* find CCATINFO_ETHERCAT_MASTER_DMA function */
 	while (addr < end) {
 		const uint8_t type = ioread16(addr);
 		switch (type) {
-			case CCATINFO_NOTUSED:
-				break;
-			case CCATINFO_ETHERCAT_MASTER_DMA:
-				pr_info("Found: ETHERCAT_MASTER_DMA -> initializing\n");
-				ccatdev->ethdev = ccat_eth_init(ccatdev, addr);
-				status += (NULL == ccatdev->ethdev);
-				break;
-			default:
-				pr_info("Found: 0x%04x not supported\n", type);
-				break;
+		case CCATINFO_NOTUSED:
+			break;
+		case CCATINFO_ETHERCAT_MASTER_DMA:
+			pr_info("Found: ETHERCAT_MASTER_DMA -> initializing\n");
+			ccatdev->ethdev = ccat_eth_init(ccatdev, addr);
+			status += (NULL == ccatdev->ethdev);
+			break;
+		default:
+			pr_info("Found: 0x%04x not supported\n", type);
+			break;
 		}
 		addr += sizeof(CCatInfoBlock);
 	}
@@ -155,7 +155,7 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 
 static void ccat_functions_remove(struct ccat_device *const ccatdev)
 {
-	if(!ccatdev->ethdev) {
+	if (!ccatdev->ethdev) {
 		pr_warn("%s(): 'ethdev' was not initialized.\n", __FUNCTION__);
 	} else {
 		struct ccat_eth_priv *const ethdev = ccatdev->ethdev;
@@ -169,7 +169,7 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	int status;
 	u8 revision;
 	struct ccat_device *ccatdev = kmalloc(sizeof(*ccatdev), GFP_KERNEL);
-	if(!ccatdev) {
+	if (!ccatdev) {
 		pr_err("%s() out of memory.\n", __FUNCTION__);
 		return -ENOMEM;
 	}
@@ -212,7 +212,7 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	pci_set_master(pdev);
-	if(ccat_functions_init(ccatdev)) {
+	if (ccat_functions_init(ccatdev)) {
 		pr_warn("some functions couldn't be initialized\n");
 	}
 	return 0;
@@ -221,7 +221,7 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 static void ccat_remove(struct pci_dev *pdev)
 {
 	struct ccat_device *ccatdev = pci_get_drvdata(pdev);
-	if(ccatdev) {
+	if (ccatdev) {
 		//TODO
 		ccat_functions_remove(ccatdev);
 		ccat_bar_free(&ccatdev->bar[2]);

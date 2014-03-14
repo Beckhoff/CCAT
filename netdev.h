@@ -20,6 +20,7 @@
 
 #ifndef _NETDEV_H_
 #define _NETDEV_H_
-extern struct ccat_eth_priv* ccat_eth_init(const struct ccat_device *ccatdev, const void __iomem *addr);
+extern struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *ccatdev,
+					   const void __iomem * addr);
 extern void ccat_eth_remove(struct ccat_eth_priv *priv);
 #endif /* #ifndef _NETDEV_H_ */
