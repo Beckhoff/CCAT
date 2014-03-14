@@ -125,14 +125,26 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 	if (0 !=
 	    ccat_dma_init(&fifo->dma, channel, priv->bar[2].ioaddr,
 			  &priv->pdev->dev)) {
-		printk(KERN_INFO "%s: init DMA%d memory failed.\n", DRV_NAME,
-		       channel);
+		pr_info("init DMA%d memory failed.\n", channel);
 		return -1;
 	}
 	fifo->add = add;
 	fifo->reg = fifo_reg;
 	return 0;
 }
+
+/**
+ * Stop both (Rx/Tx) DMA fifo's and free related management structures
+ */
+static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
+{
+	/* reset hw fifo's */
+	iowrite32(0, priv->rx_fifo.reg + 0x8);
+	iowrite32(0, priv->tx_fifo.reg + 0x8);
+	wmb();
+	pr_info("DMA fifo's stopped.\n");
+}
+
 
 /**
  * Initalizes both (Rx/Tx) DMA fifo's and related management structures
@@ -287,6 +299,7 @@ void ccat_eth_remove(struct net_device *const netdev)
 	if (priv->tx_thread) {
 		kthread_stop(priv->tx_thread);
 	}
+	ccat_eth_priv_free_dma(priv);
 }
 
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
@@ -355,7 +368,6 @@ static int ccat_eth_stop(struct net_device *dev)
 
 static void ccat_eth_link_down(struct net_device *dev)
 {
-	// TODO stop dma queues?
 	netif_stop_queue(dev);
 	netif_carrier_off(dev);
 	netdev_info(dev, "NIC Link is Down\n");
