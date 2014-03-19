@@ -24,6 +24,12 @@
 #include <linux/netdevice.h>
 #include "ccat.h"
 #include "netdev.h"
+#include "update.h"
+
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
 
 static void ccat_bar_free(struct ccat_bar *bar)
 {
@@ -133,11 +139,15 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 	const void __iomem *end = addr + (sizeof(CCatInfoBlock) * num_func);
 	int status = 0;		//count init function failures
 
-	/* find CCATINFO_ETHERCAT_MASTER_DMA function */
 	while (addr < end) {
 		const uint8_t type = ioread16(addr);
 		switch (type) {
 		case CCATINFO_NOTUSED:
+			break;
+		case CCATINFO_EPCS_PROM:
+			pr_info("Found: CCAT update (EPCS_PROM) -> initializing\n");
+			ccatdev->update = ccat_update_init(ccatdev, addr);
+			status += (NULL == ccatdev->update);
 			break;
 		case CCATINFO_ETHERCAT_MASTER_DMA:
 			pr_info("Found: ETHERCAT_MASTER_DMA -> initializing\n");
@@ -161,6 +171,13 @@ static void ccat_functions_remove(struct ccat_device *const ccatdev)
 		struct ccat_eth_priv *const ethdev = ccatdev->ethdev;
 		ccatdev->ethdev = NULL;
 		ccat_eth_remove(ethdev);
+	}
+	if (!ccatdev->update) {
+		pr_warn("%s(): 'update' was not initialized.\n", __FUNCTION__);
+	} else {
+		struct ccat_update *const update = ccatdev->update;
+		ccatdev->update = NULL;
+		ccat_update_remove(update);
 	}
 }
 
@@ -222,7 +239,6 @@ static void ccat_remove(struct pci_dev *pdev)
 {
 	struct ccat_device *ccatdev = pci_get_drvdata(pdev);
 	if (ccatdev) {
-		//TODO
 		ccat_functions_remove(ccatdev);
 		ccat_bar_free(&ccatdev->bar[2]);
 		ccat_bar_free(&ccatdev->bar[0]);
@@ -240,7 +256,6 @@ static const struct pci_device_id pci_ids[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_BECKHOFF, PCI_DEVICE_ID_BECKHOFF_CCAT)},
 	{0,},
 };
-
 MODULE_DEVICE_TABLE(pci, pci_ids);
 
 static struct pci_driver pci_driver = {

@@ -478,7 +478,6 @@ static int run_rx_thread(void *data)
 
 /**
  * Polling of tx dma descriptors in ethernet operating mode
- * Disabled in EtherCAT operating mode
  */
 static int run_tx_thread(void *data)
 {

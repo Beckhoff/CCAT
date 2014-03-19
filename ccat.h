@@ -21,6 +21,7 @@
 #ifndef _CCAT_H_
 #define _CCAT_H_
 
+#include <linux/cdev.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
 #include "CCatDefinitions.h"
@@ -80,6 +81,7 @@ struct ccat_eth_dma_fifo {
 struct ccat_device {
 	struct pci_dev *pdev;
 	struct ccat_eth_priv *ethdev;
+	struct ccat_update *update;
 	struct ccat_bar bar[3];
 };
 
@@ -98,5 +100,14 @@ struct ccat_eth_priv {
 	atomic64_t rx_dropped;
 	atomic64_t tx_bytes;
 	atomic64_t tx_dropped;
+};
+
+struct ccat_update {
+	const struct ccat_device *ccatdev;
+	void __iomem *ioaddr;
+	dev_t dev;
+	struct cdev cdev;
+	struct class *class;
+	CCatInfoBlock info;
 };
 #endif /* #ifndef _CCAT_H_ */

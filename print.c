@@ -23,11 +23,13 @@
 #include "ccat.h"
 #include "print.h"
 
-#define TESTING_ENABLED 0
-#if TESTING_ENABLED
-static void print_mem(const unsigned char *p, size_t lines)
+#define PRINT_DETAILS 0
+#define TESTING_ENABLED 1
+void print_mem(const unsigned char *p, size_t lines)
 {
+#if TESTING_ENABLED
 	pr_info("mem at: %p\n", p);
+	pr_info(" 0  1  2  3  4  5  6  7   8  9  A  B  C  D  E  F\n");
 	while (lines > 0) {
 		pr_info
 		    ("%02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x\n",
@@ -36,8 +38,8 @@ static void print_mem(const unsigned char *p, size_t lines)
 		p += 16;
 		--lines;
 	}
-}
 #endif /* #if TESTING_ENABLED */
+}
 
 static const char *CCatFunctionTypes[CCATINFO_MAX + 1] = {
 	"not used",
@@ -92,16 +94,16 @@ static void print_CCatDmaTxFifo(const struct ccat_eth_priv *const priv)
 	pr_info("     FIFO reset:              0x%08x\n", tx_fifo.fifoReset);
 }
 
-static void print_CCatInfoBlock(const CCatInfoBlock * pInfo,
+static void print_CCatInfoBlock(const CCatInfoBlock * info,
 				const void __iomem * const base_addr)
 {
-	const size_t index = min((int)pInfo->eCCatInfoType, CCATINFO_MAX);
+	const size_t index = min((int)info->eCCatInfoType, CCATINFO_MAX);
 	pr_info("%s\n", CCatFunctionTypes[index]);
-	pr_info("     revision:     0x%x\n", pInfo->nRevision);
-	pr_info("     RX channel:   %d\n", pInfo->rxDmaChn);
-	pr_info("     TX channel:   %d\n", pInfo->txDmaChn);
-	pr_info("     baseaddr:     0x%lx\n", pInfo->nAddr);
-	pr_info("     size:         0x%lx\n", pInfo->nSize);
+	pr_info("     revision:     0x%x\n", info->nRevision);
+	pr_info("     RX channel:   %d\n", info->rxDmaChn);
+	pr_info("     TX channel:   %d\n", info->txDmaChn);
+	pr_info("     baseaddr:     0x%lx\n", info->nAddr);
+	pr_info("     size:         0x%lx\n", info->nSize);
 	pr_info("     subfunction:  %p\n", base_addr);
 }
 
@@ -155,6 +157,7 @@ static void print_CCatMii(const struct ccat_eth_priv *const priv)
 
 void ccat_print_function_info(struct ccat_eth_priv *priv)
 {
+#if PRINT_DETAILS
 	print_CCatInfoBlock(&priv->info, priv->ccatdev->bar[0].ioaddr);
 	print_CCatMii(priv);
 	print_CCatDmaTxFifo(priv);
@@ -163,4 +166,14 @@ void ccat_print_function_info(struct ccat_eth_priv *priv)
 	pr_info("  RX window:    %p\n", priv->reg.rx_mem);
 	pr_info("  TX memory:    %p\n", priv->reg.tx_mem);
 	pr_info("  misc:         %p\n", priv->reg.misc);
+#endif
+}
+
+void print_update_info(const CCatInfoBlock *const info)
+{
+	const size_t index = min((int)info->eCCatInfoType, CCATINFO_MAX);
+	pr_info("%s\n", CCatFunctionTypes[index]);
+	pr_info("     revision:     0x%x\n", info->nRevision);
+	pr_info("     baseaddr:     0x%lx\n", info->nAddr);
+	pr_info("     size:         0x%lx\n", info->nSize);
 }
