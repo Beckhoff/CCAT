@@ -160,12 +160,12 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 		case CCATINFO_NOTUSED:
 			break;
 		case CCATINFO_EPCS_PROM:
-			pr_info("Found: CCAT update (EPCS_PROM) -> initializing\n");
+			pr_info("Found: CCAT update(EPCS_PROM) -> init()\n");
 			ccatdev->update = ccat_update_init(ccatdev, addr);
 			status += (NULL == ccatdev->update);
 			break;
 		case CCATINFO_ETHERCAT_MASTER_DMA:
-			pr_info("Found: ETHERCAT_MASTER_DMA -> initializing\n");
+			pr_info("Found: ETHERCAT_MASTER_DMA -> init()\n");
 			ccatdev->ethdev = ccat_eth_init(ccatdev, addr);
 			status += (NULL == ccatdev->ethdev);
 			break;
@@ -274,6 +274,7 @@ static const struct pci_device_id pci_ids[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_BECKHOFF, PCI_DEVICE_ID_BECKHOFF_CCAT)},
 	{0,},
 };
+
 MODULE_DEVICE_TABLE(pci, pci_ids);
 
 static struct pci_driver pci_driver = {

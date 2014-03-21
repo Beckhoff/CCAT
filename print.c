@@ -173,7 +173,7 @@ void ccat_print_function_info(struct ccat_eth_priv *priv)
 }
 #endif /* #if PRINT_DETAILS */
 
-void print_update_info(const CCatInfoBlock *const info)
+void print_update_info(const CCatInfoBlock * const info)
 {
 	const size_t index = min((int)info->eCCatInfoType, CCATINFO_MAX);
 	pr_info("%s\n", CCatFunctionTypes[index]);

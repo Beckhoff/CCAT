@@ -22,5 +22,5 @@
 #define _PRINT_H_
 extern void ccat_print_function_info(struct ccat_eth_priv *priv);
 extern void print_mem(const unsigned char *p, size_t lines);
-extern void print_update_info(const CCatInfoBlock *const info);
+extern void print_update_info(const CCatInfoBlock * info);
 #endif /* #ifndef _PRINT_H_ */

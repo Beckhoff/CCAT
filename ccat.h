@@ -138,7 +138,7 @@ struct ccat_device {
 	struct pci_dev *pdev;
 	struct ccat_eth_priv *ethdev;
 	struct ccat_update *update;
-	struct ccat_bar bar[3]; //TODO optimize this
+	struct ccat_bar bar[3];	//TODO optimize this
 };
 
 /**
@@ -174,7 +174,6 @@ struct ccat_eth_priv {
 	atomic64_t tx_bytes;
 	atomic64_t tx_dropped;
 };
-
 
 /**
  * struct ccat_update - CCAT Update function (update)
