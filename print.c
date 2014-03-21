@@ -69,6 +69,7 @@ static const char *CCatFunctionTypes[CCATINFO_MAX + 1] = {
 	"unknown"
 };
 
+#if PRINT_DETAILS
 static void print_CCatDmaRxActBuf(const struct ccat_eth_priv *const priv)
 {
 	CCatDmaRxActBuf rx_fifo;
@@ -157,7 +158,6 @@ static void print_CCatMii(const struct ccat_eth_priv *const priv)
 
 void ccat_print_function_info(struct ccat_eth_priv *priv)
 {
-#if PRINT_DETAILS
 	print_CCatInfoBlock(&priv->info, priv->ccatdev->bar[0].ioaddr);
 	print_CCatMii(priv);
 	print_CCatDmaTxFifo(priv);
@@ -166,8 +166,12 @@ void ccat_print_function_info(struct ccat_eth_priv *priv)
 	pr_info("  RX window:    %p\n", priv->reg.rx_mem);
 	pr_info("  TX memory:    %p\n", priv->reg.tx_mem);
 	pr_info("  misc:         %p\n", priv->reg.misc);
-#endif
 }
+#else
+void ccat_print_function_info(struct ccat_eth_priv *priv)
+{
+}
+#endif /* #if PRINT_DETAILS */
 
 void print_update_info(const CCatInfoBlock *const info)
 {

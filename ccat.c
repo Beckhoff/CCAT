@@ -43,6 +43,14 @@ static void ccat_bar_free(struct ccat_bar *bar)
 	}
 }
 
+/**
+ * ccat_bar_init() - Initialize a CCAT pci bar
+ * @bar object which should be initialized
+ * @index 0 and 2 are valid for CCAT, meaning pci bar0 or pci bar2
+ * @pdev the pci device as which the CCAT was recognized before
+ *
+ * Reading PCI config space, request and map memory region.
+ */
 static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 			 struct pci_dev *pdev)
 {
@@ -82,6 +90,13 @@ void ccat_dma_free(struct ccat_dma *const dma)
 	dma_free_coherent(tmp.dev, tmp.size, tmp.virt, tmp.phys);
 }
 
+/**
+ * ccat_dma_init() - Initialize CCAT and host memory for DMA transfer
+ * @dma object for management data which will be initialized
+ * @channel number of the DMA channel
+ * @ioaddr of the pci bar2 configspace used to calculate the address of the pci dma configuration
+ * @dev which should be configured for DMA
+ */
 int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 		  void __iomem * const ioaddr, struct device *const dev)
 {
@@ -163,6 +178,9 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 	return status;
 }
 
+/**
+ * Destroy all previously initialized CCAT functions
+ */
 static void ccat_functions_remove(struct ccat_device *const ccatdev)
 {
 	if (!ccatdev->ethdev) {
