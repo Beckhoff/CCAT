@@ -18,4 +18,8 @@ indent: ccat.c ccat.h netdev.c netdev.h print.c print.h
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
-	rm -f *.c~ *.h~
+	rm -f *.c~ *.h~ *.bin
+
+test:
+	gcc ./unittest/test__update.c -o test__update.bin
+	sudo ./test__update.bin 1000 /home/gpb/CX2001_B000_20130425_Release_V3.rbf

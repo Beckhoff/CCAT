@@ -69,7 +69,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 		pr_info("allocate mem_region failed.\n");
 		return -EIO;
 	}
-	pr_info("bar%d at [%lx,%lx] len=%lu res: %p.\n", index,
+	pr_debug("bar%d at [%lx,%lx] len=%lu res: %p.\n", index,
 		bar->start, bar->end, bar->len, res);
 
 	bar->ioaddr = ioremap(bar->start, bar->len);
@@ -78,7 +78,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 		release_mem_region(bar->start, bar->len);
 		return -EIO;
 	}
-	pr_info("bar%d I/O mem mapped to %p.\n", index, bar->ioaddr);
+	pr_debug("bar%d I/O mem mapped to %p.\n", index, bar->ioaddr);
 	return 0;
 }
 
@@ -134,7 +134,7 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	addr = translateAddr;
 	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
 	frame = dma->virt + translateAddr - dma->phys;
-	pr_info
+	pr_debug
 	    ("DMA%d mem initialized\n virt:         0x%p\n phys:         0x%llx\n translated:   0x%llx\n pci addr:     0x%08x%x\n memTranslate: 0x%x\n size:         %u bytes.\n",
 	     channel, dma->virt, (uint64_t) (dma->phys), addr,
 	     ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset),
@@ -228,10 +228,10 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	 * (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64))) {
 	 */
 	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) {
-		pr_info("64 bit DMA supported, pci rev: %u\n", revision);
+		pr_debug("64 bit DMA supported, pci rev: %u\n", revision);
 		/*} else if (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(32))) { */
 	} else if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
-		pr_info("32 bit DMA supported, pci rev: %u\n", revision);
+		pr_debug("32 bit DMA supported, pci rev: %u\n", revision);
 	} else {
 		pr_warn("No suitable DMA available, pci rev: %u\n", revision);
 	}
