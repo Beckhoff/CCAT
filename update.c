@@ -30,7 +30,7 @@
 #define CCAT_DATA_IN_4 0x038
 #define CCAT_DATA_IN_N 0x7F0
 #define CCAT_DATA_BLOCK_SIZE (size_t)((CCAT_DATA_IN_N - CCAT_DATA_IN_4)/8)
-#define CCAT_FLASH_SIZE (size_t)0x100000
+#define CCAT_FLASH_SIZE (size_t)0xDE1F1
 #define CCAT_GET_PROM_ID 0xD5
 #define CCAT_GET_PROM_ID_CLOCKS 40
 #define CCAT_READ_FLASH  0xC0
@@ -40,7 +40,7 @@
 #define SWAP_BITS(B) \
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
-static int ccat_read_flash(const struct ccat_update *update, uint32_t addr, size_t bytes, char *buf);
+static int ccat_read_flash(const struct ccat_update *update, uint32_t addr, uint16_t len, char __user *buf);
 
 static int ccat_update_open(struct inode *const i, struct file *const f)
 {
@@ -58,10 +58,7 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 static int __ccat_update_read(const struct ccat_update *const update, char __user *buf, size_t len, loff_t *off)
 {
 	const size_t length = min(CCAT_DATA_BLOCK_SIZE, len);
-	char *const start = kmalloc(length, GFP_KERNEL);
-	ccat_read_flash(update, *off, length, start);
-	copy_to_user(buf, start, length);
-	kfree(start);
+	ccat_read_flash(update, *off, length, buf);
 	*off += length;
 	return length;
 }
@@ -81,29 +78,14 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 	if(*off >= CCAT_FLASH_SIZE) {
 		return 0;
 	}
+	if(*off + len > CCAT_FLASH_SIZE) {
+		len = CCAT_FLASH_SIZE - *off;
+	}
 	return __ccat_update_read(f->private_data, buf, len, off);
 }
 
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
 {
-	const struct ccat_update *update = f->private_data;
-	char *const rbf = kmalloc(len, GFP_KERNEL);
-	char *const flash = kmalloc(len, GFP_KERNEL);
-	int i;
-	if(!rbf || !flash) {
-		pr_info("%p and %p\n", rbf, flash);
-		kfree(rbf);
-		kfree(flash);
-		return -ENOMEM;
-	}
-
-	ccat_read_flash(update, *off, CCAT_DATA_BLOCK_SIZE, flash);
-	copy_from_user(rbf, buf, len);
-	for(i = 0; i < CCAT_DATA_BLOCK_SIZE; i++) {
-		if(rbf[i] != flash[i]) {
-			pr_info("missmatch at %d 0x%02x != 0x%02x\n", i, rbf[i], flash[i]);
-		}
-	}
 	pr_info("%s()\n", __FUNCTION__);
 	return len;
 }
@@ -141,11 +123,10 @@ static uint8_t ccat_get_prom_id(const struct ccat_update *const update)
 /**
  * ccat_read_flash() - Read bytes from CCAT flash
  * @update: CCAT Update function object
- * @bytes: number of bytes to read
+ * @len: number of bytes to read
  */
-static int ccat_read_flash(const struct ccat_update *const update, const uint32_t addr, const size_t bytes, char *const buf)
+static int ccat_read_flash(const struct ccat_update *const update, const uint32_t addr, const uint16_t len, char __user *const buf)
 {
-	const uint16_t len = (uint16_t)min((size_t)0x800, bytes);
 	const uint16_t clocks = CCAT_READ_FLASH_CLOCKS + (8 * len);
 	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
 	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
@@ -162,7 +143,8 @@ static int ccat_read_flash(const struct ccat_update *const update, const uint32_
 	if(buf) {
 		uint16_t i;
 		for(i = 0; i < len; i++) {
-			buf[i] = ioread8(update->ioaddr + CCAT_DATA_IN_4 + 8*i);
+			const char tmp = ioread8(update->ioaddr + CCAT_DATA_IN_4 + 8*i);
+			put_user(tmp, buf + i);
 		}
 	}
 	return len;

@@ -24,8 +24,7 @@
 
 void usage(void)
 {
-	printf("usage: test__update.bin <bytes> <rbf>\n");
-	printf("   bytes: number of bytes to compare\n");
+	printf("usage: test__update.bin <rbf>\n");
 	printf("   rbf: path to a *.rbf used for comparsion\n");
 }
 
@@ -60,12 +59,12 @@ void buffer_new(struct buffer* buf, const char *const filename)
 
 int main(int argc, const char* argv[])
 {
-	if(argc < 3) {
+	if(argc < 2) {
 		usage();
 		return -1;
 	}
 	struct buffer rbf, ccat;
-	buffer_new(&rbf, argv[2]);
+	buffer_new(&rbf, argv[1]);
 	FILE *const f = fopen("/dev/ccat_update", "r");
 	if(rbf.data && f) {
 		buffer_fill(&ccat, rbf.size, f);

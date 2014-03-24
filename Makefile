@@ -22,4 +22,4 @@ clean:
 
 test:
 	gcc ./unittest/test__update.c -o test__update.bin
-	sudo ./test__update.bin 1000 /home/gpb/CX2001_B000_20130425_Release_V3.rbf
+	sudo ./test__update.bin /home/gpb/CX2001_B000_20130425_Release_V3.rbf
