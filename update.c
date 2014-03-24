@@ -31,10 +31,15 @@
 #define CCAT_DATA_IN_N 0x7F0
 #define CCAT_DATA_BLOCK_SIZE (size_t)((CCAT_DATA_IN_N - CCAT_DATA_IN_4)/8)
 #define CCAT_FLASH_SIZE (size_t)0xDE1F1
-#define CCAT_GET_PROM_ID 0xD5
-#define CCAT_GET_PROM_ID_CLOCKS 40
-#define CCAT_READ_FLASH  0xC0
-#define CCAT_READ_FLASH_CLOCKS 32
+
+
+/**     FUNCTION_NAME            CMD,  CLOCKS          */
+#define CCAT_BULK_ERASE          0xE3, 8
+#define CCAT_GET_PROM_ID         0xD5, 40
+#define CCAT_READ_FLASH          0xC0, 32
+#define CCAT_READ_STATUS         0xA0, 16
+#define CCAT_WRITE_ENABLE        0x60, 8
+#define CCAT_WRITE_FLASH         0x40, 32
 
 /* from http://graphics.stanford.edu/~seander/bithacks.html#ReverseByteWith32Bits */
 #define SWAP_BITS(B) \
@@ -86,6 +91,14 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
 {
+	const struct ccat_update *const update = f->private_data;
+	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
+	//ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
+	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
+	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
+	//TODO ccat_update_cmd(update->ioaddr, CCAT_WRITE_FLASH);
+	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
+	//TODO verify written data
 	pr_info("%s()\n", __FUNCTION__);
 	return len;
 }
@@ -98,11 +111,21 @@ static struct file_operations update_ops = {
 	.write = ccat_update_write,
 };
 
-static inline void ccat_update_cmd(void __iomem *const ioaddr, uint16_t clocks, uint8_t cmd)
+static inline void __ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks)
 {
 	iowrite8((0xff00 & clocks) >> 8, ioaddr);
 	iowrite8(0x00ff & clocks, ioaddr + 0x8);
 	iowrite8(cmd, ioaddr + 0x10);
+}
+
+static inline void ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks)
+{
+	__ccat_update_cmd(ioaddr, cmd, clocks);
+	wmb();
+	iowrite8(0xff, ioaddr + 0x7f8);
+	wmb();
+	/* wait until busy flag was reset */
+	while(ioread8(ioaddr + 1));
 }
 
 /**
@@ -111,12 +134,7 @@ static inline void ccat_update_cmd(void __iomem *const ioaddr, uint16_t clocks, 
  */
 static uint8_t ccat_get_prom_id(const struct ccat_update *const update)
 {
-	ccat_update_cmd(update->ioaddr, CCAT_GET_PROM_ID_CLOCKS, CCAT_GET_PROM_ID);
-	wmb();
-	iowrite8(0xff, update->ioaddr + 0x7f8);
-	wmb();
-	/* wait until busy flag was reset */
-	while(ioread8(update->ioaddr + 1));
+	ccat_update_cmd(update->ioaddr, CCAT_GET_PROM_ID);
 	return ioread8(update->ioaddr + 0x38);
 }
 
@@ -127,11 +145,11 @@ static uint8_t ccat_get_prom_id(const struct ccat_update *const update)
  */
 static int ccat_read_flash(const struct ccat_update *const update, const uint32_t addr, const uint16_t len, char __user *const buf)
 {
-	const uint16_t clocks = CCAT_READ_FLASH_CLOCKS + (8 * len);
+	const uint16_t clocks = 8 * len;
 	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
 	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
 	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
-	ccat_update_cmd(update->ioaddr, clocks, CCAT_READ_FLASH);
+	__ccat_update_cmd(update->ioaddr, CCAT_READ_FLASH + clocks);
 	iowrite8(addr_2, update->ioaddr + 0x18);
 	iowrite8(addr_1, update->ioaddr + 0x20);
 	iowrite8(addr_0, update->ioaddr + 0x28);
