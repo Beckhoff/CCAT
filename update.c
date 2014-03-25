@@ -185,16 +185,14 @@ static int ccat_read_flash_block(void __iomem *const ioaddr, const uint32_t addr
 
 static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_t len, loff_t* off)
 {
-	int bytes = 0;
+	const loff_t start = *off;
 	while(len > CCAT_DATA_BLOCK_SIZE) {
-		bytes += ccat_read_flash_block(ioaddr, *off, CCAT_DATA_BLOCK_SIZE, buf);
-		*off += CCAT_DATA_BLOCK_SIZE;
+		*off += ccat_read_flash_block(ioaddr, *off, CCAT_DATA_BLOCK_SIZE, buf);
 		buf += CCAT_DATA_BLOCK_SIZE;
 		len -= CCAT_DATA_BLOCK_SIZE;
 	}
-	bytes += ccat_read_flash_block(ioaddr, *off, len, buf);
-	*off += len;
-	return bytes;
+	*off += ccat_read_flash_block(ioaddr, *off, len, buf);
+	return *off - start;
 }
 
 struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
