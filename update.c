@@ -46,11 +46,13 @@
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
 struct update_buffer {
+	struct ccat_update *update;
 	void __iomem *ioaddr;
 	char data[CCAT_FLASH_SIZE];
 };
 
 static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_t len, loff_t *off);
+static void ccat_update_destroy(struct kref *ref);
 
 static inline void wait_until_busy_reset(void __iomem *const ioaddr)
 {
@@ -65,10 +67,15 @@ static int ccat_update_open(struct inode *const i, struct file *const f)
 {
 	//TODO permit multiple open files at the same time!
 	struct ccat_update *update = container_of(i->i_cdev, struct ccat_update, cdev);
-	struct update_buffer *buf = kzalloc(sizeof(*buf), GFP_KERNEL);
-	if(!buf)
+	struct update_buffer *buf;
+	kref_get(&update->refcount);
+	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
+	if(!buf) {
+		kref_put(&update->refcount, ccat_update_destroy);
 		return -ENOMEM;
+	}
 
+	buf->update = update;
 	buf->ioaddr = update->ioaddr;
 	f->private_data = buf;
 	return 0;
@@ -76,7 +83,8 @@ static int ccat_update_open(struct inode *const i, struct file *const f)
 
 static int ccat_update_release(struct inode *const i, struct file *const f)
 {
-	//const struct update_buffer *const update = f->private_data;
+	const struct update_buffer *const buf = f->private_data;
+	struct ccat_update *const update = buf->update;
 	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
 	//ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
 	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
@@ -85,6 +93,7 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
 	// verify_write() should be done externaly
 	kfree(f->private_data);
+	kref_put(&update->refcount, ccat_update_destroy);
 	return 0;
 }
 
@@ -200,6 +209,7 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 	if(!update) {
 		return NULL;
 	}
+	kref_init(&update->refcount);
 	update->ccatdev = ccatdev;
 	update->ioaddr = ccatdev->bar[0].ioaddr + ioread32(addr + 0x8);
 	memcpy_fromio(&update->info, addr, sizeof(update->info));
@@ -236,19 +246,23 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 	}
 	return update;
 cleanup:
-	device_destroy(update->class, update->dev);
-	class_destroy(update->class);
-	unregister_chrdev_region(update->dev, 1);
-	kfree(update);
+	kref_put(&update->refcount, ccat_update_destroy);
 	return NULL;
 }
 
-void ccat_update_remove(struct ccat_update *update)
+static void ccat_update_destroy(struct kref *ref)
 {
+	struct ccat_update *update = container_of(ref, struct ccat_update, refcount);
 	cdev_del(&update->cdev);
 	device_destroy(update->class, update->dev);
 	class_destroy(update->class);
 	unregister_chrdev_region(update->dev, 1);
 	kfree(update);
+	pr_info("%s(): done\n", __FUNCTION__);
+}
+
+void ccat_update_remove(struct ccat_update *update)
+{
+	kref_put(&update->refcount, ccat_update_destroy);
 	pr_info("%s(): done\n", __FUNCTION__);
 }
