@@ -21,6 +21,7 @@
 #include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/sched.h>
 #include <linux/uaccess.h>
 
 #include "ccat.h"
@@ -45,25 +46,51 @@
 #define SWAP_BITS(B) \
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
-static int ccat_read_flash(const struct ccat_update *update, uint32_t addr, uint16_t len, char __user *buf);
+struct update_buffer {
+	void __iomem *ioaddr;
+	size_t size;
+	char data[CCAT_FLASH_SIZE];
+};
+
+static int ccat_read_flash(void __iomem *const ioaddr, uint32_t addr, uint16_t len, char __user *buf);
+static void __ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks);
+static int ccat_update_verify(const struct update_buffer *const update);
+
+static void wait_until_busy_reset(void __iomem *const ioaddr)
+{
+	wmb();
+	/* wait until busy flag was reset */
+	while(ioread8(ioaddr + 1)) {
+		schedule();
+	}
+}
 
 static int ccat_update_open(struct inode *const i, struct file *const f)
 {
-	pr_info("%s()\n", __FUNCTION__);
-	f->private_data = container_of(i->i_cdev, struct ccat_update, cdev);
+	struct ccat_update *update = container_of(i->i_cdev, struct ccat_update, cdev);
+	struct update_buffer *buf = kzalloc(sizeof(*buf), GFP_KERNEL);
+	if(!buf) {
+		return -ENOMEM;
+
+	buf->ioaddr = update->ioaddr;
+	f->private_data = buf;
 	return 0;
 }
 
 static int ccat_update_release(struct inode *const i, struct file *const f)
 {
-	pr_info("%s()\n", __FUNCTION__);
-	return 0;
+	const struct update_buffer *const update = f->private_data;
+	const int matches = ccat_update_verify(update);
+	const int expected = update->size;
+	kfree(f->private_data);
+	pr_info("++matches: %d len: %d\n", matches, expected);
+	return !(matches == expected);
 }
 
-static int __ccat_update_read(const struct ccat_update *const update, char __user *buf, size_t len, loff_t *off)
+static int __ccat_update_read(void __iomem *const ioaddr, char __user *buf, size_t len, loff_t *off)
 {
 	const size_t length = min(CCAT_DATA_BLOCK_SIZE, len);
-	ccat_read_flash(update, *off, length, buf);
+	ccat_read_flash(ioaddr, *off, length, buf);
 	*off += length;
 	return length;
 }
@@ -77,6 +104,7 @@ static int __ccat_update_read(const struct ccat_update *const update, char __use
  */
 static int ccat_update_read(struct file *const f, char __user *buf, size_t len, loff_t *off)
 {
+	struct update_buffer *update = f->private_data;
 	if(!buf || !off) {
 		return -EINVAL;
 	}
@@ -86,20 +114,66 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 	if(*off + len > CCAT_FLASH_SIZE) {
 		len = CCAT_FLASH_SIZE - *off;
 	}
-	return __ccat_update_read(f->private_data, buf, len, off);
+	return __ccat_update_read(update->ioaddr, buf, len, off);
+}
+
+static int ccat_update_verify_block(const struct update_buffer *const update, size_t len, const uint32_t addr)
+{
+	int matches = 0;
+	const uint16_t clocks = 8 * len;
+	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
+	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
+	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
+	__ccat_update_cmd(update->ioaddr, CCAT_READ_FLASH + clocks);
+	iowrite8(addr_2, update->ioaddr + 0x18);
+	iowrite8(addr_1, update->ioaddr + 0x20);
+	iowrite8(addr_0, update->ioaddr + 0x28);
+	wmb();
+	iowrite8(0xff, update->ioaddr + 0x7f8);
+	wait_until_busy_reset(update->ioaddr);
+	{
+		uint16_t i;
+		const char* file = update->data + addr;
+		char flash;
+		for(i = 0; i < len; i++) {
+			const size_t offset =  CCAT_DATA_IN_4 + 8*i;
+			flash = ioread8(update->ioaddr + offset);
+			matches += (*file == flash);
+			++file;
+		}
+	}
+	return matches;
+}
+
+static int ccat_update_verify(const struct update_buffer *const update)
+{
+	int matches = 0;
+	uint32_t addr = 0;
+	size_t bytes_left = update->size;
+	while(bytes_left >= CCAT_DATA_BLOCK_SIZE) {
+		matches += ccat_update_verify_block(update, CCAT_DATA_BLOCK_SIZE, addr);
+		addr += CCAT_DATA_BLOCK_SIZE;
+		bytes_left -= CCAT_DATA_BLOCK_SIZE;
+	}
+	matches += ccat_update_verify_block(update, bytes_left, addr);
+	return matches;
 }
 
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
 {
-	const struct ccat_update *const update = f->private_data;
+	struct update_buffer *const update = f->private_data;
 	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
 	//ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
 	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
 	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
 	//TODO ccat_update_cmd(update->ioaddr, CCAT_WRITE_FLASH);
 	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
-	//TODO verify written data
-	pr_info("%s()\n", __FUNCTION__);
+	if(update->size + len > sizeof(update->data))
+		return 0;
+
+	copy_from_user(update->data + update->size, buf, len);
+	update->size += len;
+	*off += len;
 	return len;
 }
 
@@ -123,9 +197,7 @@ static inline void ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint
 	__ccat_update_cmd(ioaddr, cmd, clocks);
 	wmb();
 	iowrite8(0xff, ioaddr + 0x7f8);
-	wmb();
-	/* wait until busy flag was reset */
-	while(ioread8(ioaddr + 1));
+	wait_until_busy_reset(ioaddr);
 }
 
 /**
@@ -143,25 +215,23 @@ static uint8_t ccat_get_prom_id(const struct ccat_update *const update)
  * @update: CCAT Update function object
  * @len: number of bytes to read
  */
-static int ccat_read_flash(const struct ccat_update *const update, const uint32_t addr, const uint16_t len, char __user *const buf)
+static int ccat_read_flash(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, char __user *const buf)
 {
 	const uint16_t clocks = 8 * len;
 	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
 	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
 	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
-	__ccat_update_cmd(update->ioaddr, CCAT_READ_FLASH + clocks);
-	iowrite8(addr_2, update->ioaddr + 0x18);
-	iowrite8(addr_1, update->ioaddr + 0x20);
-	iowrite8(addr_0, update->ioaddr + 0x28);
+	__ccat_update_cmd(ioaddr, CCAT_READ_FLASH + clocks);
+	iowrite8(addr_2, ioaddr + 0x18);
+	iowrite8(addr_1, ioaddr + 0x20);
+	iowrite8(addr_0, ioaddr + 0x28);
 	wmb();
-	iowrite8(0xff, update->ioaddr + 0x7f8);
-	wmb();
-	/* wait until busy flag was reset */
-	while(ioread8(update->ioaddr + 1));
+	iowrite8(0xff, ioaddr + 0x7f8);
+	wait_until_busy_reset(ioaddr);
 	if(buf) {
 		uint16_t i;
 		for(i = 0; i < len; i++) {
-			const char tmp = ioread8(update->ioaddr + CCAT_DATA_IN_4 + 8*i);
+			const char tmp = ioread8(ioaddr + CCAT_DATA_IN_4 + 8*i);
 			put_user(tmp, buf + i);
 		}
 	}
