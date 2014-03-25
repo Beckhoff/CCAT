@@ -52,11 +52,11 @@ struct update_buffer {
 	char data[CCAT_FLASH_SIZE];
 };
 
-static int ccat_read_flash(void __iomem *const ioaddr, uint32_t addr, uint16_t len, char __user *buf);
+static int ccat_read_flash(void __iomem *const ioaddr, uint32_t addr, uint16_t len, char *buf);
 static void __ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks);
 static int ccat_update_verify(const struct update_buffer *const update);
 
-static void wait_until_busy_reset(void __iomem *const ioaddr)
+static inline void wait_until_busy_reset(void __iomem *const ioaddr)
 {
 	wmb();
 	/* wait until busy flag was reset */
@@ -67,9 +67,10 @@ static void wait_until_busy_reset(void __iomem *const ioaddr)
 
 static int ccat_update_open(struct inode *const i, struct file *const f)
 {
+	//TODO permit multiple open files at the same time!
 	struct ccat_update *update = container_of(i->i_cdev, struct ccat_update, cdev);
 	struct update_buffer *buf = kzalloc(sizeof(*buf), GFP_KERNEL);
-	if(!buf) {
+	if(!buf)
 		return -ENOMEM;
 
 	buf->ioaddr = update->ioaddr;
@@ -89,9 +90,11 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 
 static int __ccat_update_read(void __iomem *const ioaddr, char __user *buf, size_t len, loff_t *off)
 {
-	const size_t length = min(CCAT_DATA_BLOCK_SIZE, len);
-	ccat_read_flash(ioaddr, *off, length, buf);
+	char tmp[CCAT_DATA_BLOCK_SIZE];
+	const size_t length = min(sizeof(tmp), len);
+	ccat_read_flash(ioaddr, *off, length, tmp);
 	*off += length;
+	copy_to_user(buf, tmp, length);
 	return length;
 }
 
@@ -111,7 +114,7 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 	if(*off >= CCAT_FLASH_SIZE) {
 		return 0;
 	}
-	if(*off + len > CCAT_FLASH_SIZE) {
+	if(*off + len >= CCAT_FLASH_SIZE) {
 		len = CCAT_FLASH_SIZE - *off;
 	}
 	return __ccat_update_read(update->ioaddr, buf, len, off);
@@ -119,28 +122,12 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 
 static int ccat_update_verify_block(const struct update_buffer *const update, size_t len, const uint32_t addr)
 {
+	uint16_t i;
 	int matches = 0;
-	const uint16_t clocks = 8 * len;
-	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
-	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
-	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
-	__ccat_update_cmd(update->ioaddr, CCAT_READ_FLASH + clocks);
-	iowrite8(addr_2, update->ioaddr + 0x18);
-	iowrite8(addr_1, update->ioaddr + 0x20);
-	iowrite8(addr_0, update->ioaddr + 0x28);
-	wmb();
-	iowrite8(0xff, update->ioaddr + 0x7f8);
-	wait_until_busy_reset(update->ioaddr);
-	{
-		uint16_t i;
-		const char* file = update->data + addr;
-		char flash;
-		for(i = 0; i < len; i++) {
-			const size_t offset =  CCAT_DATA_IN_4 + 8*i;
-			flash = ioread8(update->ioaddr + offset);
-			matches += (*file == flash);
-			++file;
-		}
+	char tmp[CCAT_DATA_BLOCK_SIZE];
+	ccat_read_flash(update->ioaddr, addr, len, tmp);
+	for(i = 0; i < len; i++) {
+		matches += (tmp[i] == update->data[addr + i]);
 	}
 	return matches;
 }
@@ -215,7 +202,7 @@ static uint8_t ccat_get_prom_id(const struct ccat_update *const update)
  * @update: CCAT Update function object
  * @len: number of bytes to read
  */
-static int ccat_read_flash(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, char __user *const buf)
+static int ccat_read_flash_block(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, char *const buf)
 {
 	const uint16_t clocks = 8 * len;
 	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
@@ -231,11 +218,23 @@ static int ccat_read_flash(void __iomem *const ioaddr, const uint32_t addr, cons
 	if(buf) {
 		uint16_t i;
 		for(i = 0; i < len; i++) {
-			const char tmp = ioread8(ioaddr + CCAT_DATA_IN_4 + 8*i);
-			put_user(tmp, buf + i);
+			buf[i] = ioread8(ioaddr + CCAT_DATA_IN_4 + 8*i);
 		}
 	}
 	return len;
+}
+
+static int ccat_read_flash(void __iomem *const ioaddr, uint32_t addr, uint16_t len, char *buf)
+{
+	int bytes = 0;
+	while(len > CCAT_DATA_BLOCK_SIZE) {
+		bytes += ccat_read_flash_block(ioaddr, addr, CCAT_DATA_BLOCK_SIZE, buf);
+		addr += CCAT_DATA_BLOCK_SIZE;
+		buf += CCAT_DATA_BLOCK_SIZE;
+		len -= CCAT_DATA_BLOCK_SIZE;
+	}
+	bytes += ccat_read_flash_block(ioaddr, addr, len, buf);
+	return bytes;
 }
 
 struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
