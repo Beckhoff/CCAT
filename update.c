@@ -64,10 +64,14 @@ static inline void wait_until_busy_reset(void __iomem *const ioaddr)
 
 static int ccat_update_open(struct inode *const i, struct file *const f)
 {
-	//TODO permit multiple open files at the same time!
 	struct ccat_update *update = container_of(i->i_cdev, struct ccat_update, cdev);
 	struct update_buffer *buf;
 	kref_get(&update->refcount);
+	if(atomic_read(&update->refcount.refcount) > 2) {
+		kref_put(&update->refcount, ccat_update_destroy);
+		return -EBUSY;
+	}
+
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if(!buf) {
 		kref_put(&update->refcount, ccat_update_destroy);
