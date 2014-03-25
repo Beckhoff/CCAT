@@ -47,7 +47,6 @@
 
 struct update_buffer {
 	void __iomem *ioaddr;
-	size_t size;
 	char data[CCAT_FLASH_SIZE];
 };
 
@@ -114,11 +113,10 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
 {
 	struct update_buffer *const update = f->private_data;
-	if(update->size + len > sizeof(update->data))
+	if(*off + len > sizeof(update->data))
 		return 0;
 
-	copy_from_user(update->data + update->size, buf, len);
-	update->size += len;
+	copy_from_user(update->data + *off, buf, len);
 	*off += len;
 	return len;
 }
