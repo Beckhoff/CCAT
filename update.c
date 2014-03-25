@@ -51,8 +51,7 @@ struct update_buffer {
 	char data[CCAT_FLASH_SIZE];
 };
 
-static int ccat_read_flash(void __iomem *const ioaddr, loff_t *off, uint32_t len, char __user *buf);
-static void __ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks);
+static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_t len, loff_t *off);
 
 static inline void wait_until_busy_reset(void __iomem *const ioaddr)
 {
@@ -109,7 +108,7 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 	if(*off + len >= CCAT_FLASH_SIZE) {
 		len = CCAT_FLASH_SIZE - *off;
 	}
-	return ccat_read_flash(update->ioaddr, off, len, buf);
+	return ccat_read_flash(update->ioaddr, buf, len, off);
 }
 
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
@@ -184,7 +183,7 @@ static int ccat_read_flash_block(void __iomem *const ioaddr, const uint32_t addr
 	return len;
 }
 
-static int ccat_read_flash(void __iomem *const ioaddr, loff_t* off, uint32_t len, char __user *buf)
+static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_t len, loff_t* off)
 {
 	int bytes = 0;
 	while(len > CCAT_DATA_BLOCK_SIZE) {
