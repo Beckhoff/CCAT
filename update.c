@@ -33,7 +33,6 @@
 #define CCAT_DATA_BLOCK_SIZE (size_t)((CCAT_DATA_IN_N - CCAT_DATA_IN_4)/8)
 #define CCAT_FLASH_SIZE (size_t)0xE0000
 
-
 /**     FUNCTION_NAME            CMD,  CLOCKS          */
 #define CCAT_BULK_ERASE          0xE3, 8
 #define CCAT_GET_PROM_ID         0xD5, 40
@@ -91,14 +90,6 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 	return 0;
 }
 
-static int __ccat_update_read(void __iomem *const ioaddr, char __user *buf, size_t len, loff_t *off)
-{
-	const size_t length = min(CCAT_DATA_BLOCK_SIZE, len);
-	const int bytes_read = ccat_read_flash(ioaddr, *off, length, buf);
-	*off += bytes_read;
-	return bytes_read;
-}
-
 /**
  * ccat_update_read() - Read CCAT configuration data from flash
  * //TODO
@@ -108,6 +99,7 @@ static int __ccat_update_read(void __iomem *const ioaddr, char __user *buf, size
  */
 static int ccat_update_read(struct file *const f, char __user *buf, size_t len, loff_t *off)
 {
+	int bytes;
 	struct update_buffer *update = f->private_data;
 	if(!buf || !off) {
 		return -EINVAL;
@@ -118,7 +110,9 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 	if(*off + len >= CCAT_FLASH_SIZE) {
 		len = CCAT_FLASH_SIZE - *off;
 	}
-	return __ccat_update_read(update->ioaddr, buf, len, off);
+	bytes = ccat_read_flash(update->ioaddr, *off, len, buf);
+	*off += bytes;
+	return bytes;
 }
 
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
