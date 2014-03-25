@@ -47,7 +47,6 @@
 
 struct update_buffer {
 	struct ccat_update *update;
-	void __iomem *ioaddr;
 	char data[CCAT_FLASH_SIZE];
 };
 
@@ -76,7 +75,6 @@ static int ccat_update_open(struct inode *const i, struct file *const f)
 	}
 
 	buf->update = update;
-	buf->ioaddr = update->ioaddr;
 	f->private_data = buf;
 	return 0;
 }
@@ -116,7 +114,7 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 	if(*off + len >= CCAT_FLASH_SIZE) {
 		len = CCAT_FLASH_SIZE - *off;
 	}
-	return ccat_read_flash(update->ioaddr, buf, len, off);
+	return ccat_read_flash(update->update->ioaddr, buf, len, off);
 }
 
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
@@ -210,7 +208,6 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 		return NULL;
 	}
 	kref_init(&update->refcount);
-	update->ccatdev = ccatdev;
 	update->ioaddr = ccatdev->bar[0].ioaddr + ioread32(addr + 0x8);
 	memcpy_fromio(&update->info, addr, sizeof(update->info));
 	print_update_info(&update->info);

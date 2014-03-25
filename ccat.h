@@ -186,7 +186,6 @@ struct ccat_eth_priv {
  */
 struct ccat_update {
 	struct kref refcount;
-	const struct ccat_device *ccatdev;
 	void __iomem *ioaddr;
 	dev_t dev;
 	struct cdev cdev;
