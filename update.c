@@ -54,7 +54,6 @@ struct update_buffer {
 
 static int ccat_read_flash(void __iomem *const ioaddr, uint32_t addr, uint32_t len, char *buf);
 static void __ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks);
-static int ccat_update_verify(const struct update_buffer *const update);
 
 static inline void wait_until_busy_reset(void __iomem *const ioaddr)
 {
@@ -80,20 +79,23 @@ static int ccat_update_open(struct inode *const i, struct file *const f)
 
 static int ccat_update_release(struct inode *const i, struct file *const f)
 {
-	const struct update_buffer *const update = f->private_data;
-	const int matches = ccat_update_verify(update);
-	const int expected = update->size;
+	//const struct update_buffer *const update = f->private_data;
+	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
+	//ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
+	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
+	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
+	//TODO ccat_update_cmd(update->ioaddr, CCAT_WRITE_FLASH);
+	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
+	// verify_write() should be done externaly
 	kfree(f->private_data);
-	pr_info("++matches: %d len: %d return: %d\n", matches, expected, !(matches == expected));
-	return !(matches == expected);
+	return 0;
 }
 
 static int __ccat_update_read(void __iomem *const ioaddr, char __user *buf, size_t len, loff_t *off)
 {
 	char tmp[CCAT_DATA_BLOCK_SIZE];
 	const size_t length = min(sizeof(tmp), len);
-	ccat_read_flash(ioaddr, *off, length, tmp);
-	*off += length;
+	*off += ccat_read_flash(ioaddr, *off, length, tmp);
 	copy_to_user(buf, tmp, length);
 	return length;
 }
@@ -120,30 +122,9 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 	return __ccat_update_read(update->ioaddr, buf, len, off);
 }
 
-static int ccat_update_verify(const struct update_buffer *const update)
-{
-	char *tmp = kmalloc(update->size, GFP_KERNEL);
-	if(!tmp)
-		return -ENOMEM;
-
-	ccat_read_flash(update->ioaddr, 0, update->size, tmp);
-	if(0 == memcmp(update->data, tmp, update->size)) {
-		kfree(tmp);
-		return update->size;
-	}
-	kfree(tmp);
-	return 0;
-}
-
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
 {
 	struct update_buffer *const update = f->private_data;
-	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
-	//ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
-	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
-	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
-	//TODO ccat_update_cmd(update->ioaddr, CCAT_WRITE_FLASH);
-	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
 	if(update->size + len > sizeof(update->data))
 		return 0;
 
@@ -216,7 +197,6 @@ static int ccat_read_flash_block(void __iomem *const ioaddr, const uint32_t addr
 static int ccat_read_flash(void __iomem *const ioaddr, uint32_t addr, uint32_t len, char *buf)
 {
 	int bytes = 0;
-	pr_info("%s(): %u\n", __FUNCTION__, len);
 	while(len > CCAT_DATA_BLOCK_SIZE) {
 		bytes += ccat_read_flash_block(ioaddr, addr, CCAT_DATA_BLOCK_SIZE, buf);
 		addr += CCAT_DATA_BLOCK_SIZE;
