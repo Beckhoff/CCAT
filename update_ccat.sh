@@ -3,13 +3,21 @@
 # of the current CCAT flash content is read and compared to the contents of $1
 
 rbf=$1
+tmp=$rbf.~ccat_update_tmp
+backup=$rbf.~ccat_update_backup
 update=/dev/ccat_update
-tmp=$rbf.~ccat_update
 bytes=$(echo $(wc -c $rbf)|cut -d' ' -f1)
 
 # check if device file is available
 if ! [ -c $update ]; then
 	echo $update does not exist
+	exit 1
+fi
+
+# create a backup
+cat $update > $backup
+if [ $? -ne 0 ]; then
+	echo "create CCAT backup failed"
 	exit 1
 fi
 
@@ -34,7 +42,26 @@ diff $rbf $tmp > /dev/null
 if [ $? -eq 0 ]; then
 	echo "Update complete"
 else
-	echo "Update failed"
+	echo "Update failed -> trying to restore backup..."
+	cat $backup > $update
+	if [ $? -ne 0 ]; then
+		echo "Restore: write failed"
+		exit 1
+	fi
+	# read CCAT flash content back into a temporary file
+	cat $update > $tmp
+	if [ $? -ne 0 ]; then
+		echo "Restore: read from flash failed"
+		exit 1
+	fi
+	diff $backup $tmp > /dev/null
+	if [ $? -eq 0 ]; then
+		echo "Restore: was successful"
+		rm -f $tmp
+	else
+		echo "WARNING restore failed! Situation seems really bad now! you find the backup at " $backup
+		# we keep the backup file
+	fi
 fi
 
 # clean up our temp file
