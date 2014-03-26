@@ -116,7 +116,8 @@ static void print_CCatMacRegs(const struct ccat_eth_priv *const priv)
 	pr_debug("     CRC error count:            %10d\n", mac.crcErrCnt);
 	pr_debug("     Link lost error count:      %10d\n", mac.linkLostErrCnt);
 	pr_debug("     reserved:                   0x%08x\n", mac.reserved1);
-	pr_debug("     RX overflow count:          %10d\n", mac.dropFrameErrCnt);
+	pr_debug("     RX overflow count:          %10d\n",
+		 mac.dropFrameErrCnt);
 	pr_debug("     DMA overflow count:         %10d\n", mac.reserved2[0]);
 	//pr_debug("     reserverd:         %10d\n", DRV_NAME, mac.reserved2[1]);
 	pr_debug("     TX frame counter:           %10d\n", mac.txFrameCnt);
@@ -131,7 +132,7 @@ static void print_CCatMii(const struct ccat_eth_priv *const priv)
 	memcpy_fromio(&mii, priv->reg.mii, sizeof(mii));
 	pr_debug("MII base address: %p\n", priv->reg.mii);
 	pr_debug("     MII cycle:    %s\n",
-		mii.startMiCycle ? "running" : "no cycle");
+		 mii.startMiCycle ? "running" : "no cycle");
 	pr_debug("     reserved:     0x%x\n", mii.reserved1);
 	pr_debug("     cmd valid:    %s\n", mii.cmdErr ? "no" : "yes");
 	pr_debug("     cmd:          0x%x\n", mii.cmd);
@@ -143,12 +144,13 @@ static void print_CCatMii(const struct ccat_eth_priv *const priv)
 	pr_debug("     PHY write:    0x%x\n", mii.phyWriteData);
 	pr_debug("     PHY read:     0x%x\n", mii.phyReadData);
 	pr_debug("     MAC addr:     %02x:%02x:%02x:%02x:%02x:%02x\n",
-		mii.macAddr.b[0], mii.macAddr.b[1], mii.macAddr.b[2],
-		mii.macAddr.b[3], mii.macAddr.b[4], mii.macAddr.b[5]);
+		 mii.macAddr.b[0], mii.macAddr.b[1], mii.macAddr.b[2],
+		 mii.macAddr.b[3], mii.macAddr.b[4], mii.macAddr.b[5]);
 	pr_debug("     MAC filter enable:   %s\n",
-		mii.macFilterEnabled ? "enabled" : "disabled");
+		 mii.macFilterEnabled ? "enabled" : "disabled");
 	pr_debug("     reserved:     0x%x\n", mii.reserved6);
-	pr_debug("     Link State:   %s\n", mii.linkStatus ? "link" : "no link");
+	pr_debug("     Link State:   %s\n",
+		 mii.linkStatus ? "link" : "no link");
 	pr_debug("     reserved:     0x%x\n", mii.reserved7);
 	//pr_debug("     reserved:     0x%x\n", DRV_NAME, mii.reserved8);
 	//TODO add leds, systemtime insertion and interrupts
@@ -166,7 +168,8 @@ void ccat_print_function_info(struct ccat_eth_priv *priv)
 	pr_debug("  misc:         %p\n", priv->reg.misc);
 }
 
-void print_update_info(const CCatInfoBlock * const info, void __iomem * const ioaddr)
+void print_update_info(const CCatInfoBlock * const info,
+		       void __iomem * const ioaddr)
 {
 	const size_t index = min((int)info->eCCatInfoType, CCATINFO_MAX);
 	pr_debug("%s\n", CCatFunctionTypes[index]);

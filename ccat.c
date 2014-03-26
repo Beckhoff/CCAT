@@ -70,7 +70,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 		return -EIO;
 	}
 	pr_debug("bar%d at [%lx,%lx] len=%lu res: %p.\n", index,
-		bar->start, bar->end, bar->len, res);
+		 bar->start, bar->end, bar->len, res);
 
 	bar->ioaddr = ioremap(bar->start, bar->len);
 	if (!bar->ioaddr) {
