@@ -229,25 +229,12 @@ static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_
 #include <linux/delay.h>
 static int ccat_write_flash_block(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, const char *const buf)
 {
-	uint16_t i;
 	const uint16_t clocks = 8 * len;
-	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
-	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
-	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
-	__ccat_update_cmd(ioaddr, CCAT_WRITE_FLASH + clocks);
-	iowrite8(addr_2, ioaddr + 0x18);
-	iowrite8(addr_1, ioaddr + 0x20);
-	iowrite8(addr_0, ioaddr + 0x28);
-	pr_info("write(%p, 0x%x, %u, %p)\n", ioaddr, addr, len, buf);
-	pr_info("%02x %02x %02x %02x %02x %02x %02x %02x\n", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+	uint16_t i;
 	for(i = 0; i < len; i++) {
 		iowrite8(buf[i], ioaddr + 0x030 + 8*i);
 	}
-	wmb();
-	iowrite8(0xff, ioaddr + 0x7f8);
-	wait_until_busy_reset(ioaddr);
-	wmb();
-	//msleep(100);
+	ccat_update_cmd_addr(ioaddr, CCAT_WRITE_FLASH + clocks, addr);
 	ccat_wait_status_cleared(ioaddr);
 	return len;
 }
