@@ -226,11 +226,11 @@ static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_
 	return *off - start;
 }
 
-#include <linux/delay.h>
 static int ccat_write_flash_block(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, const char *const buf)
 {
 	const uint16_t clocks = 8 * len;
 	uint16_t i;
+	ccat_update_cmd(ioaddr, CCAT_WRITE_ENABLE);
 	for(i = 0; i < len; i++) {
 		iowrite8(buf[i], ioaddr + 0x030 + 8*i);
 	}
@@ -245,13 +245,11 @@ static void ccat_write_flash(const struct update_buffer *const update)
 	uint32_t off = 0;
 	size_t len = update->size;
 	while(len > CCAT_WRITE_BLOCK_SIZE) {
-		ccat_update_cmd(update->update->ioaddr, CCAT_WRITE_ENABLE);
 		ccat_write_flash_block(update->update->ioaddr, off, (uint16_t)CCAT_WRITE_BLOCK_SIZE, buf);
 		off += CCAT_WRITE_BLOCK_SIZE;
 		buf += CCAT_WRITE_BLOCK_SIZE;
 		len -= CCAT_WRITE_BLOCK_SIZE;
 	}
-	ccat_update_cmd(update->update->ioaddr, CCAT_WRITE_ENABLE);
 	ccat_write_flash_block(update->update->ioaddr, off, (uint16_t)len, buf);
 }
 
