@@ -31,6 +31,7 @@
 #define CCAT_DATA_IN_4 0x038
 #define CCAT_DATA_IN_N 0x7F0
 #define CCAT_DATA_BLOCK_SIZE (size_t)((CCAT_DATA_IN_N - CCAT_DATA_IN_4)/8)
+#define CCAT_WRITE_BLOCK_SIZE 128
 #define CCAT_FLASH_SIZE (size_t)0xE0000
 
 /**     FUNCTION_NAME            CMD,  CLOCKS          */
@@ -48,9 +49,13 @@
 struct update_buffer {
 	struct ccat_update *update;
 	char data[CCAT_FLASH_SIZE];
+	size_t size;
 };
 
+static void ccat_wait_status_cleared(void __iomem *const ioaddr);
 static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_t len, loff_t *off);
+static void ccat_write_flash(const struct update_buffer *const buf);
+static void ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks);
 static void ccat_update_destroy(struct kref *ref);
 
 static inline void wait_until_busy_reset(void __iomem *const ioaddr)
@@ -87,12 +92,12 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 {
 	const struct update_buffer *const buf = f->private_data;
 	struct ccat_update *const update = buf->update;
-	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
-	//ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
-	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
-	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
-	//TODO ccat_update_cmd(update->ioaddr, CCAT_WRITE_FLASH);
-	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
+	if(buf->size > 0 ) {
+		ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
+		ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
+		ccat_wait_status_cleared(update->ioaddr);
+		ccat_write_flash(buf);
+	}
 	kfree(f->private_data);
 	kref_put(&update->refcount, ccat_update_destroy);
 	return 0;
@@ -128,6 +133,7 @@ static int ccat_update_write(struct file *const f, const char __user *buf, size_
 
 	copy_from_user(update->data + *off, buf, len);
 	*off += len;
+	update->size = *off;
 	return len;
 }
 
@@ -172,10 +178,24 @@ static inline void ccat_update_cmd_addr(void __iomem *const ioaddr, uint8_t cmd,
  * ccat_get_prom_id() - Read CCAT PROM ID
  * @update: CCAT Update function object
  */
-static uint8_t ccat_get_prom_id(const struct ccat_update *const update)
+static uint8_t ccat_get_prom_id(void __iomem *const ioaddr)
 {
-	ccat_update_cmd(update->ioaddr, CCAT_GET_PROM_ID);
-	return ioread8(update->ioaddr + 0x38);
+	ccat_update_cmd(ioaddr, CCAT_GET_PROM_ID);
+	return ioread8(ioaddr + 0x38);
+}
+
+static uint8_t ccat_get_status(void __iomem *const ioaddr)
+{
+	ccat_update_cmd(ioaddr, CCAT_READ_STATUS);
+	return ioread8(ioaddr + 0x20);
+}
+
+static void ccat_wait_status_cleared(void __iomem *const ioaddr)
+{
+	uint8_t status;
+	do {
+		status = ccat_get_status(ioaddr);
+	} while (status & (1 << 7));
 }
 
 /**
@@ -206,6 +226,48 @@ static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_
 	return *off - start;
 }
 
+#include <linux/delay.h>
+static int ccat_write_flash_block(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, const char *const buf)
+{
+	uint16_t i;
+	const uint16_t clocks = 8 * len;
+	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
+	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
+	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
+	__ccat_update_cmd(ioaddr, CCAT_WRITE_FLASH + clocks);
+	iowrite8(addr_2, ioaddr + 0x18);
+	iowrite8(addr_1, ioaddr + 0x20);
+	iowrite8(addr_0, ioaddr + 0x28);
+	pr_info("write(%p, 0x%x, %u, %p)\n", ioaddr, addr, len, buf);
+	pr_info("%02x %02x %02x %02x %02x %02x %02x %02x\n", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+	for(i = 0; i < len; i++) {
+		iowrite8(buf[i], ioaddr + 0x030 + 8*i);
+	}
+	wmb();
+	iowrite8(0xff, ioaddr + 0x7f8);
+	wait_until_busy_reset(ioaddr);
+	wmb();
+	//msleep(100);
+	ccat_wait_status_cleared(ioaddr);
+	return len;
+}
+
+static void ccat_write_flash(const struct update_buffer *const update)
+{
+	const char *buf = update->data;
+	uint32_t off = 0;
+	size_t len = update->size;
+	while(len > CCAT_WRITE_BLOCK_SIZE) {
+		ccat_update_cmd(update->update->ioaddr, CCAT_WRITE_ENABLE);
+		ccat_write_flash_block(update->update->ioaddr, off, (uint16_t)CCAT_WRITE_BLOCK_SIZE, buf);
+		off += CCAT_WRITE_BLOCK_SIZE;
+		buf += CCAT_WRITE_BLOCK_SIZE;
+		len -= CCAT_WRITE_BLOCK_SIZE;
+	}
+	ccat_update_cmd(update->update->ioaddr, CCAT_WRITE_ENABLE);
+	ccat_write_flash_block(update->update->ioaddr, off, (uint16_t)len, buf);
+}
+
 struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 				    void __iomem * const addr)
 {
@@ -217,7 +279,7 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 	update->ioaddr = ccatdev->bar[0].ioaddr + ioread32(addr + 0x8);
 	memcpy_fromio(&update->info, addr, sizeof(update->info));
 	print_update_info(&update->info);
-	pr_info("     PROM ID is:   0x%x\n", ccat_get_prom_id(update));
+	pr_info("     PROM ID is:   0x%x\n", ccat_get_prom_id(update->ioaddr));
 
 	if(0x00 != update->info.nRevision) {
 		pr_warn("CCAT Update rev. %d not supported\n", update->info.nRevision);
