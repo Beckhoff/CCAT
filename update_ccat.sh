@@ -64,6 +64,7 @@ truncate -s $bytes $tmp
 diff $rbf $tmp > /dev/null
 if [ $? -eq 0 ]; then
 	echo "Update complete"
+	rm -f $tmp $backup
 else
 	echo "Update failed -> trying to restore backup..."
 	cat $backup > $update
@@ -80,7 +81,7 @@ else
 	diff $backup $tmp > /dev/null
 	if [ $? -eq 0 ]; then
 		echo "Restore: was successful"
-		rm -f $tmp
+		rm -f $backup
 	else
 		echo "WARNING restore failed! Try to fix it manually using the backup file " $backup
 		# we keep the backup file

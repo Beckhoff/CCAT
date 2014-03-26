@@ -23,7 +23,6 @@
 #include "ccat.h"
 #include "print.h"
 
-#define PRINT_DETAILS 0
 #define TESTING_ENABLED 1
 void print_mem(const unsigned char *p, size_t lines)
 {
@@ -69,90 +68,89 @@ static const char *CCatFunctionTypes[CCATINFO_MAX + 1] = {
 	"unknown"
 };
 
-#if PRINT_DETAILS
 static void print_CCatDmaRxActBuf(const struct ccat_eth_priv *const priv)
 {
 	CCatDmaRxActBuf rx_fifo;
 	memcpy_fromio(&rx_fifo, priv->reg.rx_fifo, sizeof(rx_fifo));
-	pr_info("Rx FIFO base address: %p\n", priv->reg.rx_fifo);
-	pr_info("     Rx Frame Header start:   0x%08x\n", rx_fifo.startAddr);
-	pr_info("     reserved:                0x%08x\n", rx_fifo.reserved1);
-	pr_info("     Rx start address valid:    %8u\n", rx_fifo.nextValid);
-	pr_info("     reserved:                0x%08x\n", rx_fifo.reserved2);
-	pr_info("     FIFO level:              0x%08x\n", rx_fifo.FifoLevel);
-	pr_info("     Buffer level:            0x%08x\n", rx_fifo.bufferLevel);
-	pr_info("     next address:            0x%08x\n", rx_fifo.nextAddr);
+	pr_debug("Rx FIFO base address: %p\n", priv->reg.rx_fifo);
+	pr_debug("     Rx Frame Header start:   0x%08x\n", rx_fifo.startAddr);
+	pr_debug("     reserved:                0x%08x\n", rx_fifo.reserved1);
+	pr_debug("     Rx start address valid:    %8u\n", rx_fifo.nextValid);
+	pr_debug("     reserved:                0x%08x\n", rx_fifo.reserved2);
+	pr_debug("     FIFO level:              0x%08x\n", rx_fifo.FifoLevel);
+	pr_debug("     Buffer level:            0x%08x\n", rx_fifo.bufferLevel);
+	pr_debug("     next address:            0x%08x\n", rx_fifo.nextAddr);
 }
 
 static void print_CCatDmaTxFifo(const struct ccat_eth_priv *const priv)
 {
 	CCatDmaTxFifo tx_fifo;
 	memcpy_fromio(&tx_fifo, priv->reg.tx_fifo, sizeof(tx_fifo));
-	pr_info("Tx FIFO base address: %p\n", priv->reg.tx_fifo);
-	pr_info("     Tx Frame Header start:   0x%08x\n", tx_fifo.startAddr);
-	pr_info("     # 64 bit words:          %10d\n", tx_fifo.numQuadWords);
-	pr_info("     reserved:                0x%08x\n", tx_fifo.reserved1);
-	pr_info("     FIFO reset:              0x%08x\n", tx_fifo.fifoReset);
+	pr_debug("Tx FIFO base address: %p\n", priv->reg.tx_fifo);
+	pr_debug("     Tx Frame Header start:   0x%08x\n", tx_fifo.startAddr);
+	pr_debug("     # 64 bit words:          %10d\n", tx_fifo.numQuadWords);
+	pr_debug("     reserved:                0x%08x\n", tx_fifo.reserved1);
+	pr_debug("     FIFO reset:              0x%08x\n", tx_fifo.fifoReset);
 }
 
 static void print_CCatInfoBlock(const CCatInfoBlock * info,
 				const void __iomem * const base_addr)
 {
 	const size_t index = min((int)info->eCCatInfoType, CCATINFO_MAX);
-	pr_info("%s\n", CCatFunctionTypes[index]);
-	pr_info("     revision:     0x%x\n", info->nRevision);
-	pr_info("     RX channel:   %d\n", info->rxDmaChn);
-	pr_info("     TX channel:   %d\n", info->txDmaChn);
-	pr_info("     baseaddr:     0x%lx\n", info->nAddr);
-	pr_info("     size:         0x%lx\n", info->nSize);
-	pr_info("     subfunction:  %p\n", base_addr);
+	pr_debug("%s\n", CCatFunctionTypes[index]);
+	pr_debug("     revision:     0x%x\n", info->nRevision);
+	pr_debug("     RX channel:   %d\n", info->rxDmaChn);
+	pr_debug("     TX channel:   %d\n", info->txDmaChn);
+	pr_debug("     baseaddr:     0x%lx\n", info->nAddr);
+	pr_debug("     size:         0x%lx\n", info->nSize);
+	pr_debug("     subfunction:  %p\n", base_addr);
 }
 
 static void print_CCatMacRegs(const struct ccat_eth_priv *const priv)
 {
 	CCatMacRegs mac;
 	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
-	pr_info("MAC base address: %p\n", priv->reg.mac);
-	pr_info("     frame length error count:   %10d\n", mac.frameLenErrCnt);
-	pr_info("     RX error count:             %10d\n", mac.rxErrCnt);
-	pr_info("     CRC error count:            %10d\n", mac.crcErrCnt);
-	pr_info("     Link lost error count:      %10d\n", mac.linkLostErrCnt);
-	pr_info("     reserved:                   0x%08x\n", mac.reserved1);
-	pr_info("     RX overflow count:          %10d\n", mac.dropFrameErrCnt);
-	pr_info("     DMA overflow count:         %10d\n", mac.reserved2[0]);
-	//pr_info("     reserverd:         %10d\n", DRV_NAME, mac.reserved2[1]);
-	pr_info("     TX frame counter:           %10d\n", mac.txFrameCnt);
-	pr_info("     RX frame counter:           %10d\n", mac.rxFrameCnt);
-	pr_info("     TX-FIFO level:              0x%08x\n", mac.txFifoLevel);
-	pr_info("     MII connection:             0x%08x\n", mac.miiConnected);
+	pr_debug("MAC base address: %p\n", priv->reg.mac);
+	pr_debug("     frame length error count:   %10d\n", mac.frameLenErrCnt);
+	pr_debug("     RX error count:             %10d\n", mac.rxErrCnt);
+	pr_debug("     CRC error count:            %10d\n", mac.crcErrCnt);
+	pr_debug("     Link lost error count:      %10d\n", mac.linkLostErrCnt);
+	pr_debug("     reserved:                   0x%08x\n", mac.reserved1);
+	pr_debug("     RX overflow count:          %10d\n", mac.dropFrameErrCnt);
+	pr_debug("     DMA overflow count:         %10d\n", mac.reserved2[0]);
+	//pr_debug("     reserverd:         %10d\n", DRV_NAME, mac.reserved2[1]);
+	pr_debug("     TX frame counter:           %10d\n", mac.txFrameCnt);
+	pr_debug("     RX frame counter:           %10d\n", mac.rxFrameCnt);
+	pr_debug("     TX-FIFO level:              0x%08x\n", mac.txFifoLevel);
+	pr_debug("     MII connection:             0x%08x\n", mac.miiConnected);
 }
 
 static void print_CCatMii(const struct ccat_eth_priv *const priv)
 {
 	CCatMii mii;
 	memcpy_fromio(&mii, priv->reg.mii, sizeof(mii));
-	pr_info("MII base address: %p\n", priv->reg.mii);
-	pr_info("     MII cycle:    %s\n",
+	pr_debug("MII base address: %p\n", priv->reg.mii);
+	pr_debug("     MII cycle:    %s\n",
 		mii.startMiCycle ? "running" : "no cycle");
-	pr_info("     reserved:     0x%x\n", mii.reserved1);
-	pr_info("     cmd valid:    %s\n", mii.cmdErr ? "no" : "yes");
-	pr_info("     cmd:          0x%x\n", mii.cmd);
-	pr_info("     reserved:     0x%x\n", mii.reserved2);
-	pr_info("     PHY addr:     0x%x\n", mii.phyAddr);
-	pr_info("     reserved:     0x%x\n", mii.reserved3);
-	pr_info("     PHY reg:      0x%x\n", mii.phyReg);
-	pr_info("     reserved:     0x%x\n", mii.reserved4);
-	pr_info("     PHY write:    0x%x\n", mii.phyWriteData);
-	pr_info("     PHY read:     0x%x\n", mii.phyReadData);
-	pr_info("     MAC addr:     %02x:%02x:%02x:%02x:%02x:%02x\n",
+	pr_debug("     reserved:     0x%x\n", mii.reserved1);
+	pr_debug("     cmd valid:    %s\n", mii.cmdErr ? "no" : "yes");
+	pr_debug("     cmd:          0x%x\n", mii.cmd);
+	pr_debug("     reserved:     0x%x\n", mii.reserved2);
+	pr_debug("     PHY addr:     0x%x\n", mii.phyAddr);
+	pr_debug("     reserved:     0x%x\n", mii.reserved3);
+	pr_debug("     PHY reg:      0x%x\n", mii.phyReg);
+	pr_debug("     reserved:     0x%x\n", mii.reserved4);
+	pr_debug("     PHY write:    0x%x\n", mii.phyWriteData);
+	pr_debug("     PHY read:     0x%x\n", mii.phyReadData);
+	pr_debug("     MAC addr:     %02x:%02x:%02x:%02x:%02x:%02x\n",
 		mii.macAddr.b[0], mii.macAddr.b[1], mii.macAddr.b[2],
 		mii.macAddr.b[3], mii.macAddr.b[4], mii.macAddr.b[5]);
-	pr_info("     MAC filter enable:   %s\n",
+	pr_debug("     MAC filter enable:   %s\n",
 		mii.macFilterEnabled ? "enabled" : "disabled");
-	pr_info("     reserved:     0x%x\n", mii.reserved6);
-	pr_info("     Link State:   %s\n", mii.linkStatus ? "link" : "no link");
-	pr_info("     reserved:     0x%x\n", mii.reserved7);
-	//pr_info("     reserved:     0x%x\n", DRV_NAME, mii.reserved8);
+	pr_debug("     reserved:     0x%x\n", mii.reserved6);
+	pr_debug("     Link State:   %s\n", mii.linkStatus ? "link" : "no link");
+	pr_debug("     reserved:     0x%x\n", mii.reserved7);
+	//pr_debug("     reserved:     0x%x\n", DRV_NAME, mii.reserved8);
 	//TODO add leds, systemtime insertion and interrupts
 }
 
@@ -163,21 +161,17 @@ void ccat_print_function_info(struct ccat_eth_priv *priv)
 	print_CCatDmaTxFifo(priv);
 	print_CCatDmaRxActBuf(priv);
 	print_CCatMacRegs(priv);
-	pr_info("  RX window:    %p\n", priv->reg.rx_mem);
-	pr_info("  TX memory:    %p\n", priv->reg.tx_mem);
-	pr_info("  misc:         %p\n", priv->reg.misc);
+	pr_debug("  RX window:    %p\n", priv->reg.rx_mem);
+	pr_debug("  TX memory:    %p\n", priv->reg.tx_mem);
+	pr_debug("  misc:         %p\n", priv->reg.misc);
 }
-#else
-void ccat_print_function_info(struct ccat_eth_priv *priv)
-{
-}
-#endif /* #if PRINT_DETAILS */
 
-void print_update_info(const CCatInfoBlock * const info)
+void print_update_info(const CCatInfoBlock * const info, void __iomem * const ioaddr)
 {
 	const size_t index = min((int)info->eCCatInfoType, CCATINFO_MAX);
-	pr_info("%s\n", CCatFunctionTypes[index]);
-	pr_info("     revision:     0x%x\n", info->nRevision);
-	pr_info("     baseaddr:     0x%lx\n", info->nAddr);
-	pr_info("     size:         0x%lx\n", info->nSize);
+	pr_debug("%s\n", CCatFunctionTypes[index]);
+	pr_debug("     revision:     0x%x\n", info->nRevision);
+	pr_debug("     baseaddr:     0x%lx\n", info->nAddr);
+	pr_debug("     size:         0x%lx\n", info->nSize);
+	pr_debug("     PROM ID is:   0x%x\n", ccat_get_prom_id(ioaddr));
 }

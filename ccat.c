@@ -264,7 +264,7 @@ static void ccat_remove(struct pci_dev *pdev)
 		pci_set_drvdata(pdev, NULL);
 		kfree(ccatdev);
 	}
-	pr_info("%s() done.\n", __FUNCTION__);
+	pr_debug("%s() done.\n", __FUNCTION__);
 }
 
 #define PCI_DEVICE_ID_BECKHOFF_CCAT 0x5000

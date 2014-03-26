@@ -1,6 +1,7 @@
 TARGET = ccat_eth
 obj-m += $(TARGET).o
 $(TARGET)-objs := ccat.o netdev.o print.o update.o
+#CFLAGS_print.o :=-DDEBUG
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules

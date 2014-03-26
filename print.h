@@ -20,7 +20,10 @@
 
 #ifndef _PRINT_H_
 #define _PRINT_H_
+
+#include "update.h"
+
 extern void ccat_print_function_info(struct ccat_eth_priv *priv);
 extern void print_mem(const unsigned char *p, size_t lines);
-extern void print_update_info(const CCatInfoBlock * info);
+extern void print_update_info(const CCatInfoBlock * const info, void __iomem * const ioaddr);
 #endif /* #ifndef _PRINT_H_ */

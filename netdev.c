@@ -146,7 +146,7 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 	/* release dma */
 	ccat_dma_free(&priv->rx_fifo.dma);
 	ccat_dma_free(&priv->tx_fifo.dma);
-	pr_info("DMA fifo's stopped.\n");
+	pr_debug("DMA fifo's stopped.\n");
 }
 
 /**
@@ -289,7 +289,7 @@ void ccat_eth_remove(struct ccat_eth_priv *const priv)
 	unregister_netdev(priv->netdev);
 	ccat_eth_priv_free_dma(priv);
 	free_netdev(priv->netdev);
-	pr_info("%s(): done\n", __FUNCTION__);
+	pr_debug("%s(): done\n", __FUNCTION__);
 }
 
 static int ccat_eth_open(struct net_device *dev)
@@ -445,7 +445,7 @@ static int run_poll_thread(void *data)
 		}
 		usleep_range(POLL_DELAY_RANGE_USECS);
 	}
-	pr_info("%s() stopped.\n", __FUNCTION__);
+	pr_debug("%s() stopped.\n", __FUNCTION__);
 	return 0;
 }
 
@@ -472,7 +472,7 @@ static int run_rx_thread(void *data)
 			frame = priv->rx_fifo.dma.virt;
 		}
 	}
-	pr_info("%s() stopped.\n", __FUNCTION__);
+	pr_debug("%s() stopped.\n", __FUNCTION__);
 	return 0;
 }
 
@@ -497,6 +497,6 @@ static int run_tx_thread(void *data)
 		set_current_state(TASK_INTERRUPTIBLE);
 	}
 	set_current_state(TASK_RUNNING);
-	pr_info("%s() stopped.\n", __FUNCTION__);
+	pr_debug("%s() stopped.\n", __FUNCTION__);
 	return 0;
 }

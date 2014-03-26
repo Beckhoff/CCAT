@@ -179,7 +179,7 @@ static inline void ccat_update_cmd_addr(void __iomem *const ioaddr, uint8_t cmd,
  * ccat_get_prom_id() - Read CCAT PROM ID
  * @update: CCAT Update function object
  */
-static uint8_t ccat_get_prom_id(void __iomem *const ioaddr)
+uint8_t ccat_get_prom_id(void __iomem *const ioaddr)
 {
 	ccat_update_cmd(ioaddr, CCAT_GET_PROM_ID);
 	return ioread8(ioaddr + 0x38);
@@ -264,8 +264,7 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 	kref_init(&update->refcount);
 	update->ioaddr = ccatdev->bar[0].ioaddr + ioread32(addr + 0x8);
 	memcpy_fromio(&update->info, addr, sizeof(update->info));
-	print_update_info(&update->info);
-	pr_info("     PROM ID is:   0x%x\n", ccat_get_prom_id(update->ioaddr));
+	print_update_info(&update->info, update->ioaddr);
 
 	if(0x00 != update->info.nRevision) {
 		pr_warn("CCAT Update rev. %d not supported\n", update->info.nRevision);
@@ -309,11 +308,11 @@ static void ccat_update_destroy(struct kref *ref)
 	class_destroy(update->class);
 	unregister_chrdev_region(update->dev, 1);
 	kfree(update);
-	pr_info("%s(): done\n", __FUNCTION__);
+	pr_debug("%s(): done\n", __FUNCTION__);
 }
 
 void ccat_update_remove(struct ccat_update *update)
 {
 	kref_put(&update->refcount, ccat_update_destroy);
-	pr_info("%s(): done\n", __FUNCTION__);
+	pr_debug("%s(): done\n", __FUNCTION__);
 }
