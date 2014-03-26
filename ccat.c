@@ -49,7 +49,7 @@ static void ccat_bar_free(struct ccat_bar *bar)
  * @index 0 and 2 are valid for CCAT, meaning pci bar0 or pci bar2
  * @pdev the pci device as which the CCAT was recognized before
  *
- * Reading PCI config space, request and map memory region.
+ * Reading PCI config space; request and map memory region.
  */
 static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 			 struct pci_dev *pdev)
@@ -144,7 +144,8 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 
 /**
  * Initialize all available CCAT functions.
- * @return count of failed functions
+ *
+ * Return: count of failed functions
  */
 static int ccat_functions_init(struct ccat_device *const ccatdev)
 {
