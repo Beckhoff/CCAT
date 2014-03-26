@@ -27,7 +27,7 @@
 #include <linux/netdevice.h>
 #include <linux/spinlock.h>
 
-#include "ccat.h"
+#include "module.h"
 #include "netdev.h"
 #include "print.h"
 

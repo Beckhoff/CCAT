@@ -24,7 +24,7 @@
 #include <linux/sched.h>
 #include <linux/uaccess.h>
 
-#include "ccat.h"
+#include "module.h"
 #include "print.h"
 #include "update.h"
 

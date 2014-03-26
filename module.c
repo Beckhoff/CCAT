@@ -22,7 +22,7 @@
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
-#include "ccat.h"
+#include "module.h"
 #include "netdev.h"
 #include "update.h"
 

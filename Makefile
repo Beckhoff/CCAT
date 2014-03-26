@@ -1,6 +1,6 @@
-TARGET = ccat_eth
+TARGET = ccat
 obj-m += $(TARGET).o
-$(TARGET)-objs := ccat.o netdev.o print.o update.o
+$(TARGET)-objs := module.o netdev.o print.o update.o
 #CFLAGS_print.o :=-DDEBUG
 
 all:
@@ -14,13 +14,9 @@ install:
 	env sleep 1
 	#sudo ifconfig eth2 debug
 
-indent: ccat.c ccat.h netdev.c netdev.h print.c print.h
+indent: module.c module.h netdev.c netdev.h print.c print.h update.c update.h
 	./Lindent $?
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 	rm -f *.c~ *.h~ *.bin
-
-test:
-	gcc ./unittest/test__update.c -o test__update.bin
-	sudo ./test__update.bin /home/gpb/CX2001_B000_20130425_Release_V3.rbf

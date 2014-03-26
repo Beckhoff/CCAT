@@ -20,7 +20,7 @@
 
 #include <linux/kernel.h>
 #include "CCatDefinitions.h"
-#include "ccat.h"
+#include "module.h"
 #include "print.h"
 
 #define TESTING_ENABLED 1
