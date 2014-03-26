@@ -26,7 +26,7 @@
 #include <linux/pci.h>
 #include "CCatDefinitions.h"
 
-#define DRV_NAME         "ccat_eth"
+#define DRV_NAME         "ccat"
 #define DRV_EXTRAVERSION ""
 #define DRV_VERSION      "0.6" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
