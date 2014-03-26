@@ -93,7 +93,6 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 	//ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
 	//TODO ccat_update_cmd(update->ioaddr, CCAT_WRITE_FLASH);
 	//TODO ccat_update_cmd(update->ioaddr, CCAT_READ_STATUS);
-	// verify_write() should be done externaly
 	kfree(f->private_data);
 	kref_put(&update->refcount, ccat_update_destroy);
 	return 0;
@@ -155,6 +154,20 @@ static inline void ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint
 	wait_until_busy_reset(ioaddr);
 }
 
+static inline void ccat_update_cmd_addr(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks, uint32_t addr)
+{
+	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
+	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
+	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
+	__ccat_update_cmd(ioaddr, cmd, clocks);
+	iowrite8(addr_2, ioaddr + 0x18);
+	iowrite8(addr_1, ioaddr + 0x20);
+	iowrite8(addr_0, ioaddr + 0x28);
+	wmb();
+	iowrite8(0xff, ioaddr + 0x7f8);
+	wait_until_busy_reset(ioaddr);
+}
+
 /**
  * ccat_get_prom_id() - Read CCAT PROM ID
  * @update: CCAT Update function object
@@ -172,22 +185,11 @@ static uint8_t ccat_get_prom_id(const struct ccat_update *const update)
  */
 static int ccat_read_flash_block(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, char __user *const buf)
 {
+	uint16_t i;
 	const uint16_t clocks = 8 * len;
-	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
-	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
-	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
-	__ccat_update_cmd(ioaddr, CCAT_READ_FLASH + clocks);
-	iowrite8(addr_2, ioaddr + 0x18);
-	iowrite8(addr_1, ioaddr + 0x20);
-	iowrite8(addr_0, ioaddr + 0x28);
-	wmb();
-	iowrite8(0xff, ioaddr + 0x7f8);
-	wait_until_busy_reset(ioaddr);
-	if(buf) {
-		uint16_t i;
-		for(i = 0; i < len; i++) {
-			put_user(ioread8(ioaddr + CCAT_DATA_IN_4 + 8*i), buf + i);
-		}
+	ccat_update_cmd_addr(ioaddr, CCAT_READ_FLASH + clocks, addr);
+	for(i = 0; i < len; i++) {
+		put_user(ioread8(ioaddr + CCAT_DATA_IN_4 + 8*i), buf + i);
 	}
 	return len;
 }

@@ -78,8 +78,8 @@ typedef void (*fifo_add_function) (struct ccat_eth_frame *,
 static void ccat_eth_rx_fifo_add(struct ccat_eth_frame *frame,
 				 struct ccat_eth_dma_fifo *fifo)
 {
-	uint32_t addr_and_length =
-	    (1 << 31) | ((void *)(frame) - fifo->dma.virt);
+	const size_t offset = ((void *)(frame) - fifo->dma.virt);
+	const uint32_t addr_and_length = (1 << 31) | offset;
 	frame->received = 0;
 	iowrite32(addr_and_length, fifo->reg);
 }
