@@ -47,6 +47,12 @@
 #define SWAP_BITS(B) \
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
+/**
+ * struct update_buffer - keep track of a CCAT FPGA update
+ * @update: pointer to a valid ccat_update object
+ * @data: buffer used for write operations
+ * @size: number of bytes written to the data buffer, if 0 on ccat_update_release() no data will be written to FPGA
+ */
 struct update_buffer {
 	struct ccat_update *update;
 	char data[CCAT_FLASH_SIZE];
@@ -59,10 +65,14 @@ static void ccat_write_flash(const struct update_buffer *const buf);
 static void ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks);
 static void ccat_update_destroy(struct kref *ref);
 
+
+/**
+ * wait_until_busy_reset() - wait until the busy flag was reset
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ */
 static inline void wait_until_busy_reset(void __iomem *const ioaddr)
 {
 	wmb();
-	/* wait until busy flag was reset */
 	while(ioread8(ioaddr + 1)) {
 		schedule();
 	}
@@ -106,10 +116,16 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 
 /**
  * ccat_update_read() - Read CCAT configuration data from flash
- * //TODO
- * A maximum of CCAT_DATA_BLOCK_SIZE bytes are read. To read the full
- * CCAT flash repeat calling this function until it returns 0, which
- * indicates EOF.
+ * @f: file handle previously initialized with ccat_update_open()
+ * @buf: buffer in user space provided for our data
+ * @len: length of the user space buffer
+ * @off: current offset of our file operation
+ *
+ * Copies data from the CCAT FPGA's configuration flash to user space.
+ * Note that the size of the FPGA's firmware is not known exactly so it
+ * is very possible that the overall buffer ends with a lot of 0xff.
+ *
+ * Return: the number of bytes written, or 0 if EOF reached
  */
 static int ccat_update_read(struct file *const f, char __user *buf, size_t len, loff_t *off)
 {
@@ -125,6 +141,19 @@ static int ccat_update_read(struct file *const f, char __user *buf, size_t len, 
 	}
 	return ccat_read_flash(update->update->ioaddr, buf, len, off);
 }
+
+/**
+ * ccat_update_write() - Write data to the CCAT FPGA's configuration flash
+ * @f: file handle previously initialized with ccat_update_open()
+ * @buf: buffer in user space providing the new configuration data (from *.rbf)
+ * @len: length of the user space buffer
+ * @off: current offset in the configuration data
+ *
+ * Copies data from user space (possibly a *.rbf) to the CCAT FPGA's
+ * configuration flash to user space.
+ *
+ * Return: the number of bytes written, or 0 if flash end is reached
+ */
 
 static int ccat_update_write(struct file *const f, const char __user *buf, size_t len, loff_t *off)
 {
@@ -146,6 +175,14 @@ static struct file_operations update_ops = {
 	.write = ccat_update_write,
 };
 
+/**
+ * __ccat_update_cmd() - Helper to issue a FPGA flash command
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ * @cmd: the command identifier
+ * @clocks: the number of clocks associated with the specified command
+ *
+ * no write memory barrier is called and the busy flag is not evaluated
+ */
 static inline void __ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks)
 {
 	iowrite8((0xff00 & clocks) >> 8, ioaddr);
@@ -153,6 +190,15 @@ static inline void __ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, ui
 	iowrite8(cmd, ioaddr + 0x10);
 }
 
+/**
+ * ccat_update_cmd() - Helper to issue a FPGA flash command
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ * @cmd: the command identifier
+ * @clocks: the number of clocks associated with the specified command
+ *
+ * Triggers a full flash command cycle with write memory barrier and
+ * command activate. This call blocks until the busy flag is reset.
+ */
 static inline void ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks)
 {
 	__ccat_update_cmd(ioaddr, cmd, clocks);
@@ -161,6 +207,17 @@ static inline void ccat_update_cmd(void __iomem *const ioaddr, uint8_t cmd, uint
 	wait_until_busy_reset(ioaddr);
 }
 
+
+/**
+ * ccat_update_cmd_addr() - Helper to issue a FPGA flash command with address parameter
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ * @cmd: the command identifier
+ * @clocks: the number of clocks associated with the specified command
+ * @addr: 24 bit address associated with the specified command
+ *
+ * Triggers a full flash command cycle with write memory barrier and
+ * command activate. This call blocks until the busy flag is reset.
+ */
 static inline void ccat_update_cmd_addr(void __iomem *const ioaddr, uint8_t cmd, uint16_t clocks, uint32_t addr)
 {
 	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
@@ -177,7 +234,9 @@ static inline void ccat_update_cmd_addr(void __iomem *const ioaddr, uint8_t cmd,
 
 /**
  * ccat_get_prom_id() - Read CCAT PROM ID
- * @update: CCAT Update function object
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ *
+ * Return: the CCAT FPGA's PROM identifier
  */
 uint8_t ccat_get_prom_id(void __iomem *const ioaddr)
 {
@@ -185,11 +244,24 @@ uint8_t ccat_get_prom_id(void __iomem *const ioaddr)
 	return ioread8(ioaddr + 0x38);
 }
 
+/**
+ * ccat_get_status() - Read CCAT Update status
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ *
+ * Return: the current status of the CCAT Update function
+ */
 static uint8_t ccat_get_status(void __iomem *const ioaddr)
 {
 	ccat_update_cmd(ioaddr, CCAT_READ_STATUS);
 	return ioread8(ioaddr + 0x20);
 }
+
+/**
+ * ccat_wait_status_cleared() - wait until CCAT status is cleared
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ *
+ * Blocks until bit 7 of the CCAT Update status is reset
+ */
 
 static void ccat_wait_status_cleared(void __iomem *const ioaddr)
 {
@@ -200,9 +272,18 @@ static void ccat_wait_status_cleared(void __iomem *const ioaddr)
 }
 
 /**
- * ccat_read_flash() - Read bytes from CCAT flash
- * @update: CCAT Update function object
- * @len: number of bytes to read
+ * ccat_read_flash_block() - Read a block of CCAT configuration data from flash
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ * @addr: 24 bit address of the block to read
+ * @len: number of bytes to read from this block, len <= CCAT_DATA_BLOCK_SIZE
+ * @buf: output buffer in user space
+ *
+ * Copies one block of configuration data from the CCAT FPGA's flash to
+ * the user space buffer.
+ * Note that the size of the FPGA's firmware is not known exactly so it
+ * is very possible that the overall buffer ends with a lot of 0xff.
+ *
+ * Return: the number of bytes copied
  */
 static int ccat_read_flash_block(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, char __user *const buf)
 {
@@ -215,6 +296,18 @@ static int ccat_read_flash_block(void __iomem *const ioaddr, const uint32_t addr
 	return len;
 }
 
+/**
+ * ccat_read_flash() - Read a chunk of CCAT configuration data from flash
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ * @buf: output buffer in user space
+ * @len: number of bytes to read
+ * @off: offset in the configuration data
+ *
+ * Copies multiple blocks of configuration data from the CCAT FPGA's
+ * flash to the user space buffer.
+ *
+ * Return: the number of bytes copied
+ */
 static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_t len, loff_t* off)
 {
 	const loff_t start = *off;
@@ -227,6 +320,17 @@ static int ccat_read_flash(void __iomem *const ioaddr, char __user *buf, uint32_
 	return *off - start;
 }
 
+/**
+ * ccat_write_flash_block() - Write a block of CCAT configuration data to flash
+ * @ioaddr: address of the CCAT Update function in PCI config space
+ * @addr: 24 bit start address in the CCAT FPGA's flash
+ * @len: number of bytes to write in this block, len <= CCAT_WRITE_BLOCK_SIZE
+ * @buf: input buffer
+ *
+ * Copies one block of configuration data to the CCAT FPGA's flash
+ *
+ * Return: the number of bytes copied
+ */
 static int ccat_write_flash_block(void __iomem *const ioaddr, const uint32_t addr, const uint16_t len, const char *const buf)
 {
 	const uint16_t clocks = 8 * len;
@@ -240,6 +344,10 @@ static int ccat_write_flash_block(void __iomem *const ioaddr, const uint32_t add
 	return len;
 }
 
+/**
+ * ccat_write_flash() - Write a new CCAT configuration to FPGA's flash
+ * @update: a CCAT Update buffer containing the new FPGA configuration
+ */
 static void ccat_write_flash(const struct update_buffer *const update)
 {
 	const char *buf = update->data;
@@ -254,6 +362,9 @@ static void ccat_write_flash(const struct update_buffer *const update)
 	ccat_write_flash_block(update->update->ioaddr, off, (uint16_t)len, buf);
 }
 
+/**
+ * ccat_update_init() - Initialize the CCAT Update function
+ */
 struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 				    void __iomem * const addr)
 {
@@ -300,6 +411,12 @@ cleanup:
 	return NULL;
 }
 
+/**
+ * ccat_update_destroy() - Cleanup the CCAT Update function
+ * @ref: pointer to a struct kref embedded into a struct ccat_update, which we intend to destroy
+ *
+ * Retrieves the parent struct ccat_update and destroys it.
+ */
 static void ccat_update_destroy(struct kref *ref)
 {
 	struct ccat_update *update = container_of(ref, struct ccat_update, refcount);
@@ -311,6 +428,9 @@ static void ccat_update_destroy(struct kref *ref)
 	pr_debug("%s(): done\n", __FUNCTION__);
 }
 
+/**
+ * ccat_update_remove() - Prepare the CCAT Update function for removal
+ */
 void ccat_update_remove(struct ccat_update *update)
 {
 	kref_put(&update->refcount, ccat_update_destroy);
