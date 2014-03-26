@@ -30,6 +30,7 @@
 
 #define CCAT_DATA_IN_4 0x038
 #define CCAT_DATA_IN_N 0x7F0
+#define CCAT_DATA_OUT_4 0x030
 #define CCAT_DATA_BLOCK_SIZE (size_t)((CCAT_DATA_IN_N - CCAT_DATA_IN_4)/8)
 #define CCAT_WRITE_BLOCK_SIZE 128
 #define CCAT_FLASH_SIZE (size_t)0xE0000
@@ -232,7 +233,7 @@ static int ccat_write_flash_block(void __iomem *const ioaddr, const uint32_t add
 	uint16_t i;
 	ccat_update_cmd(ioaddr, CCAT_WRITE_ENABLE);
 	for(i = 0; i < len; i++) {
-		iowrite8(buf[i], ioaddr + 0x030 + 8*i);
+		iowrite8(buf[i], ioaddr + CCAT_DATA_OUT_4 + 8*i);
 	}
 	ccat_update_cmd_addr(ioaddr, CCAT_WRITE_FLASH + clocks, addr);
 	ccat_wait_status_cleared(ioaddr);
