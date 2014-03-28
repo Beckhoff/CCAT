@@ -8,7 +8,8 @@
 # backup. If that restore fails, too, keep calm and try it manually. As
 # long as the FPGA stays powered on you have a chance to recover!
 #
-# Copyright (c) 2014 Beckhoff Automation GmbH
+# Copyright (C) 2014  Beckhoff Automation GmbH
+# Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files
