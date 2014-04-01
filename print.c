@@ -101,8 +101,8 @@ static void print_CCatInfoBlock(const CCatInfoBlock * info,
 	pr_debug("     revision:     0x%x\n", info->nRevision);
 	pr_debug("     RX channel:   %d\n", info->rxDmaChn);
 	pr_debug("     TX channel:   %d\n", info->txDmaChn);
-	pr_debug("     baseaddr:     0x%lx\n", info->nAddr);
-	pr_debug("     size:         0x%lx\n", info->nSize);
+	pr_debug("     baseaddr:     0x%x\n", info->nAddr);
+	pr_debug("     size:         0x%x\n", info->nSize);
 	pr_debug("     subfunction:  %p\n", base_addr);
 }
 
@@ -174,7 +174,7 @@ void print_update_info(const CCatInfoBlock * const info,
 	const size_t index = min((int)info->eCCatInfoType, CCATINFO_MAX);
 	pr_debug("%s\n", CCatFunctionTypes[index]);
 	pr_debug("     revision:     0x%x\n", info->nRevision);
-	pr_debug("     baseaddr:     0x%lx\n", info->nAddr);
-	pr_debug("     size:         0x%lx\n", info->nSize);
+	pr_debug("     baseaddr:     0x%x\n", info->nAddr);
+	pr_debug("     size:         0x%x\n", info->nSize);
 	pr_debug("     PROM ID is:   0x%x\n", ccat_get_prom_id(ioaddr));
 }

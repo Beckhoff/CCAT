@@ -125,7 +125,7 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 	if (0 !=
 	    ccat_dma_init(&fifo->dma, channel, priv->ccatdev->bar[2].ioaddr,
 			  &priv->ccatdev->pdev->dev)) {
-		pr_info("init DMA%d memory failed.\n", channel);
+		pr_info("init DMA%llu memory failed.\n", (uint64_t) channel);
 		return -1;
 	}
 	fifo->add = add;

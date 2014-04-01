@@ -22,9 +22,9 @@
 
 #ifndef WINDOWS
 #include <linux/kernel.h>
-typedef unsigned char BYTE;
-typedef unsigned long ULONG;
-typedef unsigned short USHORT;
+typedef uint8_t BYTE;
+typedef uint32_t ULONG;
+typedef uint16_t USHORT;
 typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
@@ -40,11 +40,7 @@ typedef struct _ETHERNET_ADDRESS
 }ETHERNET_ADDRESS;
 
 
-typedef struct _LIST_ENTRY 
-{
-   struct _LIST_ENTRY *Flink;
-   struct _LIST_ENTRY *Blink;
-}LIST_ENTRY;
+typedef uint64_t LIST_ENTRY;
 
 typedef enum CCatInfoTypes
 {
