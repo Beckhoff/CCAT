@@ -60,7 +60,8 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 	bar->len = pci_resource_len(pdev, index);
 	bar->flags = pci_resource_flags(pdev, index);
 	if (!(IORESOURCE_MEM & bar->flags)) {
-		pr_info("bar%llu is no mem_region -> abort.\n", (uint64_t)index);
+		pr_info("bar%llu is no mem_region -> abort.\n",
+			(uint64_t) index);
 		return -EIO;
 	}
 
@@ -69,16 +70,17 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 		pr_info("allocate mem_region failed.\n");
 		return -EIO;
 	}
-	pr_debug("bar%llu at [%lx,%lx] len=%lu res: %p.\n", (uint64_t)index,
+	pr_debug("bar%llu at [%lx,%lx] len=%lu res: %p.\n", (uint64_t) index,
 		 bar->start, bar->end, bar->len, res);
 
 	bar->ioaddr = ioremap(bar->start, bar->len);
 	if (!bar->ioaddr) {
-		pr_info("bar%llu ioremap failed.\n", (uint64_t)index);
+		pr_info("bar%llu ioremap failed.\n", (uint64_t) index);
 		release_mem_region(bar->start, bar->len);
 		return -EIO;
 	}
-	pr_debug("bar%llu I/O mem mapped to %p.\n", (uint64_t)index, bar->ioaddr);
+	pr_debug("bar%llu I/O mem mapped to %p.\n", (uint64_t) index,
+		 bar->ioaddr);
 	return 0;
 }
 
@@ -125,7 +127,8 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	}
 
 	if (request_dma(channel, DRV_NAME)) {
-		pr_info("request dma channel %llu failed\n", (uint64_t) channel);
+		pr_info("request dma channel %llu failed\n",
+			(uint64_t) channel);
 		ccat_dma_free(dma);
 		return -1;
 	}

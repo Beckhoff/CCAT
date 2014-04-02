@@ -129,8 +129,8 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
  *
  * Return: the number of bytes written, or 0 if EOF reached
  */
-static ssize_t ccat_update_read(struct file *const f, char __user * buf, size_t len,
-			    loff_t * off)
+static ssize_t ccat_update_read(struct file *const f, char __user * buf,
+				size_t len, loff_t * off)
 {
 	struct update_buffer *update = f->private_data;
 	if (!buf || !off) {
@@ -159,7 +159,7 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf, size_t 
  */
 
 static ssize_t ccat_update_write(struct file *const f, const char __user * buf,
-			     size_t len, loff_t * off)
+				 size_t len, loff_t * off)
 {
 	struct update_buffer *const update = f->private_data;
 	if (*off + len > sizeof(update->data))
