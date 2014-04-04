@@ -31,6 +31,9 @@
 #define DRV_VERSION      "0.7" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
+#undef pr_fmt
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 /**
  * struct ccat_bar - CCAT PCI Base Address Register(BAR) configuration
  * @start: start address of this BAR
