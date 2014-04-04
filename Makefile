@@ -13,12 +13,11 @@ install:
 	sudo cp ./$(TARGET).ko $(EXTRA_DIR)
 	sudo depmod -a
 	sudo modprobe $(TARGET)
-	env sleep 1
-	#sudo ifconfig eth2 debug
-
-indent: module.c module.h netdev.c netdev.h print.c print.h update.c update.h
-	./Lindent $?
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 	rm -f *.c~ *.h~ *.bin
+
+# indent the source files with the kernels Lindent script
+indent: module.c module.h netdev.c netdev.h print.c print.h update.c update.h
+	./Lindent $?
