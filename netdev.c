@@ -364,7 +364,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	addr_and_length = 8 + (next * sizeof(*frame));
 	addr_and_length +=
-	    ((frame[next].length + sizeof(CCAT_HEADER_TAG) + 8) / 8) << 24;
+	    ((frame[next].length + CCAT_DMA_FRAME_HEADER_LENGTH) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo);	/* add to DMA fifo */
 	atomic64_add(frame[next].length, &priv->tx_bytes);	/* update stats */
 

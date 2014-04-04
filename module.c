@@ -296,10 +296,7 @@ static void ccat_exit_module(void)
 static int ccat_init_module(void)
 {
 	static const size_t offset = offsetof(struct ccat_eth_frame, data);
-	BUILD_BUG_ON(sizeof(struct ccat_eth_frame) != sizeof(CCatDmaTxFrame));
-	BUILD_BUG_ON(sizeof(struct ccat_eth_frame) != sizeof(CCatRxDesc));
-	BUILD_BUG_ON(offset != offsetof(CCatDmaTxFrame, data));
-	BUILD_BUG_ON(offset != offsetof(CCatRxDesc, data));
+	BUILD_BUG_ON(offset != CCAT_DMA_FRAME_HEADER_LENGTH);
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 	return pci_register_driver(&pci_driver);
 }
