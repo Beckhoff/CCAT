@@ -27,6 +27,7 @@
 #include <linux/netdevice.h>
 #include <linux/spinlock.h>
 
+#include "compat.h"
 #include "module.h"
 #include "netdev.h"
 #include "print.h"
@@ -56,8 +57,10 @@ static int run_poll_thread(void *data);
 static int run_rx_thread(void *data);
 static int run_tx_thread(void *data);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35)
 static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64
 						      *storage);
+#endif
 static int ccat_eth_open(struct net_device *dev);
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 				       struct net_device *dev);
@@ -66,7 +69,9 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *data,
 			      size_t len);
 
 static const struct net_device_ops ccat_eth_netdev_ops = {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35)
 	.ndo_get_stats64 = ccat_eth_get_stats64,
+#endif
 	.ndo_open = ccat_eth_open,
 	.ndo_start_xmit = ccat_eth_start_xmit,
 	.ndo_stop = ccat_eth_stop,
@@ -204,6 +209,7 @@ inline static size_t ccat_eth_priv_read_link_state(const struct ccat_eth_priv
 	return (1 << 24) == (ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35)
 static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64
 						      *storage)
 {
@@ -241,6 +247,7 @@ static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, st
 	//TODO __u64    tx_compressed;
 	return storage;
 }
+#endif
 
 struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
 				    const void __iomem * const addr)

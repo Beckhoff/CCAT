@@ -22,6 +22,7 @@
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include "compat.h"
 #include "module.h"
 #include "netdev.h"
 #include "update.h"
@@ -295,8 +296,7 @@ static void ccat_exit_module(void)
 
 static int ccat_init_module(void)
 {
-	static const size_t offset = offsetof(struct ccat_eth_frame, data);
-	BUILD_BUG_ON(offset != CCAT_DMA_FRAME_HEADER_LENGTH);
+	BUILD_BUG_ON(offsetof(struct ccat_eth_frame, data) != CCAT_DMA_FRAME_HEADER_LENGTH);
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 	return pci_register_driver(&pci_driver);
 }
