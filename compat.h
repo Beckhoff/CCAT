@@ -30,17 +30,19 @@
 #define netdev_info(DEV, ...) pr_info(__VA_ARGS__)
 #define netdev_err netdev_info
 
-static inline void *dma_zalloc_coherent(struct device *dev, size_t size, dma_addr_t *dma_handle, gfp_t flag)
+static inline void *dma_zalloc_coherent(struct device *dev, size_t size,
+					dma_addr_t * dma_handle, gfp_t flag)
 {
-	void *result = dma_alloc_coherent(dev, size, dma_handle, flag | __GFP_ZERO);
-	if(result)
+	void *result =
+	    dma_alloc_coherent(dev, size, dma_handle, flag | __GFP_ZERO);
+	if (result)
 		memset(result, 0, size);
 	return result;
 }
 
 static inline void usleep_range(unsigned long min, unsigned long max)
 {
-	msleep(min/1000);
+	msleep(min / 1000);
 }
 #endif
 #endif /* #ifndef _CCAT_COMPAT_H_ */

@@ -296,7 +296,8 @@ static void ccat_exit_module(void)
 
 static int ccat_init_module(void)
 {
-	BUILD_BUG_ON(offsetof(struct ccat_eth_frame, data) != CCAT_DMA_FRAME_HEADER_LENGTH);
+	BUILD_BUG_ON(offsetof(struct ccat_eth_frame, data) !=
+		     CCAT_DMA_FRAME_HEADER_LENGTH);
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 	return pci_register_driver(&pci_driver);
 }
