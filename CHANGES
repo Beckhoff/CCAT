@@ -5,11 +5,12 @@
 - added support for Kernel 2.6.32
 
 
-          |    | generic/|
-  Kernel  |plat| ec_ccat | result
-==========|====|==========|=============================================
-2.6.32.61 | 32 | generic | EtherLab not running, poor latency (fping average of 6ms), because of a poor dummy implementation for the missing usleep_range()
-2.6.32.61 | 32 | ec_ccat | no errors
-3.4.69    | 32 | generic | no errors
-3.4.69    | 32 | ec_ccat | no errors
+          |      | generic/|
+  Kernel  | arch | ec_ccat | result
+==========|======|=========|=============================================
+2.6.32.61 | i386 | generic | EtherLab not running, poor latency (fping average of 6ms), because of a poor dummy implementation for the missing usleep_range()
+2.6.32.61 | i386 | ec_ccat | no errors
+3.4.69    | i386 | generic | no errors
+3.4.69    | i386 | ec_ccat | no errors
+3.4.69    |x86_64| generic | fping +;
 All tests done on Beckhoff CX2030 with Ubuntu 12.04 LTS
