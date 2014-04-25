@@ -280,8 +280,8 @@ struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
 		return NULL;
 	}
 	pr_info("registered %s as network device.\n", netdev->name);
-	priv->rx_thread = kthread_run(run_rx_thread, netdev, "%s_rx", DRV_NAME);
-	priv->tx_thread = kthread_run(run_tx_thread, netdev, "%s_tx", DRV_NAME);
+	priv->rx_thread = kthread_run(run_rx_thread, netdev, "%s_rx", KBUILD_MODNAME);
+	priv->tx_thread = kthread_run(run_tx_thread, netdev, "%s_tx", KBUILD_MODNAME);
 	return priv;
 }
 
@@ -304,7 +304,7 @@ static int ccat_eth_open(struct net_device *dev)
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	netif_carrier_off(dev);
 	priv->poll_thread =
-	    kthread_run(run_poll_thread, dev, "%s_poll", DRV_NAME);
+	    kthread_run(run_poll_thread, dev, "%s_poll", KBUILD_MODNAME);
 
 	//TODO
 	return 0;

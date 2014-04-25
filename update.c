@@ -399,7 +399,7 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 		goto cleanup;
 	}
 
-	if (alloc_chrdev_region(&update->dev, 0, 1, DRV_NAME)) {
+	if (alloc_chrdev_region(&update->dev, 0, 1, KBUILD_MODNAME)) {
 		pr_warn("alloc_chrdev_region() failed\n");
 		goto cleanup;
 	}

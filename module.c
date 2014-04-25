@@ -66,7 +66,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 		return -EIO;
 	}
 
-	res = request_mem_region(bar->start, bar->len, DRV_NAME);
+	res = request_mem_region(bar->start, bar->len, KBUILD_MODNAME);
 	if (!res) {
 		pr_info("allocate mem_region failed.\n");
 		return -EIO;
@@ -127,7 +127,7 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 		return -1;
 	}
 
-	if (request_dma(channel, DRV_NAME)) {
+	if (request_dma(channel, KBUILD_MODNAME)) {
 		pr_info("request dma channel %llu failed\n",
 			(uint64_t) channel);
 		ccat_dma_free(dma);
@@ -283,7 +283,7 @@ static const struct pci_device_id pci_ids[] = {
 MODULE_DEVICE_TABLE(pci, pci_ids);
 
 static struct pci_driver pci_driver = {
-	.name = DRV_NAME,
+	.name = KBUILD_MODNAME,
 	.id_table = pci_ids,
 	.probe = ccat_probe,
 	.remove = ccat_remove,
