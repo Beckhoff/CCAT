@@ -27,7 +27,7 @@
 #include "CCatDefinitions.h"
 
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.8" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.9" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 #undef pr_fmt

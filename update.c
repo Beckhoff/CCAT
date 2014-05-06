@@ -165,7 +165,10 @@ static ssize_t ccat_update_write(struct file *const f, const char __user * buf,
 	if (*off + len > sizeof(update->data))
 		return 0;
 
-	copy_from_user(update->data + *off, buf, len);
+	if (copy_from_user(update->data + *off, buf, len)) {
+		return -EFAULT;
+	}
+
 	*off += len;
 	update->size = *off;
 	return len;

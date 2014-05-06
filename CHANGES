@@ -1,5 +1,10 @@
 
 
+0.9:
+====
+- Avoided unused return value warning. (Patch from Florian Pose <IgH>)
+
+
 0.8:
 ====
 - added support for Kernel 2.6.32
