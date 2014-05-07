@@ -3,6 +3,26 @@
 0.9:
 ====
 - Avoided unused return value warning. (Patch from Florian Pose <IgH>)
+- replaced DEV_NAME with KBUILD_MODNAME
+
+Test log:
+----------|      | generic/|
+  Kernel  | arch | ec_ccat | device |  os   |result (fping, netio, etherlab)
+==========|======|=========|================================================
+2.6.32.61 | i386 | generic | CX2030 | 12.04 | EtherLab not running, poor latency (fping average of 6ms), because of a poor dummy implementation for the missing usleep_range() -> use a modern kernel...
+2.6.32.61 | i386 | ec_ccat | CX2030 | 12.04 | no errors
+2.6.32.61 |x86_64| generic | CX2030 | 12.04 | EtherLab not running, poor latency (fping average of 6ms), because of a poor dummy implementation for the missing usleep_range() -> use a modern kernel...
+2.6.32.61 |x86_64| ec_ccat | CX2030 | 12.04 | no errors
+3.4.69    | i386 | generic | CX2030 | 12.04 | no errors
+3.4.69    | i386 | ec_ccat | CX2030 | 12.04 | no errors
+3.4.69    |x86_64| generic | CX2030 | 12.04 | no errors
+3.4.69    |x86_64| ec_ccat | CX2030 | 12.04 | no errors
+3.12.18   | i386 | generic | CX5020 | 14.04 | no errors
+3.12.18   | i386 | ec_ccat | CX5020 | 14.04 | no errors
+
+* os/12.04 means Ubuntu 12.04 LTS
+* os/14.04 means Ubuntu 14.04 LTS
+
 
 
 0.8:
