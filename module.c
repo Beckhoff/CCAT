@@ -62,8 +62,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 	bar->len = pci_resource_len(pdev, index);
 	bar->flags = pci_resource_flags(pdev, index);
 	if (!(IORESOURCE_MEM & bar->flags)) {
-		pr_info("bar%llu is no mem_region -> abort.\n",
-			(u64) index);
+		pr_info("bar%llu is no mem_region -> abort.\n", (u64) index);
 		return -EIO;
 	}
 
@@ -81,8 +80,7 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 		release_mem_region(bar->start, bar->len);
 		return -EIO;
 	}
-	pr_debug("bar%llu I/O mem mapped to %p.\n", (u64) index,
-		 bar->ioaddr);
+	pr_debug("bar%llu I/O mem mapped to %p.\n", (u64) index, bar->ioaddr);
 	return 0;
 }
 
@@ -130,8 +128,7 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	}
 
 	if (request_dma(channel, KBUILD_MODNAME)) {
-		pr_info("request dma channel %llu failed\n",
-			(u64) channel);
+		pr_info("request dma channel %llu failed\n", (u64) channel);
 		ccat_dma_free(dma);
 		return -1;
 	}
@@ -159,7 +156,7 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 	const u8 num_func = ioread8(ccatdev->bar[0].ioaddr + 4);
 	void __iomem *addr = ccatdev->bar[0].ioaddr;
 	const void __iomem *end = addr + (sizeof(CCatInfoBlock) * num_func);
-	int status = 0; /* count init function failures */
+	int status = 0;		/* count init function failures */
 
 	while (addr < end) {
 		const u8 type = ioread16(addr);

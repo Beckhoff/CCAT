@@ -22,6 +22,7 @@
 #define _CCAT_H_
 
 #include <linux/cdev.h>
+#include <linux/hrtimer.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
 #include "CCatDefinitions.h"
@@ -147,14 +148,12 @@ struct ccat_device {
  * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
  * @ccatdev: pointer to the parent struct ccat_device
  * @netdev: the net_device structure used by the kernel networking stack
- * @poll_thread: is used to poll status registers like link state
- * @rx_thread: thread which does housekeeping of RX DMA descriptors
- * @tx_thread: thread which does housekeeping of TX DMA descriptors
  * @next_tx_frame: pointer to the next TX DMA descriptor, which the tx_thread should check for availablity
  * @info: holds a copy of the CCAT Ethernet/EtherCAT Master function information block (read from PCI config space)
  * @reg: register addresses in PCI config space of the Ethernet/EtherCAT Master function
  * @rx_fifo: DMA fifo used for RX DMA descriptors
  * @tx_fifo: DMA fifo used for TX DMA descriptors
+ * @poll_timer: interval timer used to poll CCAT for events like link changed, rx done, tx done
  * @rx_bytes: number of bytes received -> reported with ndo_get_stats64()
  * @rx_dropped: number of received frames, which were dropped -> reported with ndo_get_stats64()
  * @tx_bytes: number of bytes send -> reported with ndo_get_stats64()
@@ -163,14 +162,12 @@ struct ccat_device {
 struct ccat_eth_priv {
 	const struct ccat_device *ccatdev;
 	struct net_device *netdev;
-	struct task_struct *poll_thread;
-	struct task_struct *rx_thread;
-	struct task_struct *tx_thread;
 	const struct ccat_eth_frame *next_tx_frame;
 	CCatInfoBlock info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
 	struct ccat_eth_dma_fifo tx_fifo;
+	struct hrtimer poll_timer;
 	atomic64_t rx_bytes;
 	atomic64_t rx_dropped;
 	atomic64_t tx_bytes;

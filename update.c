@@ -63,8 +63,7 @@ static void ccat_wait_status_cleared(void __iomem * const ioaddr);
 static int ccat_read_flash(void __iomem * const ioaddr, char __user * buf,
 			   u32 len, loff_t * off);
 static void ccat_write_flash(const struct update_buffer *const buf);
-static void ccat_update_cmd(void __iomem * const ioaddr, u8 cmd,
-			    u16 clocks);
+static void ccat_update_cmd(void __iomem * const ioaddr, u8 cmd, u16 clocks);
 static void ccat_update_destroy(struct kref *ref);
 
 /**
@@ -231,8 +230,7 @@ static inline void ccat_update_cmd(void __iomem * const ioaddr, u8 cmd,
  * command activate. This call blocks until the busy flag is reset.
  */
 static inline void ccat_update_cmd_addr(void __iomem * const ioaddr,
-					u8 cmd, u16 clocks,
-					u32 addr)
+					u8 cmd, u16 clocks, u32 addr)
 {
 	const u8 addr_0 = SWAP_BITS(addr & 0xff);
 	const u8 addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
@@ -386,8 +384,7 @@ static void ccat_write_flash(const struct update_buffer *const update)
 		buf += CCAT_WRITE_BLOCK_SIZE;
 		len -= CCAT_WRITE_BLOCK_SIZE;
 	}
-	ccat_write_flash_block(update->update->ioaddr, off, (u16) len,
-			       buf);
+	ccat_write_flash_block(update->update->ioaddr, off, (u16) len, buf);
 }
 
 /**

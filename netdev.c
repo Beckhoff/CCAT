@@ -21,8 +21,6 @@
 #include <linux/etherdevice.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/kfifo.h>
-#include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/spinlock.h>
@@ -50,12 +48,7 @@ static const u8 frameForwardEthernetFrames[] = {
 };
 
 #define FIFO_LENGTH 64
-#define DMA_POLL_DELAY_RANGE_USECS 100, 100	/* time to sleep between rx/tx DMA polls */
-#define POLL_DELAY_RANGE_USECS 500, 1000	/* time to sleep between link state polls */
-
-static int run_poll_thread(void *data);
-static int run_rx_thread(void *data);
-static int run_tx_thread(void *data);
+static enum hrtimer_restart poll_timer_callback(struct hrtimer *timer);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35)
 static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64
@@ -97,13 +90,11 @@ static void ccat_eth_tx_fifo_add_free(struct ccat_eth_frame *frame,
 	frame->sent = 1;
 }
 
-static void ccat_eth_tx_fifo_full(struct net_device *const dev,
+static void ccat_eth_tx_fifo_full(struct ccat_eth_priv *const priv,
 				  const struct ccat_eth_frame *const frame)
 {
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	netif_stop_queue(dev);
+	netif_stop_queue(priv->netdev);
 	priv->next_tx_frame = frame;
-	wake_up_process(priv->tx_thread);
 }
 
 static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *fifo)
@@ -283,19 +274,11 @@ struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
 		return NULL;
 	}
 	pr_info("registered %s as network device.\n", netdev->name);
-	priv->rx_thread = kthread_run(run_rx_thread, netdev, "%s_rx", KBUILD_MODNAME);
-	priv->tx_thread = kthread_run(run_tx_thread, netdev, "%s_tx", KBUILD_MODNAME);
 	return priv;
 }
 
 void ccat_eth_remove(struct ccat_eth_priv *const priv)
 {
-	if (priv->rx_thread) {
-		kthread_stop(priv->rx_thread);
-	}
-	if (priv->tx_thread) {
-		kthread_stop(priv->tx_thread);
-	}
 	unregister_netdev(priv->netdev);
 	ccat_eth_priv_free_dma(priv);
 	free_netdev(priv->netdev);
@@ -307,10 +290,10 @@ static int ccat_eth_open(struct net_device *dev)
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 
 	netif_carrier_off(dev);
-	priv->poll_thread =
-	    kthread_run(run_poll_thread, dev, "%s_poll", KBUILD_MODNAME);
-
-	//TODO
+	hrtimer_init(&priv->poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	priv->poll_timer.function = poll_timer_callback;
+	hrtimer_start(&priv->poll_timer, ktime_set(0, 100000),
+		      HRTIMER_MODE_REL);
 	return 0;
 }
 
@@ -363,7 +346,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	if (!frame[next].sent) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
-		ccat_eth_tx_fifo_full(dev, &frame[next]);
+		ccat_eth_tx_fifo_full(priv, &frame[next]);
 		return NETDEV_TX_BUSY;
 	}
 
@@ -383,7 +366,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	next = (next + 1) % FIFO_LENGTH;
 	/* stop queue if tx ring is full */
 	if (!frame[next].sent) {
-		ccat_eth_tx_fifo_full(dev, &frame[next]);
+		ccat_eth_tx_fifo_full(priv, &frame[next]);
 	}
 	return NETDEV_TX_OK;
 }
@@ -393,11 +376,7 @@ static int ccat_eth_stop(struct net_device *dev)
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 
 	netif_stop_queue(dev);
-	if (priv->poll_thread) {
-		/* TODO care about smp context? */
-		kthread_stop(priv->poll_thread);
-		priv->poll_thread = NULL;
-	}
+	hrtimer_cancel(&priv->poll_timer);
 	netdev_info(dev, "stopped.\n");
 	return 0;
 }
@@ -444,74 +423,60 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
 }
 
 /**
- * Since CCAT doesn't support interrupts until now, we have to poll
- * some status bits to recognize things like link change etc.
+ * Poll for link state changes
  */
-static int run_poll_thread(void *data)
+static void poll_link(struct ccat_eth_priv *const priv)
 {
-	struct net_device *const dev = (struct net_device *)data;
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	size_t link = 0;
+	const size_t link = ccat_eth_priv_read_link_state(priv);
 
-	while (!kthread_should_stop()) {
-		if (ccat_eth_priv_read_link_state(priv) != link) {
-			link = !link;
-			link ? ccat_eth_link_up(dev) : ccat_eth_link_down(dev);
-		}
-		usleep_range(POLL_DELAY_RANGE_USECS);
+	if (link != netif_carrier_ok(priv->netdev)) {
+		if (link)
+			ccat_eth_link_up(priv->netdev);
+		else
+			ccat_eth_link_down(priv->netdev);
 	}
-	pr_debug("%s() stopped.\n", __FUNCTION__);
-	return 0;
-}
-
-static int run_rx_thread(void *data)
-{
-	struct net_device *const dev = (struct net_device *)data;
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_frame *frame = priv->rx_fifo.dma.virt;
-	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
-
-	while (!kthread_should_stop()) {
-		/* wait until frame was used by DMA for Rx */
-		while (!kthread_should_stop() && !frame->received) {
-			usleep_range(DMA_POLL_DELAY_RANGE_USECS);
-		}
-
-		/* can be NULL, if we are asked to stop! */
-		if (frame->received) {
-			ccat_eth_receive(dev, frame);
-			frame->received = 0;
-			ccat_eth_rx_fifo_add(frame, &priv->rx_fifo);
-		}
-		if (++frame >= end) {
-			frame = priv->rx_fifo.dma.virt;
-		}
-	}
-	pr_debug("%s() stopped.\n", __FUNCTION__);
-	return 0;
 }
 
 /**
- * Polling of tx dma descriptors in ethernet operating mode
+ * Poll for available rx dma descriptors in ethernet operating mode
  */
-static int run_tx_thread(void *data)
+static void poll_rx(struct ccat_eth_priv *const priv)
 {
-	struct net_device *const dev = (struct net_device *)data;
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	struct ccat_eth_frame *const frame = priv->rx_fifo.dma.virt;
+	static size_t next = 0;
 
-	set_current_state(TASK_INTERRUPTIBLE);
-	while (!kthread_should_stop()) {
-		const struct ccat_eth_frame *const frame = priv->next_tx_frame;
-		if (frame) {
-			while (!kthread_should_stop() && !frame->sent) {
-				usleep_range(DMA_POLL_DELAY_RANGE_USECS);
-			}
-		}
-		netif_wake_queue(dev);
-		schedule();
-		set_current_state(TASK_INTERRUPTIBLE);
+	/* TODO omit possible deadlock in situations with heavy traffic */
+	while (frame[next].received) {
+		ccat_eth_receive(priv->netdev, frame + next);
+		frame[next].received = 0;
+		ccat_eth_rx_fifo_add(frame + next, &priv->rx_fifo);
+		next = (next + 1) % FIFO_LENGTH;
 	}
-	set_current_state(TASK_RUNNING);
-	pr_debug("%s() stopped.\n", __FUNCTION__);
-	return 0;
+}
+
+/**
+ * Poll for available tx dma descriptors in ethernet operating mode
+ */
+static void poll_tx(struct ccat_eth_priv *const priv)
+{
+	if (priv->next_tx_frame && priv->next_tx_frame->sent) {
+		priv->next_tx_frame = NULL;
+		netif_wake_queue(priv->netdev);
+	}
+}
+
+/**
+ * Since CCAT doesn't support interrupts until now, we have to poll
+ * some status bits to recognize things like link change etc.
+ */
+static enum hrtimer_restart poll_timer_callback(struct hrtimer *timer)
+{
+	struct ccat_eth_priv *priv = container_of(timer, struct ccat_eth_priv,
+						  poll_timer);
+
+	poll_link(priv);
+	poll_rx(priv);
+	poll_tx(priv);
+	hrtimer_forward_now(timer, ktime_set(0, 100 * NSEC_PER_USEC));
+	return HRTIMER_RESTART;
 }
