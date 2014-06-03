@@ -22,13 +22,13 @@
 
 #ifndef WINDOWS
 #include <linux/kernel.h>
-typedef uint8_t BYTE;
-typedef uint32_t ULONG;
-typedef uint16_t USHORT;
-typedef uint8_t UINT8;
-typedef uint16_t UINT16;
-typedef uint32_t UINT32;
-typedef uint64_t UINT64;
+typedef u8 BYTE;
+typedef u32 ULONG;
+typedef u16 USHORT;
+typedef u8 UINT8;
+typedef u16 UINT16;
+typedef u32 UINT32;
+typedef u64 UINT64;
 #endif
 
 #define CCAT_DMA_FRAME_HEADER_LENGTH (196 / 8) // 196 bit

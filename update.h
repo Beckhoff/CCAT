@@ -20,7 +20,7 @@
 
 #ifndef _UPDATE_H_
 #define _UPDATE_H_
-extern uint8_t ccat_get_prom_id(void __iomem * const ioaddr);
+extern u8 ccat_get_prom_id(void __iomem * const ioaddr);
 extern struct ccat_update *ccat_update_init(const struct ccat_device *ccatdev,
 					    void __iomem * addr);
 extern void ccat_update_remove(struct ccat_update *update);

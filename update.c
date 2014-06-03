@@ -61,10 +61,10 @@ struct update_buffer {
 
 static void ccat_wait_status_cleared(void __iomem * const ioaddr);
 static int ccat_read_flash(void __iomem * const ioaddr, char __user * buf,
-			   uint32_t len, loff_t * off);
+			   u32 len, loff_t * off);
 static void ccat_write_flash(const struct update_buffer *const buf);
-static void ccat_update_cmd(void __iomem * const ioaddr, uint8_t cmd,
-			    uint16_t clocks);
+static void ccat_update_cmd(void __iomem * const ioaddr, u8 cmd,
+			    u16 clocks);
 static void ccat_update_destroy(struct kref *ref);
 
 /**
@@ -84,6 +84,7 @@ static int ccat_update_open(struct inode *const i, struct file *const f)
 	struct ccat_update *update =
 	    container_of(i->i_cdev, struct ccat_update, cdev);
 	struct update_buffer *buf;
+
 	kref_get(&update->refcount);
 	if (atomic_read(&update->refcount.refcount) > 2) {
 		kref_put(&update->refcount, ccat_update_destroy);
@@ -105,6 +106,7 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 {
 	const struct update_buffer *const buf = f->private_data;
 	struct ccat_update *const update = buf->update;
+
 	if (buf->size > 0) {
 		ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
 		ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
@@ -133,6 +135,7 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 				size_t len, loff_t * off)
 {
 	struct update_buffer *update = f->private_data;
+
 	if (!buf || !off) {
 		return -EINVAL;
 	}
@@ -162,6 +165,7 @@ static ssize_t ccat_update_write(struct file *const f, const char __user * buf,
 				 size_t len, loff_t * off)
 {
 	struct update_buffer *const update = f->private_data;
+
 	if (*off + len > sizeof(update->data))
 		return 0;
 
@@ -190,8 +194,8 @@ static struct file_operations update_ops = {
  *
  * no write memory barrier is called and the busy flag is not evaluated
  */
-static inline void __ccat_update_cmd(void __iomem * const ioaddr, uint8_t cmd,
-				     uint16_t clocks)
+static inline void __ccat_update_cmd(void __iomem * const ioaddr, u8 cmd,
+				     u16 clocks)
 {
 	iowrite8((0xff00 & clocks) >> 8, ioaddr);
 	iowrite8(0x00ff & clocks, ioaddr + 0x8);
@@ -207,8 +211,8 @@ static inline void __ccat_update_cmd(void __iomem * const ioaddr, uint8_t cmd,
  * Triggers a full flash command cycle with write memory barrier and
  * command activate. This call blocks until the busy flag is reset.
  */
-static inline void ccat_update_cmd(void __iomem * const ioaddr, uint8_t cmd,
-				   uint16_t clocks)
+static inline void ccat_update_cmd(void __iomem * const ioaddr, u8 cmd,
+				   u16 clocks)
 {
 	__ccat_update_cmd(ioaddr, cmd, clocks);
 	wmb();
@@ -227,12 +231,13 @@ static inline void ccat_update_cmd(void __iomem * const ioaddr, uint8_t cmd,
  * command activate. This call blocks until the busy flag is reset.
  */
 static inline void ccat_update_cmd_addr(void __iomem * const ioaddr,
-					uint8_t cmd, uint16_t clocks,
-					uint32_t addr)
+					u8 cmd, u16 clocks,
+					u32 addr)
 {
-	const uint8_t addr_0 = SWAP_BITS(addr & 0xff);
-	const uint8_t addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
-	const uint8_t addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
+	const u8 addr_0 = SWAP_BITS(addr & 0xff);
+	const u8 addr_1 = SWAP_BITS((addr & 0xff00) >> 8);
+	const u8 addr_2 = SWAP_BITS((addr & 0xff0000) >> 16);
+
 	__ccat_update_cmd(ioaddr, cmd, clocks);
 	iowrite8(addr_2, ioaddr + 0x18);
 	iowrite8(addr_1, ioaddr + 0x20);
@@ -248,7 +253,7 @@ static inline void ccat_update_cmd_addr(void __iomem * const ioaddr,
  *
  * Return: the CCAT FPGA's PROM identifier
  */
-uint8_t ccat_get_prom_id(void __iomem * const ioaddr)
+u8 ccat_get_prom_id(void __iomem * const ioaddr)
 {
 	ccat_update_cmd(ioaddr, CCAT_GET_PROM_ID);
 	return ioread8(ioaddr + 0x38);
@@ -260,7 +265,7 @@ uint8_t ccat_get_prom_id(void __iomem * const ioaddr)
  *
  * Return: the current status of the CCAT Update function
  */
-static uint8_t ccat_get_status(void __iomem * const ioaddr)
+static u8 ccat_get_status(void __iomem * const ioaddr)
 {
 	ccat_update_cmd(ioaddr, CCAT_READ_STATUS);
 	return ioread8(ioaddr + 0x20);
@@ -272,10 +277,10 @@ static uint8_t ccat_get_status(void __iomem * const ioaddr)
  *
  * Blocks until bit 7 of the CCAT Update status is reset
  */
-
 static void ccat_wait_status_cleared(void __iomem * const ioaddr)
 {
-	uint8_t status;
+	u8 status;
+
 	do {
 		status = ccat_get_status(ioaddr);
 	} while (status & (1 << 7));
@@ -296,11 +301,12 @@ static void ccat_wait_status_cleared(void __iomem * const ioaddr)
  * Return: the number of bytes copied
  */
 static int ccat_read_flash_block(void __iomem * const ioaddr,
-				 const uint32_t addr, const uint16_t len,
+				 const u32 addr, const u16 len,
 				 char __user * const buf)
 {
-	uint16_t i;
-	const uint16_t clocks = 8 * len;
+	u16 i;
+	const u16 clocks = 8 * len;
+
 	ccat_update_cmd_addr(ioaddr, CCAT_READ_FLASH + clocks, addr);
 	for (i = 0; i < len; i++) {
 		put_user(ioread8(ioaddr + CCAT_DATA_IN_4 + 8 * i), buf + i);
@@ -321,9 +327,10 @@ static int ccat_read_flash_block(void __iomem * const ioaddr,
  * Return: the number of bytes copied
  */
 static int ccat_read_flash(void __iomem * const ioaddr, char __user * buf,
-			   uint32_t len, loff_t * off)
+			   u32 len, loff_t * off)
 {
 	const loff_t start = *off;
+
 	while (len > CCAT_DATA_BLOCK_SIZE) {
 		*off +=
 		    ccat_read_flash_block(ioaddr, *off, CCAT_DATA_BLOCK_SIZE,
@@ -347,11 +354,12 @@ static int ccat_read_flash(void __iomem * const ioaddr, char __user * buf,
  * Return: the number of bytes copied
  */
 static int ccat_write_flash_block(void __iomem * const ioaddr,
-				  const uint32_t addr, const uint16_t len,
+				  const u32 addr, const u16 len,
 				  const char *const buf)
 {
-	const uint16_t clocks = 8 * len;
-	uint16_t i;
+	const u16 clocks = 8 * len;
+	u16 i;
+
 	ccat_update_cmd(ioaddr, CCAT_WRITE_ENABLE);
 	for (i = 0; i < len; i++) {
 		iowrite8(buf[i], ioaddr + CCAT_DATA_OUT_4 + 8 * i);
@@ -368,16 +376,17 @@ static int ccat_write_flash_block(void __iomem * const ioaddr,
 static void ccat_write_flash(const struct update_buffer *const update)
 {
 	const char *buf = update->data;
-	uint32_t off = 0;
+	u32 off = 0;
 	size_t len = update->size;
+
 	while (len > CCAT_WRITE_BLOCK_SIZE) {
 		ccat_write_flash_block(update->update->ioaddr, off,
-				       (uint16_t) CCAT_WRITE_BLOCK_SIZE, buf);
+				       (u16) CCAT_WRITE_BLOCK_SIZE, buf);
 		off += CCAT_WRITE_BLOCK_SIZE;
 		buf += CCAT_WRITE_BLOCK_SIZE;
 		len -= CCAT_WRITE_BLOCK_SIZE;
 	}
-	ccat_write_flash_block(update->update->ioaddr, off, (uint16_t) len,
+	ccat_write_flash_block(update->update->ioaddr, off, (u16) len,
 			       buf);
 }
 
@@ -388,6 +397,7 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 				     void __iomem * const addr)
 {
 	struct ccat_update *const update = kzalloc(sizeof(*update), GFP_KERNEL);
+
 	if (!update) {
 		return NULL;
 	}
@@ -443,6 +453,7 @@ static void ccat_update_destroy(struct kref *ref)
 {
 	struct ccat_update *update =
 	    container_of(ref, struct ccat_update, refcount);
+
 	cdev_del(&update->cdev);
 	device_destroy(update->class, update->dev);
 	class_destroy(update->class);

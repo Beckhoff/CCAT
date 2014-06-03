@@ -79,15 +79,15 @@ extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
  * @data: the bytes of the ethernet frame
  */
 struct ccat_eth_frame {
-	uint32_t reserved1;
-	uint32_t received:1;
-	uint32_t reserved2:31;
-	uint16_t length;
-	uint16_t reserved3;
-	uint32_t sent:1;
-	uint32_t reserved4:31;
-	uint64_t timestamp;
-	uint8_t data[0x800 - 3 * sizeof(uint64_t)];
+	u32 reserved1;
+	u32 received:1;
+	u32 reserved2:31;
+	u16 length;
+	u16 reserved3;
+	u32 sent:1;
+	u32 reserved4:31;
+	u64 timestamp;
+	u8 data[0x800 - 3 * sizeof(u64)];
 };
 
 /**
@@ -166,7 +166,7 @@ struct ccat_eth_priv {
 	struct task_struct *poll_thread;
 	struct task_struct *rx_thread;
 	struct task_struct *tx_thread;
-	const struct ccat_eth_frame *next_tx_frame;	/* next frame the tx_thread should check for availability */
+	const struct ccat_eth_frame *next_tx_frame;
 	CCatInfoBlock info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;

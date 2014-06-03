@@ -35,7 +35,7 @@
 /**
  * EtherCAT frame to enable forwarding on EtherCAT Terminals
  */
-static const UINT8 frameForwardEthernetFrames[] = {
+static const u8 frameForwardEthernetFrames[] = {
 	0x01, 0x01, 0x05, 0x01, 0x00, 0x00,
 	0x00, 0x1b, 0x21, 0x36, 0x1b, 0xce,
 	0x88, 0xa4, 0x0e, 0x10,
@@ -84,7 +84,8 @@ static void ccat_eth_rx_fifo_add(struct ccat_eth_frame *frame,
 				 struct ccat_eth_dma_fifo *fifo)
 {
 	const size_t offset = ((void *)(frame) - fifo->dma.virt);
-	const uint32_t addr_and_length = (1 << 31) | offset;
+	const u32 addr_and_length = (1 << 31) | offset;
+
 	frame->received = 0;
 	iowrite32(addr_and_length, fifo->reg);
 }
@@ -130,7 +131,7 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 	if (0 !=
 	    ccat_dma_init(&fifo->dma, channel, priv->ccatdev->bar[2].ioaddr,
 			  &priv->ccatdev->pdev->dev)) {
-		pr_info("init DMA%llu memory failed.\n", (uint64_t) channel);
+		pr_info("init DMA%llu memory failed.\n", (u64) channel);
 		return -1;
 	}
 	fifo->add = add;
@@ -151,7 +152,6 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 	/* release dma */
 	ccat_dma_free(&priv->rx_fifo.dma);
 	ccat_dma_free(&priv->tx_fifo.dma);
-	pr_debug("DMA fifo's stopped.\n");
 }
 
 /**
@@ -189,6 +189,7 @@ static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 	CCatInfoBlockOffs offsets;
 	void __iomem *const func_base =
 	    priv->ccatdev->bar[0].ioaddr + priv->info.nAddr;
+
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	priv->reg.mii = func_base + offsets.nMMIOffs;
 	priv->reg.tx_fifo = func_base + offsets.nTxFifoOffs;
@@ -215,6 +216,7 @@ static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, st
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	CCatMacRegs mac;
+
 	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
 	storage->rx_packets = mac.rxFrameCnt;	/* total packets received       */
 	storage->tx_packets = mac.txFrameCnt;	/* total packets transmitted    */
@@ -254,6 +256,7 @@ struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
 {
 	struct ccat_eth_priv *priv;
 	struct net_device *const netdev = alloc_etherdev(sizeof(*priv));
+
 	priv = netdev_priv(netdev);
 	priv->netdev = netdev;
 	priv->ccatdev = ccatdev;
@@ -302,6 +305,7 @@ void ccat_eth_remove(struct ccat_eth_priv *const priv)
 static int ccat_eth_open(struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
+
 	netif_carrier_off(dev);
 	priv->poll_thread =
 	    kthread_run(run_poll_thread, dev, "%s_poll", KBUILD_MODNAME);
@@ -317,6 +321,7 @@ static void ccat_eth_receive(struct net_device *const dev,
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	const size_t len = frame->length - CCATRXDESC_HEADER_LEN;
 	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
+
 	if (!skb) {
 		pr_info("%s() out of memory :-(\n", __FUNCTION__);
 		atomic64_inc(&priv->rx_dropped);
@@ -339,7 +344,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	struct ccat_eth_frame *const frame =
 	    ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt);
-	uint32_t addr_and_length;
+	u32 addr_and_length;
 
 	if (skb_is_nonlinear(skb)) {
 		pr_warn("Non linear skb not supported -> drop frame.\n");
@@ -350,7 +355,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	if (skb->len > sizeof(frame->data)) {
 		pr_warn("skb.len %llu exceeds dma buffer %llu -> drop frame.\n",
-			(uint64_t) skb->len, (uint64_t) sizeof(frame->data));
+			(u64) skb->len, (u64) sizeof(frame->data));
 		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
@@ -386,6 +391,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 static int ccat_eth_stop(struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
+
 	netif_stop_queue(dev);
 	if (priv->poll_thread) {
 		/* TODO care about smp context? */
@@ -406,6 +412,7 @@ static void ccat_eth_link_down(struct net_device *dev)
 static void ccat_eth_link_up(struct net_device *const dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
+
 	netdev_info(dev, "NIC Link is Up\n");
 	/* TODO netdev_info(dev, "NIC Link is Up %u Mbps %s Duplex\n",
 	   speed == SPEED_100 ? 100 : 10,
@@ -429,6 +436,7 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
 			      size_t len)
 {
 	struct sk_buff *skb = dev_alloc_skb(len);
+
 	skb->dev = dev;
 	skb_copy_to_linear_data(skb, data, len);
 	skb_put(skb, len);
