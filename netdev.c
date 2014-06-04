@@ -266,6 +266,7 @@ struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
 	/* init netdev with MAC and stack callbacks */
 	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, 6);
 	netdev->netdev_ops = &ccat_eth_netdev_ops;
+	netif_carrier_off(netdev);
 
 	if (register_netdev(netdev)) {
 		pr_info("unable to register network device.\n");
@@ -289,7 +290,6 @@ static int ccat_eth_open(struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 
-	netif_carrier_off(dev);
 	hrtimer_init(&priv->poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	priv->poll_timer.function = poll_timer_callback;
 	hrtimer_start(&priv->poll_timer, ktime_set(0, 100000),
