@@ -367,7 +367,7 @@ static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, st
 	storage->rx_bytes = atomic64_read(&priv->rx_bytes);	/* total bytes received         */
 	storage->tx_bytes = atomic64_read(&priv->tx_bytes);	/* total bytes transmitted      */
 	storage->rx_errors = mac.frame_len_err + mac.rx_mem_full + mac.crc_err + mac.rx_err;	/* bad packets received         */
-	storage->tx_errors = mac.tx_mem_full; /* packet transmit problems     */
+	storage->tx_errors = mac.tx_mem_full;	/* packet transmit problems     */
 	storage->rx_dropped = atomic64_read(&priv->rx_dropped);	/* no space in linux buffers    */
 	storage->tx_dropped = atomic64_read(&priv->tx_dropped);	/* no space available in linux  */
 	//TODO __u64    multicast;              /* multicast packets received   */

@@ -155,8 +155,7 @@ struct ccat_device {
 	struct ccat_bar bar[3];	//TODO optimize this
 };
 
-struct ccat_info_block
-{
+struct ccat_info_block {
 	u16 type;
 	u16 rev;
 	union {
@@ -206,16 +205,15 @@ struct ccat_eth_priv {
  */
 struct ccat_mac_infoblock {
 	u32 reserved;
-	u32	mii;
-	u32	tx_fifo;
-	u32	mac;
-	u32	rx_mem;
-	u32	tx_mem;
-	u32	misc;
+	u32 mii;
+	u32 tx_fifo;
+	u32 mac;
+	u32 rx_mem;
+	u32 tx_mem;
+	u32 misc;
 };
 
-struct ccat_mac_register
-{
+struct ccat_mac_register {
 	/** MAC error register     @+0x0 */
 	u8 frame_len_err;
 	u8 rx_err;
@@ -230,8 +228,8 @@ struct ccat_mac_register
 	u32 rx_frames;
 	u64 reserved3;
 	/** MAC fifo level         @+0x20 */
-	u8 tx_fifo_level : 7;
-	u8 reserved4 : 1;
+	u8 tx_fifo_level:7;
+	u8 reserved4:1;
 	u8 reserved5[7];
 	/** TX memory full error   @+0x28 */
 	u8 tx_mem_full;

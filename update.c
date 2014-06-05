@@ -413,7 +413,8 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 	memcpy_fromio(&update->info, addr, sizeof(update->info));
 
 	if (0x00 != update->info.rev) {
-		pr_warn("CCAT Update rev. %d not supported\n", update->info.rev);
+		pr_warn("CCAT Update rev. %d not supported\n",
+			update->info.rev);
 		goto cleanup;
 	}
 

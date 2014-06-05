@@ -19,5 +19,5 @@ clean:
 	rm -f *.c~ *.h~ *.bin
 
 # indent the source files with the kernels Lindent script
-indent: compat.h module.c module.h netdev.c netdev.h print.c print.h update.c update.h
+indent: compat.h module.c module.h netdev.c netdev.h update.c update.h
 	./Lindent $?
