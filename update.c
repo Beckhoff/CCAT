@@ -23,7 +23,6 @@
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/uaccess.h>
-#include "compat.h"
 #include "module.h"
 #include "update.h"
 
