@@ -25,7 +25,6 @@
 #include <linux/hrtimer.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
-#include "CCatDefinitions.h"
 
 #define DRV_EXTRAVERSION ""
 #define DRV_VERSION      "0.9" DRV_EXTRAVERSION
@@ -33,6 +32,17 @@
 
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
+/**
+ * CCAT function type identifiers (u16)
+ */
+enum ccat_info_t {
+	CCATINFO_NOTUSED = 0,
+	CCATINFO_EPCS_PROM = 0xf,
+	CCATINFO_ETHERCAT_MASTER_DMA = 0x14,
+	CCATINFO_COPY_BLOCK = 0x17,
+	CCATINFO_MAX
+};
 
 /**
  * struct ccat_bar - CCAT PCI Base Address Register(BAR) configuration
@@ -89,6 +99,7 @@ struct ccat_eth_frame {
 	u32 reserved4:31;
 	u64 timestamp;
 	u8 data[0x800 - 3 * sizeof(u64)];
+#define CCAT_ETH_FRAME_HEAD_LEN offsetof(struct ccat_eth_frame, data)
 };
 
 /**
@@ -144,6 +155,21 @@ struct ccat_device {
 	struct ccat_bar bar[3];	//TODO optimize this
 };
 
+struct ccat_info_block
+{
+	u16 type;
+	u16 rev;
+	union {
+		u32 config;
+		struct {
+			u8 tx_dma_chan;
+			u8 rx_dma_chan;
+		};
+	};
+	u32 addr;
+	u32 size;
+};
+
 /**
  * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
  * @ccatdev: pointer to the parent struct ccat_device
@@ -163,7 +189,7 @@ struct ccat_eth_priv {
 	const struct ccat_device *ccatdev;
 	struct net_device *netdev;
 	const struct ccat_eth_frame *next_tx_frame;
-	CCatInfoBlock info;
+	struct ccat_info_block info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
 	struct ccat_eth_dma_fifo tx_fifo;
@@ -172,6 +198,47 @@ struct ccat_eth_priv {
 	atomic64_t rx_dropped;
 	atomic64_t tx_bytes;
 	atomic64_t tx_dropped;
+};
+
+/**
+ * same as: typedef struct _CCatInfoBlockOffs from CCatDefinitions.h
+ * TODO add some checking facility outside of the linux tree
+ */
+struct ccat_mac_infoblock {
+	u32 reserved;
+	u32	mii;
+	u32	tx_fifo;
+	u32	mac;
+	u32	rx_mem;
+	u32	tx_mem;
+	u32	misc;
+};
+
+struct ccat_mac_register
+{
+	/** MAC error register     @+0x0 */
+	u8 frame_len_err;
+	u8 rx_err;
+	u8 crc_err;
+	u8 link_lost_err;
+	u32 reserved1;
+	/** Buffer overflow errors @+0x8 */
+	u8 rx_mem_full;
+	u8 reserved2[7];
+	/** MAC frame counter      @+0x10 */
+	u32 tx_frames;
+	u32 rx_frames;
+	u64 reserved3;
+	/** MAC fifo level         @+0x20 */
+	u8 tx_fifo_level : 7;
+	u8 reserved4 : 1;
+	u8 reserved5[7];
+	/** TX memory full error   @+0x28 */
+	u8 tx_mem_full;
+	u8 reserved6[7];
+	u64 reserved8[9];
+	/** Connection             @+0x78 */
+	u8 mii_connected;
 };
 
 /**
@@ -189,6 +256,6 @@ struct ccat_update {
 	dev_t dev;
 	struct cdev cdev;
 	struct class *class;
-	CCatInfoBlock info;
+	struct ccat_info_block info;
 };
 #endif /* #ifndef _CCAT_H_ */

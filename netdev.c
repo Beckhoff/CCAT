@@ -28,7 +28,6 @@
 #include "compat.h"
 #include "module.h"
 #include "netdev.h"
-#include "print.h"
 
 /**
  * EtherCAT frame to enable forwarding on EtherCAT Terminals
@@ -152,14 +151,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
 	if (ccat_eth_dma_fifo_init
 	    (&priv->rx_fifo, priv->reg.rx_fifo, ccat_eth_rx_fifo_add,
-	     priv->info.rxDmaChn, priv)) {
+	     priv->info.rx_dma_chan, priv)) {
 		pr_warn("init Rx DMA fifo failed.\n");
 		return -1;
 	}
 
 	if (ccat_eth_dma_fifo_init
 	    (&priv->tx_fifo, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free,
-	     priv->info.txDmaChn, priv)) {
+	     priv->info.tx_dma_chan, priv)) {
 		pr_warn("init Tx DMA fifo failed.\n");
 		ccat_dma_free(&priv->rx_fifo.dma);
 		return -1;
@@ -177,18 +176,18 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
  */
 static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 {
-	CCatInfoBlockOffs offsets;
+	struct ccat_mac_infoblock offsets;
 	void __iomem *const func_base =
-	    priv->ccatdev->bar[0].ioaddr + priv->info.nAddr;
+	    priv->ccatdev->bar[0].ioaddr + priv->info.addr;
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
-	priv->reg.mii = func_base + offsets.nMMIOffs;
-	priv->reg.tx_fifo = func_base + offsets.nTxFifoOffs;
-	priv->reg.rx_fifo = func_base + offsets.nTxFifoOffs + 0x10;
-	priv->reg.mac = func_base + offsets.nMacRegOffs;
-	priv->reg.rx_mem = func_base + offsets.nRxMemOffs;
-	priv->reg.tx_mem = func_base + offsets.nTxMemOffs;
-	priv->reg.misc = func_base + offsets.nMiscOffs;
+	priv->reg.mii = func_base + offsets.mii;
+	priv->reg.tx_fifo = func_base + offsets.tx_fifo;
+	priv->reg.rx_fifo = func_base + offsets.tx_fifo + 0x10;
+	priv->reg.mac = func_base + offsets.mac;
+	priv->reg.rx_mem = func_base + offsets.rx_mem;
+	priv->reg.tx_mem = func_base + offsets.tx_mem;
+	priv->reg.misc = func_base + offsets.misc;
 }
 
 /**
@@ -206,26 +205,26 @@ static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, st
 						      *storage)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	CCatMacRegs mac;
+	struct ccat_mac_register mac;
 
 	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
-	storage->rx_packets = mac.rxFrameCnt;	/* total packets received       */
-	storage->tx_packets = mac.txFrameCnt;	/* total packets transmitted    */
+	storage->rx_packets = mac.rx_frames;	/* total packets received       */
+	storage->tx_packets = mac.tx_frames;	/* total packets transmitted    */
 	storage->rx_bytes = atomic64_read(&priv->rx_bytes);	/* total bytes received         */
 	storage->tx_bytes = atomic64_read(&priv->tx_bytes);	/* total bytes transmitted      */
-	storage->rx_errors = mac.frameLenErrCnt + mac.dropFrameErrCnt + mac.crcErrCnt + mac.rxErrCnt;	/* bad packets received         */
-	//TODO __u64    tx_errors;              /* packet transmit problems     */
+	storage->rx_errors = mac.frame_len_err + mac.rx_mem_full + mac.crc_err + mac.rx_err;	/* bad packets received         */
+	storage->tx_errors = mac.tx_mem_full; /* packet transmit problems     */
 	storage->rx_dropped = atomic64_read(&priv->rx_dropped);	/* no space in linux buffers    */
 	storage->tx_dropped = atomic64_read(&priv->tx_dropped);	/* no space available in linux  */
 	//TODO __u64    multicast;              /* multicast packets received   */
 	//TODO __u64    collisions;
 
 	/* detailed rx_errors: */
-	storage->rx_length_errors = mac.frameLenErrCnt;
-	storage->rx_over_errors = mac.dropFrameErrCnt;	/* receiver ring buff overflow  */
-	storage->rx_crc_errors = mac.crcErrCnt;	/* recved pkt with crc error    */
-	storage->rx_frame_errors = mac.rxErrCnt;	/* recv'd frame alignment error */
-	storage->rx_fifo_errors = mac.dropFrameErrCnt;	/* recv'r fifo overrun          */
+	storage->rx_length_errors = mac.frame_len_err;
+	storage->rx_over_errors = mac.rx_mem_full;	/* receiver ring buff overflow  */
+	storage->rx_crc_errors = mac.crc_err;	/* recved pkt with crc error    */
+	storage->rx_frame_errors = mac.rx_err;	/* recv'd frame alignment error */
+	storage->rx_fifo_errors = mac.rx_mem_full;	/* recv'r fifo overrun          */
 	//TODO __u64    rx_missed_errors;       /* receiver missed packet       */
 
 	/* detailed tx_errors */
@@ -255,7 +254,9 @@ struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
 	/* ccat register mappings */
 	memcpy_fromio(&priv->info, addr, sizeof(priv->info));
 	ccat_eth_priv_init_mappings(priv);
-	ccat_print_function_info(priv);
+	/* XXX disabled in release
+	 * ccat_print_function_info(priv);
+	 */
 
 	if (ccat_eth_priv_init_dma(priv)) {
 		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
@@ -264,7 +265,7 @@ struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
 	}
 
 	/* init netdev with MAC and stack callbacks */
-	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, 6);
+	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, netdev->addr_len);
 	netdev->netdev_ops = &ccat_eth_netdev_ops;
 	netif_carrier_off(netdev);
 
@@ -359,7 +360,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	addr_and_length = 8 + (next * sizeof(*frame));
 	addr_and_length +=
-	    ((frame[next].length + CCAT_DMA_FRAME_HEADER_LENGTH) / 8) << 24;
+	    ((frame[next].length + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo);	/* add to DMA fifo */
 	atomic64_add(frame[next].length, &priv->tx_bytes);	/* update stats */
 
@@ -399,6 +400,9 @@ static void ccat_eth_link_up(struct net_device *const dev)
 
 	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
 	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
+
+	/* TODO reset CCAT MAC register */
+
 	ccat_eth_xmit_raw(dev, frameForwardEthernetFrames,
 			  sizeof(frameForwardEthernetFrames));
 	netif_carrier_on(dev);

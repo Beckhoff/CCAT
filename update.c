@@ -25,7 +25,6 @@
 #include <linux/uaccess.h>
 #include "compat.h"
 #include "module.h"
-#include "print.h"
 #include "update.h"
 
 #define CCAT_DATA_IN_4 0x038
@@ -401,11 +400,9 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 	kref_init(&update->refcount);
 	update->ioaddr = ccatdev->bar[0].ioaddr + ioread32(addr + 0x8);
 	memcpy_fromio(&update->info, addr, sizeof(update->info));
-	print_update_info(&update->info, update->ioaddr);
 
-	if (0x00 != update->info.nRevision) {
-		pr_warn("CCAT Update rev. %d not supported\n",
-			update->info.nRevision);
+	if (0x00 != update->info.rev) {
+		pr_warn("CCAT Update rev. %d not supported\n", update->info.rev);
 		goto cleanup;
 	}
 

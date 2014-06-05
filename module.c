@@ -152,11 +152,11 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
  */
 static int ccat_functions_init(struct ccat_device *const ccatdev)
 {
-	/* read CCatInfoBlock.nMaxEntries from ccat */
-	const u8 num_func = ioread8(ccatdev->bar[0].ioaddr + 4);
-	void __iomem *addr = ccatdev->bar[0].ioaddr;
-	const void __iomem *end = addr + (sizeof(CCatInfoBlock) * num_func);
-	int status = 0;		/* count init function failures */
+	static const size_t block_size = sizeof(struct ccat_info_block);
+	void __iomem *addr = ccatdev->bar[0].ioaddr; /** first block is the CCAT information block entry */
+	const u8 num_func = ioread8(addr + 4); /** number of CCAT function blocks is at offset 0x4 */
+	const void __iomem *end = addr + (block_size * num_func);
+	int status = 0;	/** count init function failures */
 
 	while (addr < end) {
 		const u8 type = ioread16(addr);
@@ -177,7 +177,7 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 			pr_info("Found: 0x%04x not supported\n", type);
 			break;
 		}
-		addr += sizeof(CCatInfoBlock);
+		addr += block_size;
 	}
 	return status;
 }
@@ -229,13 +229,9 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return status;
 	}
 
-	/* FIXME upgrade to a newer kernel to get support of dma_set_mask_and_coherent()
-	 * (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64))) {
-	 */
-	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) {
+	if (!dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64))) {
 		pr_debug("64 bit DMA supported, pci rev: %u\n", revision);
-		/*} else if (!dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(32))) { */
-	} else if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
+	} else if (!dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32))) {
 		pr_debug("32 bit DMA supported, pci rev: %u\n", revision);
 	} else {
 		pr_warn("No suitable DMA available, pci rev: %u\n", revision);
@@ -290,15 +286,13 @@ static struct pci_driver pci_driver = {
 	.remove = ccat_remove,
 };
 
-static void ccat_exit_module(void)
+static void __exit ccat_exit_module(void)
 {
 	pci_unregister_driver(&pci_driver);
 }
 
-static int ccat_init_module(void)
+static int __init ccat_init_module(void)
 {
-	BUILD_BUG_ON(offsetof(struct ccat_eth_frame, data) !=
-		     CCAT_DMA_FRAME_HEADER_LENGTH);
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 	return pci_register_driver(&pci_driver);
 }
