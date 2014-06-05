@@ -1,4 +1,20 @@
 
+ccat-next:
+=====
+new features:
+- move first netif_carrier_off() in front of register_netdev()
+- replace polling threads with hrtimer callback
+
+code cleanup:
+- remove debugging code from mainline tree
+- reorder functions in netdev.c to avoid forward declarations
+- reorder functions in update.c to avoid forward declarations
+- don't use compat.h in the mainline tree
+- reduce enum ccat_info_t to the minimal set of defines
+- replace CamelCased Windows typedef structs with linux types
+- use short kernel types, add empty lines after variable declaration to conform with linux codestyle
+
+
 
 0.9:
 ====
