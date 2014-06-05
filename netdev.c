@@ -46,23 +46,6 @@ static const u8 frameForwardEthernetFrames[] = {
 };
 
 #define FIFO_LENGTH 64
-static enum hrtimer_restart poll_timer_callback(struct hrtimer *timer);
-
-static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64
-						      *storage);
-static int ccat_eth_open(struct net_device *dev);
-static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
-				       struct net_device *dev);
-static int ccat_eth_stop(struct net_device *dev);
-static void ccat_eth_xmit_raw(struct net_device *dev, const char *data,
-			      size_t len);
-
-static const struct net_device_ops ccat_eth_netdev_ops = {
-	.ndo_get_stats64 = ccat_eth_get_stats64,
-	.ndo_open = ccat_eth_open,
-	.ndo_start_xmit = ccat_eth_start_xmit,
-	.ndo_stop = ccat_eth_stop,
-};
 
 typedef void (*fifo_add_function) (struct ccat_eth_frame *,
 				   struct ccat_eth_dma_fifo *);
@@ -185,135 +168,6 @@ static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 	priv->reg.misc = func_base + offsets.misc;
 }
 
-/**
- * Read link state from CCAT hardware
- * @return 1 if link is up, 0 if not
- */
-inline static size_t ccat_eth_priv_read_link_state(const struct ccat_eth_priv
-						   *const priv)
-{
-	return (1 << 24) == (ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
-}
-
-static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64
-						      *storage)
-{
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_mac_register mac;
-
-	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
-	storage->rx_packets = mac.rx_frames;	/* total packets received       */
-	storage->tx_packets = mac.tx_frames;	/* total packets transmitted    */
-	storage->rx_bytes = atomic64_read(&priv->rx_bytes);	/* total bytes received         */
-	storage->tx_bytes = atomic64_read(&priv->tx_bytes);	/* total bytes transmitted      */
-	storage->rx_errors = mac.frame_len_err + mac.rx_mem_full + mac.crc_err + mac.rx_err;	/* bad packets received         */
-	storage->tx_errors = mac.tx_mem_full; /* packet transmit problems     */
-	storage->rx_dropped = atomic64_read(&priv->rx_dropped);	/* no space in linux buffers    */
-	storage->tx_dropped = atomic64_read(&priv->tx_dropped);	/* no space available in linux  */
-	//TODO __u64    multicast;              /* multicast packets received   */
-	//TODO __u64    collisions;
-
-	/* detailed rx_errors: */
-	storage->rx_length_errors = mac.frame_len_err;
-	storage->rx_over_errors = mac.rx_mem_full;	/* receiver ring buff overflow  */
-	storage->rx_crc_errors = mac.crc_err;	/* recved pkt with crc error    */
-	storage->rx_frame_errors = mac.rx_err;	/* recv'd frame alignment error */
-	storage->rx_fifo_errors = mac.rx_mem_full;	/* recv'r fifo overrun          */
-	//TODO __u64    rx_missed_errors;       /* receiver missed packet       */
-
-	/* detailed tx_errors */
-	//TODO __u64    tx_aborted_errors;
-	//TODO __u64    tx_carrier_errors;
-	//TODO __u64    tx_fifo_errors;
-	//TODO __u64    tx_heartbeat_errors;
-	//TODO __u64    tx_window_errors;
-
-	/* for cslip etc */
-	//TODO __u64    rx_compressed;
-	//TODO __u64    tx_compressed;
-	return storage;
-}
-
-struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
-				    const void __iomem * const addr)
-{
-	struct ccat_eth_priv *priv;
-	struct net_device *const netdev = alloc_etherdev(sizeof(*priv));
-
-	priv = netdev_priv(netdev);
-	priv->netdev = netdev;
-	priv->ccatdev = ccatdev;
-
-	/* ccat register mappings */
-	memcpy_fromio(&priv->info, addr, sizeof(priv->info));
-	ccat_eth_priv_init_mappings(priv);
-	/* XXX disabled in release
-	 * ccat_print_function_info(priv);
-	 */
-
-	if (ccat_eth_priv_init_dma(priv)) {
-		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
-		free_netdev(netdev);
-		return NULL;
-	}
-
-	/* init netdev with MAC and stack callbacks */
-	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, netdev->addr_len);
-	netdev->netdev_ops = &ccat_eth_netdev_ops;
-	netif_carrier_off(netdev);
-
-	if (register_netdev(netdev)) {
-		pr_info("unable to register network device.\n");
-		ccat_eth_priv_free_dma(priv);
-		free_netdev(netdev);
-		return NULL;
-	}
-	pr_info("registered %s as network device.\n", netdev->name);
-	return priv;
-}
-
-void ccat_eth_remove(struct ccat_eth_priv *const priv)
-{
-	unregister_netdev(priv->netdev);
-	ccat_eth_priv_free_dma(priv);
-	free_netdev(priv->netdev);
-	pr_debug("%s(): done\n", __FUNCTION__);
-}
-
-static int ccat_eth_open(struct net_device *dev)
-{
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-
-	hrtimer_init(&priv->poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	priv->poll_timer.function = poll_timer_callback;
-	hrtimer_start(&priv->poll_timer, ktime_set(0, 100000),
-		      HRTIMER_MODE_REL);
-	return 0;
-}
-
-static const size_t CCATRXDESC_HEADER_LEN = 20;
-static void ccat_eth_receive(struct net_device *const dev,
-			     const struct ccat_eth_frame *const frame)
-{
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	const size_t len = frame->length - CCATRXDESC_HEADER_LEN;
-	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
-
-	if (!skb) {
-		pr_info("%s() out of memory :-(\n", __FUNCTION__);
-		atomic64_inc(&priv->rx_dropped);
-		return;
-	}
-	skb->dev = dev;
-	skb_reserve(skb, NET_IP_ALIGN);
-	skb_copy_to_linear_data(skb, frame->data, len);
-	skb_put(skb, len);
-	skb->protocol = eth_type_trans(skb, dev);
-	skb->ip_summed = CHECKSUM_UNNECESSARY;
-	atomic64_add(len, &priv->rx_bytes);
-	netif_rx(skb);
-}
-
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 				       struct net_device *dev)
 {
@@ -365,14 +219,44 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 }
 
-static int ccat_eth_stop(struct net_device *dev)
+/**
+ * Function to transmit a raw buffer to the network (f.e. frameForwardEthernetFrames)
+ * @dev a valid net_device
+ * @data pointer to your raw buffer
+ * @len number of bytes in the raw buffer to transmit
+ */
+static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
+			      size_t len)
+{
+	struct sk_buff *skb = dev_alloc_skb(len);
+
+	skb->dev = dev;
+	skb_copy_to_linear_data(skb, data, len);
+	skb_put(skb, len);
+	ccat_eth_start_xmit(skb, dev);
+}
+
+static const size_t CCATRXDESC_HEADER_LEN = 20;
+static void ccat_eth_receive(struct net_device *const dev,
+			     const struct ccat_eth_frame *const frame)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	const size_t len = frame->length - CCATRXDESC_HEADER_LEN;
+	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
 
-	netif_stop_queue(dev);
-	hrtimer_cancel(&priv->poll_timer);
-	netdev_info(dev, "stopped.\n");
-	return 0;
+	if (!skb) {
+		pr_info("%s() out of memory :-(\n", __FUNCTION__);
+		atomic64_inc(&priv->rx_dropped);
+		return;
+	}
+	skb->dev = dev;
+	skb_reserve(skb, NET_IP_ALIGN);
+	skb_copy_to_linear_data(skb, frame->data, len);
+	skb_put(skb, len);
+	skb->protocol = eth_type_trans(skb, dev);
+	skb->ip_summed = CHECKSUM_UNNECESSARY;
+	atomic64_add(len, &priv->rx_bytes);
+	netif_rx(skb);
 }
 
 static void ccat_eth_link_down(struct net_device *dev)
@@ -403,20 +287,13 @@ static void ccat_eth_link_up(struct net_device *const dev)
 }
 
 /**
- * Function to transmit a raw buffer to the network (f.e. frameForwardEthernetFrames)
- * @dev a valid net_device
- * @data pointer to your raw buffer
- * @len number of bytes in the raw buffer to transmit
+ * Read link state from CCAT hardware
+ * @return 1 if link is up, 0 if not
  */
-static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
-			      size_t len)
+inline static size_t ccat_eth_priv_read_link_state(const struct ccat_eth_priv
+						   *const priv)
 {
-	struct sk_buff *skb = dev_alloc_skb(len);
-
-	skb->dev = dev;
-	skb_copy_to_linear_data(skb, data, len);
-	skb_put(skb, len);
-	ccat_eth_start_xmit(skb, dev);
+	return (1 << 24) == (ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
 }
 
 /**
@@ -476,4 +353,114 @@ static enum hrtimer_restart poll_timer_callback(struct hrtimer *timer)
 	poll_tx(priv);
 	hrtimer_forward_now(timer, ktime_set(0, 100 * NSEC_PER_USEC));
 	return HRTIMER_RESTART;
+}
+
+static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64
+						      *storage)
+{
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	struct ccat_mac_register mac;
+
+	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
+	storage->rx_packets = mac.rx_frames;	/* total packets received       */
+	storage->tx_packets = mac.tx_frames;	/* total packets transmitted    */
+	storage->rx_bytes = atomic64_read(&priv->rx_bytes);	/* total bytes received         */
+	storage->tx_bytes = atomic64_read(&priv->tx_bytes);	/* total bytes transmitted      */
+	storage->rx_errors = mac.frame_len_err + mac.rx_mem_full + mac.crc_err + mac.rx_err;	/* bad packets received         */
+	storage->tx_errors = mac.tx_mem_full; /* packet transmit problems     */
+	storage->rx_dropped = atomic64_read(&priv->rx_dropped);	/* no space in linux buffers    */
+	storage->tx_dropped = atomic64_read(&priv->tx_dropped);	/* no space available in linux  */
+	//TODO __u64    multicast;              /* multicast packets received   */
+	//TODO __u64    collisions;
+
+	/* detailed rx_errors: */
+	storage->rx_length_errors = mac.frame_len_err;
+	storage->rx_over_errors = mac.rx_mem_full;	/* receiver ring buff overflow  */
+	storage->rx_crc_errors = mac.crc_err;	/* recved pkt with crc error    */
+	storage->rx_frame_errors = mac.rx_err;	/* recv'd frame alignment error */
+	storage->rx_fifo_errors = mac.rx_mem_full;	/* recv'r fifo overrun          */
+	//TODO __u64    rx_missed_errors;       /* receiver missed packet       */
+
+	/* detailed tx_errors */
+	//TODO __u64    tx_aborted_errors;
+	//TODO __u64    tx_carrier_errors;
+	//TODO __u64    tx_fifo_errors;
+	//TODO __u64    tx_heartbeat_errors;
+	//TODO __u64    tx_window_errors;
+
+	/* for cslip etc */
+	//TODO __u64    rx_compressed;
+	//TODO __u64    tx_compressed;
+	return storage;
+}
+
+static int ccat_eth_open(struct net_device *dev)
+{
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+
+	hrtimer_init(&priv->poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	priv->poll_timer.function = poll_timer_callback;
+	hrtimer_start(&priv->poll_timer, ktime_set(0, 100000),
+		      HRTIMER_MODE_REL);
+	return 0;
+}
+
+static int ccat_eth_stop(struct net_device *dev)
+{
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
+
+	netif_stop_queue(dev);
+	hrtimer_cancel(&priv->poll_timer);
+	netdev_info(dev, "stopped.\n");
+	return 0;
+}
+
+static const struct net_device_ops ccat_eth_netdev_ops = {
+	.ndo_get_stats64 = ccat_eth_get_stats64,
+	.ndo_open = ccat_eth_open,
+	.ndo_start_xmit = ccat_eth_start_xmit,
+	.ndo_stop = ccat_eth_stop,
+};
+
+struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
+				    const void __iomem * const addr)
+{
+	struct ccat_eth_priv *priv;
+	struct net_device *const netdev = alloc_etherdev(sizeof(*priv));
+
+	priv = netdev_priv(netdev);
+	priv->netdev = netdev;
+	priv->ccatdev = ccatdev;
+
+	/* ccat register mappings */
+	memcpy_fromio(&priv->info, addr, sizeof(priv->info));
+	ccat_eth_priv_init_mappings(priv);
+
+	if (ccat_eth_priv_init_dma(priv)) {
+		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
+		free_netdev(netdev);
+		return NULL;
+	}
+
+	/* init netdev with MAC and stack callbacks */
+	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, netdev->addr_len);
+	netdev->netdev_ops = &ccat_eth_netdev_ops;
+	netif_carrier_off(netdev);
+
+	if (register_netdev(netdev)) {
+		pr_info("unable to register network device.\n");
+		ccat_eth_priv_free_dma(priv);
+		free_netdev(netdev);
+		return NULL;
+	}
+	pr_info("registered %s as network device.\n", netdev->name);
+	return priv;
+}
+
+void ccat_eth_remove(struct ccat_eth_priv *const priv)
+{
+	unregister_netdev(priv->netdev);
+	ccat_eth_priv_free_dma(priv);
+	free_netdev(priv->netdev);
+	pr_debug("%s(): done\n", __FUNCTION__);
 }
