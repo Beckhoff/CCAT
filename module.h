@@ -187,6 +187,7 @@ struct ccat_info_block {
 struct ccat_eth_priv {
 	const struct ccat_device *ccatdev;
 	struct net_device *netdev;
+	size_t next_rx;
 	const struct ccat_eth_frame *next_tx_frame;
 	struct ccat_info_block info;
 	struct ccat_eth_register reg;

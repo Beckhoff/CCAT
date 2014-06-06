@@ -53,7 +53,15 @@ static inline bool ccat_eth_frame_sent(const struct ccat_eth_frame *const frame)
 {
 	return le32_to_cpu(frame->tx_flags) & CCAT_FRAME_SENT;
 }
+/**
+ * Helper to check if frame in tx dma memory was already marked as sent by CCAT
+ */
+static inline bool ccat_eth_frame_received(const struct ccat_eth_frame *const frame)
+{
+	return le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED;
+}
 
+/* TODO fix method signature, use fifo as first argument*/
 typedef void (*fifo_add_function) (struct ccat_eth_frame *,
 				   struct ccat_eth_dma_fifo *);
 
@@ -287,6 +295,8 @@ static void ccat_eth_link_up(struct net_device *const dev)
 
 	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
 	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
+	priv->next_rx = 0;
+	priv->next_tx_frame = NULL;
 
 	/* TODO reset CCAT MAC register */
 
@@ -327,15 +337,12 @@ static void poll_link(struct ccat_eth_priv *const priv)
 static void poll_rx(struct ccat_eth_priv *const priv)
 {
 	struct ccat_eth_frame *const frame = priv->rx_fifo.dma.virt;
-	/* TODO fix this stupid error, only one CCAT instance really? */
-	static size_t next = 0;
 
 	/* TODO omit possible deadlock in situations with heavy traffic */
-	while (le32_to_cpu(frame[next].rx_flags) & CCAT_FRAME_RECEIVED) {
-		ccat_eth_receive(priv->netdev, frame + next);
-		frame[next].rx_flags = cpu_to_le32(0);
-		ccat_eth_rx_fifo_add(frame + next, &priv->rx_fifo);
-		next = (next + 1) % FIFO_LENGTH;
+	while (ccat_eth_frame_received(&frame[priv->next_rx])) {
+		ccat_eth_receive(priv->netdev, &frame[priv->next_rx]);
+		ccat_eth_rx_fifo_add(&frame[priv->next_rx], &priv->rx_fifo);
+		priv->next_rx = (priv->next_rx + 1) % FIFO_LENGTH;
 	}
 }
 
