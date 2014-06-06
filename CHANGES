@@ -6,6 +6,8 @@ buf fixes/new features:
 - replace polling threads with hrtimer callback
 - CCATRXDESC_HEADER_LEN was defined 4 bytes to short. Now, it is replaced
   by CCAT_ETH_FRAME_HEAD_LEN, which is derived as an offset.
+- prepare code to allow multiple CCAT instances in parallel (removed static size_t next from tx and rx pathes)
+- fixed endianess
 
 code cleanup:
 - remove debugging code from mainline tree
@@ -16,6 +18,8 @@ code cleanup:
 - replace CamelCased Windows typedef structs with linux types
 - use short kernel types, add empty lines after variable declaration to conform with linux codestyle
 - added some more const correctness
+- reorder signature of fifo_add() "this" pointer is first now
+- reduce pointer indirection
 
 
 
