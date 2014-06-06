@@ -3,6 +3,7 @@ EXTRA_DIR = /lib/modules/$(shell uname -r)/extra/
 obj-m += $(TARGET).o
 $(TARGET)-objs := module.o netdev.o update.o
 #ccflags-y := -DDEBUG
+ccflags-y += -D__CHECK_ENDIAN__
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules

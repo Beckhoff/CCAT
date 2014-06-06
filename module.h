@@ -90,14 +90,14 @@ extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
  * @data: the bytes of the ethernet frame
  */
 struct ccat_eth_frame {
-	u32 reserved1;
+	__le32 reserved1;
 	u32 received:1;
 	u32 reserved2:31;
-	u16 length;
-	u16 reserved3;
+	__le16 length;
+	__le16 reserved3;
 	u32 sent:1;
 	u32 reserved4:31;
-	u64 timestamp;
+	__le64 timestamp;
 	u8 data[0x800 - 3 * sizeof(u64)];
 #define CCAT_ETH_FRAME_HEAD_LEN offsetof(struct ccat_eth_frame, data)
 };

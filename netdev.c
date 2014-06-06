@@ -198,16 +198,19 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	/* prepare frame in DMA memory */
 	frame[next].sent = 0;
-	frame[next].length = skb->len;
+	frame[next].length = cpu_to_le16(skb->len);
 	memcpy(frame[next].data, skb->data, skb->len);
 
-	dev_kfree_skb_any(skb);
+	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
+	addr_and_length = offsetof(struct ccat_eth_frame, length);
+	addr_and_length += (next * sizeof(*frame));
+	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
+	iowrite32(addr_and_length, priv->reg.tx_fifo);
 
-	addr_and_length = 8 + (next * sizeof(*frame));
-	addr_and_length +=
-	    ((frame[next].length + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
-	iowrite32(addr_and_length, priv->reg.tx_fifo);	/* add to DMA fifo */
-	atomic64_add(frame[next].length, &priv->tx_bytes);	/* update stats */
+	/* update stats */
+	atomic64_add(skb->len, &priv->tx_bytes);
+
+	dev_kfree_skb_any(skb);
 
 	next = (next + 1) % FIFO_LENGTH;
 	/* stop queue if tx ring is full */
@@ -237,9 +240,10 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
 static void ccat_eth_receive(struct net_device *const dev,
 			     const struct ccat_eth_frame *const frame)
 {
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	const size_t len = frame->length - CCAT_ETH_FRAME_HEAD_LEN;
+	static const size_t frame_overhead = CCAT_ETH_FRAME_HEAD_LEN - 4;
+	const size_t len = le16_to_cpu(frame->length) - frame_overhead;
 	struct sk_buff *const skb = dev_alloc_skb(len + NET_IP_ALIGN);
+	struct ccat_eth_priv *const priv = netdev_priv(dev);
 
 	if (!skb) {
 		pr_info("%s() out of memory :-(\n", __FUNCTION__);
