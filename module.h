@@ -129,7 +129,7 @@ struct ccat_eth_register {
  * @dma: information about the associated DMA memory
  */
 struct ccat_eth_dma_fifo {
-	void (*add) (struct ccat_eth_frame *, struct ccat_eth_dma_fifo *);
+	void (*add) (struct ccat_eth_dma_fifo *, struct ccat_eth_frame *);
 	void __iomem *reg;
 	struct ccat_dma dma;
 };
