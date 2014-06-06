@@ -45,7 +45,6 @@ static const u8 frameForwardEthernetFrames[] = {
 
 #define FIFO_LENGTH 64
 
-
 /**
  * Helper to check if frame in tx dma memory was already marked as sent by CCAT
  */
@@ -53,17 +52,21 @@ static inline bool ccat_eth_frame_sent(const struct ccat_eth_frame *const frame)
 {
 	return le32_to_cpu(frame->tx_flags) & CCAT_FRAME_SENT;
 }
+
 /**
  * Helper to check if frame in tx dma memory was already marked as sent by CCAT
  */
-static inline bool ccat_eth_frame_received(const struct ccat_eth_frame *const frame)
+static inline bool ccat_eth_frame_received(const struct ccat_eth_frame *const
+					   frame)
 {
 	return le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED;
 }
 
-typedef void (*fifo_add_function) (struct ccat_eth_dma_fifo *, struct ccat_eth_frame *);
+typedef void (*fifo_add_function) (struct ccat_eth_dma_fifo *,
+				   struct ccat_eth_frame *);
 
-static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *fifo, struct ccat_eth_frame *frame)
+static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *fifo,
+				 struct ccat_eth_frame *frame)
 {
 	const size_t offset = ((void *)(frame) - fifo->dma.virt);
 	const u32 addr_and_length = (1 << 31) | offset;
@@ -72,7 +75,8 @@ static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *fifo, struct ccat_eth
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *fifo, struct ccat_eth_frame *frame)
+static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *fifo,
+				      struct ccat_eth_frame *frame)
 {
 	/* mark frame as ready to use for tx */
 	frame->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
