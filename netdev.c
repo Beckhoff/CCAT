@@ -180,8 +180,8 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 				       struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_frame *const frame =
-	    ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt);
+	struct ccat_eth_frame *const frame = priv->tx_fifo.dma.virt;
+	struct ccat_eth_frame *const next = &frame[priv->next_tx];
 	u32 addr_and_length;
 
 	if (skb_is_nonlinear(skb)) {
@@ -199,16 +199,16 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	if (!ccat_eth_frame_sent(&frame[priv->next_tx])) {
+	if (!ccat_eth_frame_sent(next)) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
 		netif_stop_queue(priv->netdev);
 		return NETDEV_TX_BUSY;
 	}
 
 	/* prepare frame in DMA memory */
-	frame[priv->next_tx].tx_flags = cpu_to_le32(0);
-	frame[priv->next_tx].length = cpu_to_le16(skb->len);
-	memcpy(frame[priv->next_tx].data, skb->data, skb->len);
+	next->tx_flags = cpu_to_le32(0);
+	next->length = cpu_to_le16(skb->len);
+	memcpy(next->data, skb->data, skb->len);
 
 	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
 	addr_and_length = offsetof(struct ccat_eth_frame, length);
@@ -223,7 +223,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	priv->next_tx = (priv->next_tx + 1) % FIFO_LENGTH;
 	/* stop queue if tx ring is full */
-	if (!ccat_eth_frame_sent(&frame[priv->next_tx])) {
+	if (!ccat_eth_frame_sent(next)) {
 		netif_stop_queue(priv->netdev);
 	}
 	return NETDEV_TX_OK;
