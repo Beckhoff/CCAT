@@ -45,6 +45,15 @@ static const u8 frameForwardEthernetFrames[] = {
 
 #define FIFO_LENGTH 64
 
+
+/**
+ * Helper to check if frame in tx dma memory was already marked as sent by CCAT
+ */
+static inline bool ccat_eth_frame_sent(const struct ccat_eth_frame *const frame)
+{
+	return le32_to_cpu(frame->tx_flags) & CCAT_FRAME_SENT;
+}
+
 typedef void (*fifo_add_function) (struct ccat_eth_frame *,
 				   struct ccat_eth_dma_fifo *);
 
@@ -54,7 +63,7 @@ static void ccat_eth_rx_fifo_add(struct ccat_eth_frame *frame,
 	const size_t offset = ((void *)(frame) - fifo->dma.virt);
 	const u32 addr_and_length = (1 << 31) | offset;
 
-	frame->received = 0;
+	frame->rx_flags = cpu_to_le32(0);
 	iowrite32(addr_and_length, fifo->reg);
 }
 
@@ -62,7 +71,7 @@ static void ccat_eth_tx_fifo_add_free(struct ccat_eth_frame *frame,
 				      struct ccat_eth_dma_fifo *fifo)
 {
 	/* mark frame as ready to use for tx */
-	frame->sent = 1;
+	frame->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
 static void ccat_eth_tx_fifo_full(struct ccat_eth_priv *const priv,
@@ -190,14 +199,14 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	if (!frame[next].sent) {
+	if (!ccat_eth_frame_sent(&frame[next])) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
 		ccat_eth_tx_fifo_full(priv, &frame[next]);
 		return NETDEV_TX_BUSY;
 	}
 
 	/* prepare frame in DMA memory */
-	frame[next].sent = 0;
+	frame[next].tx_flags = cpu_to_le32(0);
 	frame[next].length = cpu_to_le16(skb->len);
 	memcpy(frame[next].data, skb->data, skb->len);
 
@@ -214,7 +223,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	next = (next + 1) % FIFO_LENGTH;
 	/* stop queue if tx ring is full */
-	if (!frame[next].sent) {
+	if (!ccat_eth_frame_sent(&frame[next])) {
 		ccat_eth_tx_fifo_full(priv, &frame[next]);
 	}
 	return NETDEV_TX_OK;
@@ -318,12 +327,13 @@ static void poll_link(struct ccat_eth_priv *const priv)
 static void poll_rx(struct ccat_eth_priv *const priv)
 {
 	struct ccat_eth_frame *const frame = priv->rx_fifo.dma.virt;
+	/* TODO fix this stupid error, only one CCAT instance really? */
 	static size_t next = 0;
 
 	/* TODO omit possible deadlock in situations with heavy traffic */
-	while (frame[next].received) {
+	while (le32_to_cpu(frame[next].rx_flags) & CCAT_FRAME_RECEIVED) {
 		ccat_eth_receive(priv->netdev, frame + next);
-		frame[next].received = 0;
+		frame[next].rx_flags = cpu_to_le32(0);
 		ccat_eth_rx_fifo_add(frame + next, &priv->rx_fifo);
 		next = (next + 1) % FIFO_LENGTH;
 	}
@@ -334,7 +344,7 @@ static void poll_rx(struct ccat_eth_priv *const priv)
  */
 static void poll_tx(struct ccat_eth_priv *const priv)
 {
-	if (priv->next_tx_frame && priv->next_tx_frame->sent) {
+	if (priv->next_tx_frame && ccat_eth_frame_sent(priv->next_tx_frame)) {
 		priv->next_tx_frame = NULL;
 		netif_wake_queue(priv->netdev);
 	}

@@ -91,12 +91,12 @@ extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
  */
 struct ccat_eth_frame {
 	__le32 reserved1;
-	u32 received:1;
-	u32 reserved2:31;
+	__le32 rx_flags;
+#define CCAT_FRAME_RECEIVED 0x1
 	__le16 length;
 	__le16 reserved3;
-	u32 sent:1;
-	u32 reserved4:31;
+	__le32 tx_flags;
+#define CCAT_FRAME_SENT 0x1
 	__le64 timestamp;
 	u8 data[0x800 - 3 * sizeof(u64)];
 #define CCAT_ETH_FRAME_HEAD_LEN offsetof(struct ccat_eth_frame, data)
