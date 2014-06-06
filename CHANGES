@@ -1,9 +1,11 @@
 
 ccat-next:
 =====
-new features:
+buf fixes/new features:
 - move first netif_carrier_off() in front of register_netdev()
 - replace polling threads with hrtimer callback
+- CCATRXDESC_HEADER_LEN was defined 4 bytes to short. Now, it is replaced
+  by CCAT_ETH_FRAME_HEAD_LEN, which is derived as an offset.
 
 code cleanup:
 - remove debugging code from mainline tree
@@ -13,6 +15,7 @@ code cleanup:
 - reduce enum ccat_info_t to the minimal set of defines
 - replace CamelCased Windows typedef structs with linux types
 - use short kernel types, add empty lines after variable declaration to conform with linux codestyle
+- added some more const correctness
 
 
 

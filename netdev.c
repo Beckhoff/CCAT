@@ -19,11 +19,9 @@
 */
 
 #include <linux/etherdevice.h>
-#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
-#include <linux/spinlock.h>
 
 #include "module.h"
 #include "netdev.h"
@@ -236,13 +234,12 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
 	ccat_eth_start_xmit(skb, dev);
 }
 
-static const size_t CCATRXDESC_HEADER_LEN = 20;
 static void ccat_eth_receive(struct net_device *const dev,
 			     const struct ccat_eth_frame *const frame)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	const size_t len = frame->length - CCATRXDESC_HEADER_LEN;
-	struct sk_buff *skb = dev_alloc_skb(len + NET_IP_ALIGN);
+	const size_t len = frame->length - CCAT_ETH_FRAME_HEAD_LEN;
+	struct sk_buff *const skb = dev_alloc_skb(len + NET_IP_ALIGN);
 
 	if (!skb) {
 		pr_info("%s() out of memory :-(\n", __FUNCTION__);
@@ -259,7 +256,7 @@ static void ccat_eth_receive(struct net_device *const dev,
 	netif_rx(skb);
 }
 
-static void ccat_eth_link_down(struct net_device *dev)
+static void ccat_eth_link_down(struct net_device *const dev)
 {
 	netif_stop_queue(dev);
 	netif_carrier_off(dev);
@@ -345,8 +342,8 @@ static void poll_tx(struct ccat_eth_priv *const priv)
  */
 static enum hrtimer_restart poll_timer_callback(struct hrtimer *timer)
 {
-	struct ccat_eth_priv *priv = container_of(timer, struct ccat_eth_priv,
-						  poll_timer);
+	struct ccat_eth_priv *const priv =
+	    container_of(timer, struct ccat_eth_priv, poll_timer);
 
 	poll_link(priv);
 	poll_rx(priv);
@@ -411,7 +408,6 @@ static int ccat_eth_stop(struct net_device *dev)
 
 	netif_stop_queue(dev);
 	hrtimer_cancel(&priv->poll_timer);
-	netdev_info(dev, "stopped.\n");
 	return 0;
 }
 
@@ -462,5 +458,4 @@ void ccat_eth_remove(struct ccat_eth_priv *const priv)
 	unregister_netdev(priv->netdev);
 	ccat_eth_priv_free_dma(priv);
 	free_netdev(priv->netdev);
-	pr_debug("%s(): done\n", __FUNCTION__);
 }
