@@ -63,6 +63,12 @@ static inline bool ccat_eth_frame_received(const struct ccat_eth_frame *const
 	return le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED;
 }
 
+static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
+{
+	if (++fifo->next >= fifo->end)
+		fifo->next = fifo->dma.virt;
+}
+
 typedef void (*fifo_add_function) (struct ccat_eth_dma_fifo *,
 				   struct ccat_eth_frame *);
 
@@ -85,18 +91,16 @@ static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *fifo,
 
 static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *fifo)
 {
-	struct ccat_eth_frame *frame = fifo->dma.virt;
-	const struct ccat_eth_frame *const end = frame + FIFO_LENGTH;
-
 	/* reset hw fifo */
 	iowrite32(0, fifo->reg + 0x8);
 	wmb();
 
 	if (fifo->add) {
-		while (frame < end) {
-			fifo->add(fifo, frame);
-			++frame;
-		}
+		fifo->next = fifo->dma.virt;
+		do {
+			fifo->add(fifo, fifo->next);
+			ccat_eth_fifo_inc(fifo);
+		} while (fifo->next != fifo->dma.virt);
 	}
 }
 
@@ -112,6 +116,7 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 		return -1;
 	}
 	fifo->add = add;
+	fifo->end = ((struct ccat_eth_frame *)fifo->dma.virt) + FIFO_LENGTH;
 	fifo->reg = fifo_reg;
 	return 0;
 }
@@ -288,7 +293,6 @@ static void ccat_eth_link_up(struct net_device *const dev)
 
 	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
 	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
-	priv->next_rx = 0;
 	priv->next_tx = 0;
 
 	/* TODO reset CCAT MAC register */
@@ -329,13 +333,11 @@ static void poll_link(struct ccat_eth_priv *const priv)
  */
 static void poll_rx(struct ccat_eth_priv *const priv)
 {
-	struct ccat_eth_frame *const frame = priv->rx_fifo.dma.virt;
-
 	/* TODO omit possible deadlock in situations with heavy traffic */
-	while (ccat_eth_frame_received(&frame[priv->next_rx])) {
-		ccat_eth_receive(priv->netdev, &frame[priv->next_rx]);
-		ccat_eth_rx_fifo_add(&priv->rx_fifo, &frame[priv->next_rx]);
-		priv->next_rx = (priv->next_rx + 1) % FIFO_LENGTH;
+	while (ccat_eth_frame_received(priv->rx_fifo.next)) {
+		ccat_eth_receive(priv->netdev, priv->rx_fifo.next);
+		ccat_eth_rx_fifo_add(&priv->rx_fifo, priv->rx_fifo.next);
+		ccat_eth_fifo_inc(&priv->rx_fifo);
 	}
 }
 

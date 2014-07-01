@@ -131,6 +131,8 @@ struct ccat_eth_register {
 struct ccat_eth_dma_fifo {
 	void (*add) (struct ccat_eth_dma_fifo *, struct ccat_eth_frame *);
 	void __iomem *reg;
+	const struct ccat_eth_frame *end;
+	struct ccat_eth_frame *next;
 	struct ccat_dma dma;
 };
 
@@ -187,7 +189,6 @@ struct ccat_info_block {
 struct ccat_eth_priv {
 	const struct ccat_device *ccatdev;
 	struct net_device *netdev;
-	size_t next_rx;
 	size_t next_tx;
 	struct ccat_info_block info;
 	struct ccat_eth_register reg;
