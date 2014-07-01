@@ -186,8 +186,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 				       struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_frame *const frame = priv->tx_fifo.dma.virt;
-	struct ccat_eth_frame *const next = &frame[priv->next_tx];
+	struct ccat_eth_dma_fifo *const fifo = &priv->tx_fifo;
 	u32 addr_and_length;
 
 	if (skb_is_nonlinear(skb)) {
@@ -197,28 +196,28 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	if (skb->len > sizeof(frame->data)) {
+	if (skb->len > sizeof(fifo->next->data)) {
 		pr_warn("skb.len %llu exceeds dma buffer %llu -> drop frame.\n",
-			(u64) skb->len, (u64) sizeof(frame->data));
+			(u64) skb->len, (u64) sizeof(fifo->next->data));
 		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
 
-	if (!ccat_eth_frame_sent(next)) {
+	if (!ccat_eth_frame_sent(fifo->next)) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
 		netif_stop_queue(priv->netdev);
 		return NETDEV_TX_BUSY;
 	}
 
 	/* prepare frame in DMA memory */
-	next->tx_flags = cpu_to_le32(0);
-	next->length = cpu_to_le16(skb->len);
-	memcpy(next->data, skb->data, skb->len);
+	fifo->next->tx_flags = cpu_to_le32(0);
+	fifo->next->length = cpu_to_le16(skb->len);
+	memcpy(fifo->next->data, skb->data, skb->len);
 
 	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
 	addr_and_length = offsetof(struct ccat_eth_frame, length);
-	addr_and_length += (priv->next_tx * sizeof(*frame));
+	addr_and_length += ((void*)fifo->next - fifo->dma.virt);
 	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo);
 
@@ -227,9 +226,9 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	dev_kfree_skb_any(skb);
 
-	priv->next_tx = (priv->next_tx + 1) % FIFO_LENGTH;
+	ccat_eth_fifo_inc(fifo);
 	/* stop queue if tx ring is full */
-	if (!ccat_eth_frame_sent(next)) {
+	if (!ccat_eth_frame_sent(fifo->next)) {
 		netif_stop_queue(priv->netdev);
 	}
 	return NETDEV_TX_OK;
@@ -293,7 +292,6 @@ static void ccat_eth_link_up(struct net_device *const dev)
 
 	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
 	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
-	priv->next_tx = 0;
 
 	/* TODO reset CCAT MAC register */
 
@@ -346,8 +344,7 @@ static void poll_rx(struct ccat_eth_priv *const priv)
  */
 static void poll_tx(struct ccat_eth_priv *const priv)
 {
-	struct ccat_eth_frame *const frame = priv->tx_fifo.dma.virt;
-	if (ccat_eth_frame_sent(&frame[priv->next_tx])) {
+	if (ccat_eth_frame_sent(priv->tx_fifo.next)) {
 		netif_wake_queue(priv->netdev);
 	}
 }

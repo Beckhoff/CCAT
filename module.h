@@ -175,7 +175,6 @@ struct ccat_info_block {
  * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
  * @ccatdev: pointer to the parent struct ccat_device
  * @netdev: the net_device structure used by the kernel networking stack
- * @next_tx_frame: pointer to the next TX DMA descriptor, which the tx_thread should check for availablity
  * @info: holds a copy of the CCAT Ethernet/EtherCAT Master function information block (read from PCI config space)
  * @reg: register addresses in PCI config space of the Ethernet/EtherCAT Master function
  * @rx_fifo: DMA fifo used for RX DMA descriptors
@@ -189,7 +188,6 @@ struct ccat_info_block {
 struct ccat_eth_priv {
 	const struct ccat_device *ccatdev;
 	struct net_device *netdev;
-	size_t next_tx;
 	struct ccat_info_block info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
