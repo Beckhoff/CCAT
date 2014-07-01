@@ -44,6 +44,7 @@ static const u8 frameForwardEthernetFrames[] = {
 };
 
 #define FIFO_LENGTH 64
+#define POLL_TIME ktime_set(0, 100 * NSEC_PER_USEC)
 
 /**
  * Helper to check if frame in tx dma memory was already marked as sent by CCAT
@@ -361,7 +362,7 @@ static enum hrtimer_restart poll_timer_callback(struct hrtimer *timer)
 	poll_link(priv);
 	poll_rx(priv);
 	poll_tx(priv);
-	hrtimer_forward_now(timer, ktime_set(0, 100 * NSEC_PER_USEC));
+	hrtimer_forward_now(timer, POLL_TIME);
 	return HRTIMER_RESTART;
 }
 
@@ -410,8 +411,7 @@ static int ccat_eth_open(struct net_device *dev)
 
 	hrtimer_init(&priv->poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	priv->poll_timer.function = poll_timer_callback;
-	hrtimer_start(&priv->poll_timer, ktime_set(0, 100000),
-		      HRTIMER_MODE_REL);
+	hrtimer_start(&priv->poll_timer, POLL_TIME, HRTIMER_MODE_REL);
 	return 0;
 }
 
