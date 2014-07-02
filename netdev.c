@@ -252,10 +252,8 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
 }
 
 static void ccat_eth_receive(struct net_device *const dev,
-			     const struct ccat_eth_frame *const frame)
+			     const void *const data, const size_t len)
 {
-	static const size_t frame_overhead = CCAT_ETH_FRAME_HEAD_LEN - 4;
-	const size_t len = le16_to_cpu(frame->length) - frame_overhead;
 	struct sk_buff *const skb = dev_alloc_skb(len + NET_IP_ALIGN);
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 
@@ -266,7 +264,7 @@ static void ccat_eth_receive(struct net_device *const dev,
 	}
 	skb->dev = dev;
 	skb_reserve(skb, NET_IP_ALIGN);
-	skb_copy_to_linear_data(skb, frame->data, len);
+	skb_copy_to_linear_data(skb, data, len);
 	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
@@ -331,11 +329,14 @@ static void poll_link(struct ccat_eth_priv *const priv)
  */
 static void poll_rx(struct ccat_eth_priv *const priv)
 {
+	static const size_t overhead = CCAT_ETH_FRAME_HEAD_LEN - 4;
+	struct ccat_eth_dma_fifo *const fifo = &priv->rx_fifo;
 	/* TODO omit possible deadlock in situations with heavy traffic */
-	while (ccat_eth_frame_received(priv->rx_fifo.next)) {
-		ccat_eth_receive(priv->netdev, priv->rx_fifo.next);
-		ccat_eth_rx_fifo_add(&priv->rx_fifo, priv->rx_fifo.next);
-		ccat_eth_fifo_inc(&priv->rx_fifo);
+	while (ccat_eth_frame_received(fifo->next)) {
+		const size_t len = le16_to_cpu(fifo->next->length) - overhead;
+		ccat_eth_receive(priv->netdev, fifo->next->data, len);
+		ccat_eth_rx_fifo_add(fifo, fifo->next);
+		ccat_eth_fifo_inc(fifo);
 	}
 }
 
