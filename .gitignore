@@ -1,0 +1,10 @@
+*.ko.cmd
+*.o.cmd
+.goutputstream-*
+.tmp_versions/
+Lindent
+Module.symvers
+*.ko
+*.mod.c
+*.o
+*.order
