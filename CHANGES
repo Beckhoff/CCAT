@@ -21,6 +21,14 @@ code cleanup:
 - reorder signature of fifo_add() "this" pointer is first now
 - reduce pointer indirection
 
+Test log:
+----------|      | generic/|
+  Kernel  | arch | ec_ccat | device |  os   | fping, netio, etherlab, SOEM
+==========|======|=========|==============================================
+3.16.0-rc3|x86_64| ec_ccat | CX2030 | 14.04 | no errors
+
+* os/14.04 means Ubuntu 14.04 LTS
+
 
 
 0.9:

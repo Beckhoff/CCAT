@@ -217,7 +217,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
 	addr_and_length = offsetof(struct ccat_eth_frame, length);
-	addr_and_length += ((void*)fifo->next - fifo->dma.virt);
+	addr_and_length += ((void *)fifo->next - fifo->dma.virt);
 	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
 	iowrite32(addr_and_length, priv->reg.tx_fifo);
 
