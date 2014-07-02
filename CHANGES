@@ -1,5 +1,5 @@
 
-ccat-next:
+0.10:
 =====
 buf fixes/new features:
 - move first netif_carrier_off() in front of register_netdev()
@@ -26,6 +26,7 @@ Test log:
   Kernel  | arch | ec_ccat | device |  os   | fping, netio, etherlab, SOEM
 ==========|======|=========|==============================================
 3.16.0-rc3|x86_64| ec_ccat | CX2030 | 14.04 | no errors
+3.15.0-rc7| i386 | ec_ccat | CX5020 | 14.04 | no errors
 
 * os/14.04 means Ubuntu 14.04 LTS
 
