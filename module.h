@@ -26,6 +26,9 @@
 #include <linux/kernel.h>
 #include <linux/pci.h>
 
+// TODO move into ccat_gpio
+#include <linux/gpio.h>
+
 #define DRV_EXTRAVERSION ""
 #define DRV_VERSION      "0.10" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
@@ -38,6 +41,7 @@
  */
 enum ccat_info_t {
 	CCATINFO_NOTUSED = 0,
+	CCATINFO_GPIO = 0xd,
 	CCATINFO_EPCS_PROM = 0xf,
 	CCATINFO_ETHERCAT_MASTER_DMA = 0x14,
 	CCATINFO_COPY_BLOCK = 0x17,
@@ -154,6 +158,7 @@ struct ccat_device {
 	struct pci_dev *pdev;
 	struct ccat_eth_priv *ethdev;
 	struct ccat_update *update;
+	struct ccat_gpio *gpio;
 	struct ccat_bar bar[3];	//TODO optimize this
 };
 
@@ -162,6 +167,7 @@ struct ccat_info_block {
 	u16 rev;
 	union {
 		u32 config;
+		u8 num_gpios;
 		struct {
 			u8 tx_dma_chan;
 			u8 rx_dma_chan;
@@ -241,7 +247,7 @@ struct ccat_mac_register {
 
 /**
  * struct ccat_update - CCAT Update function (update)
- * @ccatdev: pointer to the parent struct ccat_device
+ * @kref: reference counter
  * @ioaddr: PCI base address of the CCAT Update function
  * dev: device number for this update function
  * cdev: character device used for the CCAT Update function
@@ -254,6 +260,18 @@ struct ccat_update {
 	dev_t dev;
 	struct cdev cdev;
 	struct class *class;
+	struct ccat_info_block info;
+};
+
+/**
+ * struct ccat_gpio - CCAT GPIO function
+ * @ioaddr: PCI base address of the CCAT Update function
+ * @info: holds a copy of the CCAT Update function information block (read from PCI config space)
+ */
+struct ccat_gpio {
+	struct gpio_chip chip;
+	void __iomem *ioaddr;
+	struct mutex lock;
 	struct ccat_info_block info;
 };
 #endif /* #ifndef _CCAT_H_ */

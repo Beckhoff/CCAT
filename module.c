@@ -23,6 +23,7 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include "module.h"
+#include "gpio.h"
 #include "netdev.h"
 #include "update.h"
 
@@ -162,6 +163,11 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 		switch (type) {
 		case CCATINFO_NOTUSED:
 			break;
+		case CCATINFO_GPIO:
+			pr_info("Found: CCAT GPIO -> init()\n");
+			ccatdev->gpio = ccat_gpio_init(ccatdev, addr);
+			status += (NULL == ccatdev->gpio);
+			break;
 		case CCATINFO_EPCS_PROM:
 			pr_info("Found: CCAT update(EPCS_PROM) -> init()\n");
 			ccatdev->update = ccat_update_init(ccatdev, addr);
@@ -200,6 +206,13 @@ static void ccat_functions_remove(struct ccat_device *const ccatdev)
 		ccatdev->update = NULL;
 		ccat_update_remove(update);
 	}
+	if (!ccatdev->gpio) {
+		pr_warn("%s(): 'update' was not initialized.\n", __FUNCTION__);
+	} else {
+		struct ccat_gpio *const gpio = ccatdev->gpio;
+		ccatdev->gpio = NULL;
+		ccat_gpio_remove(gpio);
+	}
 }
 
 static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -207,6 +220,8 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	int status;
 	u8 revision;
 	struct ccat_device *ccatdev = kmalloc(sizeof(*ccatdev), GFP_KERNEL);
+
+	pr_info_once("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 
 	if (!ccatdev) {
 		pr_err("%s() out of memory.\n", __FUNCTION__);
@@ -278,23 +293,11 @@ static const struct pci_device_id pci_ids[] = {
 
 MODULE_DEVICE_TABLE(pci, pci_ids);
 
-static struct pci_driver pci_driver = {
+static struct pci_driver ccat_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = pci_ids,
 	.probe = ccat_probe,
 	.remove = ccat_remove,
 };
 
-static void __exit ccat_exit_module(void)
-{
-	pci_unregister_driver(&pci_driver);
-}
-
-static int __init ccat_init_module(void)
-{
-	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
-	return pci_register_driver(&pci_driver);
-}
-
-module_exit(ccat_exit_module);
-module_init(ccat_init_module);
+module_pci_driver(ccat_driver);

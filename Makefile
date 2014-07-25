@@ -1,7 +1,7 @@
 TARGET = ccat
 EXTRA_DIR = /lib/modules/$(shell uname -r)/extra/
 obj-m += $(TARGET).o
-$(TARGET)-objs := module.o netdev.o update.o
+$(TARGET)-objs := gpio.o module.o netdev.o update.o
 #ccflags-y := -DDEBUG
 ccflags-y += -D__CHECK_ENDIAN__
 
@@ -20,5 +20,5 @@ clean:
 	rm -f *.c~ *.h~ *.bin
 
 # indent the source files with the kernels Lindent script
-indent: module.c module.h netdev.c netdev.h update.c update.h
+indent: gpio.c gpio.h module.c module.h netdev.c netdev.h update.c update.h
 	./Lindent $?
