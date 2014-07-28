@@ -30,7 +30,7 @@
 #include <linux/gpio.h>
 
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.10" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.11" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 #undef pr_fmt
