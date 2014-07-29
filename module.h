@@ -26,9 +26,6 @@
 #include <linux/kernel.h>
 #include <linux/pci.h>
 
-// TODO move into ccat_gpio
-#include <linux/gpio.h>
-
 #define DRV_EXTRAVERSION ""
 #define DRV_VERSION      "0.11" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
@@ -160,6 +157,8 @@ struct ccat_device {
 	struct ccat_update *update;
 	struct ccat_gpio *gpio;
 	struct ccat_bar bar[3];	//TODO optimize this
+	struct list_head list;
+	struct list_head functions;
 };
 
 struct ccat_info_block {
@@ -263,15 +262,29 @@ struct ccat_update {
 	struct ccat_info_block info;
 };
 
-/**
- * struct ccat_gpio - CCAT GPIO function
- * @ioaddr: PCI base address of the CCAT Update function
- * @info: holds a copy of the CCAT Update function information block (read from PCI config space)
- */
-struct ccat_gpio {
-	struct gpio_chip chip;
-	void __iomem *ioaddr;
-	struct mutex lock;
+struct ccat_function {
+	struct ccat_device *ccat;
 	struct ccat_info_block info;
+	struct list_head list;
+	void *private_data;
 };
+
+/**
+ * struct ccat_driver - CCAT FPGA function
+ * @list: links ccat_drivers together for traversal
+ * @type: type of the FPGA function supported by this driver
+ * @probe: add device instance callback
+ * @remove: remove device instance callback
+ */
+struct ccat_driver {
+	int (*probe)(struct ccat_function *func);
+	void (*remove)(struct ccat_function *drv);
+	struct list_head list;
+	enum ccat_info_t type;
+	struct list_head functions;
+};
+
+int register_ccat_driver(struct ccat_driver *drv);
+
+void unregister_ccat_driver(struct ccat_driver *drv);
 #endif /* #ifndef _CCAT_H_ */

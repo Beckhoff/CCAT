@@ -23,7 +23,6 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include "module.h"
-#include "gpio.h"
 #include "netdev.h"
 #include "update.h"
 
@@ -31,6 +30,10 @@ MODULE_DESCRIPTION(DRV_DESCRIPTION);
 MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
+
+static LIST_HEAD(driver_list);
+static LIST_HEAD(device_list);
+static DEFINE_MUTEX(ccat_mutex);
 
 static void ccat_bar_free(struct ccat_bar *bar)
 {
@@ -158,11 +161,21 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 	const void __iomem *end = addr + (block_size * num_func);
 	int status = 0;	/** count init function failures */
 
+	INIT_LIST_HEAD(&ccatdev->functions);
+
 	while (addr < end) {
-		const u8 type = ioread16(addr);
+		struct ccat_function *next = kzalloc(sizeof(*next), GFP_KERNEL);
+		if (next) {
+			memcpy_fromio(&next->info, addr, sizeof(next->info));
+			list_add(&next->list, &ccatdev->functions);
+			next->ccat = ccatdev;
+		}
+#if 0
+		const enum ccat_info_t type = ioread16(addr);
 		switch (type) {
 		case CCATINFO_NOTUSED:
 			break;
+#if 0
 		case CCATINFO_GPIO:
 			pr_info("Found: CCAT GPIO -> init()\n");
 			ccatdev->gpio = ccat_gpio_init(ccatdev, addr);
@@ -178,10 +191,22 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 			ccatdev->ethdev = ccat_eth_init(ccatdev, addr);
 			status += (NULL == ccatdev->ethdev);
 			break;
+#endif
 		default:
+		{
+			struct ccat_driver *drv;
 			pr_info("Found: 0x%04x not supported\n", type);
+			list_for_each_entry(drv, &driver_list, list) {
+				if (drv->type == type) {
+					pr_info("found %d\n", type);
+					drv->probe(ccatdev);
+					break;
+				}
+			}
+		}
 			break;
 		}
+#endif
 		addr += block_size;
 	}
 	return status;
@@ -192,6 +217,8 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
  */
 static void ccat_functions_remove(struct ccat_device *const ccatdev)
 {
+	// TODO do something if device gets removed
+#if 0
 	if (!ccatdev->ethdev) {
 		pr_warn("%s(): 'ethdev' was not initialized.\n", __FUNCTION__);
 	} else {
@@ -213,6 +240,7 @@ static void ccat_functions_remove(struct ccat_device *const ccatdev)
 		ccatdev->gpio = NULL;
 		ccat_gpio_remove(gpio);
 	}
+#endif
 }
 
 static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -265,6 +293,7 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ccat_functions_init(ccatdev)) {
 		pr_warn("some functions couldn't be initialized\n");
 	}
+	list_add(&ccatdev->list, &device_list);
 	return 0;
 }
 
@@ -273,6 +302,7 @@ static void ccat_remove(struct pci_dev *pdev)
 	struct ccat_device *ccatdev = pci_get_drvdata(pdev);
 
 	if (ccatdev) {
+		list_del(&ccatdev->list);
 		ccat_functions_remove(ccatdev);
 		ccat_bar_free(&ccatdev->bar[2]);
 		ccat_bar_free(&ccatdev->bar[0]);
@@ -282,6 +312,51 @@ static void ccat_remove(struct pci_dev *pdev)
 	}
 	pr_debug("%s() done.\n", __FUNCTION__);
 }
+
+int register_ccat_driver(struct ccat_driver *drv)
+{
+	struct ccat_device *dev;
+	struct ccat_driver *item;
+	struct ccat_function *func;
+	struct ccat_function *tmp;
+	mutex_lock(&ccat_mutex);
+
+	list_for_each_entry(item, &driver_list, list) {
+		if (item->type == drv->type) {
+			pr_info("Driver for FPGA function: %d already registered\n", drv->type);
+			mutex_unlock(&ccat_mutex);
+			return -EEXIST;
+		}
+	}
+	list_add(&drv->list, &driver_list);
+
+	list_for_each_entry(dev, &device_list, list) {
+		list_for_each_entry_safe(func, tmp, &dev->functions, list) {
+			if (func->info.type == drv->type) {
+				list_move(&func->list, &drv->functions);
+				drv->probe(func);
+			}
+		}
+	}
+	mutex_unlock(&ccat_mutex);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(register_ccat_driver);
+
+void unregister_ccat_driver(struct ccat_driver *drv)
+{
+	struct ccat_function *func;
+	struct ccat_function *tmp;
+	list_del(&drv->list);
+	list_for_each_entry_safe(func, tmp, &drv->functions, list) {
+		if (drv->remove) {
+			drv->remove(func);
+		}
+		list_move(&func->list, &func->ccat->functions);
+	}
+	pr_info("%s(): done.\n", __FUNCTION__);
+}
+EXPORT_SYMBOL_GPL(unregister_ccat_driver);
 
 #define PCI_DEVICE_ID_BECKHOFF_CCAT 0x5000
 #define PCI_VENDOR_ID_BECKHOFF 0x15EC

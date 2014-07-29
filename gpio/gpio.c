@@ -21,8 +21,20 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/gpio.h>
-#include "module.h"
-#include "gpio.h"
+#include "../module.h"
+
+
+/**
+ * struct ccat_gpio - CCAT GPIO function
+ * @ioaddr: PCI base address of the CCAT Update function
+ * @info: holds a copy of the CCAT Update function information block (read from PCI config space)
+ */
+struct ccat_gpio {
+	struct gpio_chip chip;
+	void __iomem *ioaddr;
+	struct mutex lock;
+	struct ccat_info_block info;
+};
 
 /** TODO implement in LED driver
 	#define TC_RED 0x01
@@ -113,27 +125,58 @@ static const struct gpio_chip ccat_gpio_chip = {
 	.can_sleep = false
 };
 
-struct ccat_gpio *ccat_gpio_init(const struct ccat_device *const ccatdev,
-				 void __iomem * const addr)
+static int ccat_gpio_probe(struct ccat_function *func)
 {
 	struct ccat_gpio *const gpio = kzalloc(sizeof(*gpio), GFP_KERNEL);
+	int ret;
 
-	gpio->ioaddr = ccatdev->bar[0].ioaddr + ioread32(addr + 0x8);
+	if (!gpio)
+		return -ENOMEM;
+
+	gpio->ioaddr = func->ccat->bar[0].ioaddr + func->info.addr;
 	memcpy(&gpio->chip, &ccat_gpio_chip, sizeof(gpio->chip));
-	memcpy_fromio(&gpio->info, addr, sizeof(gpio->info));
+	memcpy(&gpio->info, &func->info, sizeof(gpio->info));
 	gpio->chip.ngpio = gpio->info.num_gpios;
 	mutex_init(&gpio->lock);
 
-	if (gpiochip_add(&gpio->chip)) {
+	ret = gpiochip_add(&gpio->chip);
+	if (ret) {
 		kfree(gpio);
-		return NULL;
+		return ret;
 	}
-	//TODO remove this debug code
-	iowrite32(0x1FF, gpio->ioaddr);
-	return gpio;
+	func->private_data = gpio;
+	return 0;
 }
 
-void ccat_gpio_remove(struct ccat_gpio *gpio)
+static void ccat_gpio_remove(struct ccat_function *func)
 {
+	struct ccat_gpio *const gpio = func->private_data;
 	gpiochip_remove(&gpio->chip);
+};
+
+static struct ccat_driver gpio_driver = {
+	.type = CCATINFO_GPIO,
+	.probe = ccat_gpio_probe,
+	.remove = ccat_gpio_remove,
+	.functions = LIST_HEAD_INIT(gpio_driver.functions),
+};
+
+static __init int ccat_gpio_init(void)
+{
+	pr_info("%s(): %p\n", __FUNCTION__, &gpio_driver);
+	return register_ccat_driver(&gpio_driver);
 }
+
+static __exit void ccat_gpio_exit(void)
+{
+	pr_info("%s(): %p\n", __FUNCTION__, &gpio_driver);
+	unregister_ccat_driver(&gpio_driver);
+}
+
+module_init(ccat_gpio_init);
+module_exit(ccat_gpio_exit);
+
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
