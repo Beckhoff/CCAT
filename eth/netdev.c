@@ -468,24 +468,18 @@ static int ccat_eth_probe(struct ccat_function *func)
 	return 0;
 }
 
-static void ccat_eth_remove(struct ccat_eth_priv *const priv)
-{
-	unregister_netdev(priv->netdev);
-	ccat_eth_priv_free_dma(priv);
-	free_netdev(priv->netdev);
-}
-
-static void __ccat_eth_remove(struct ccat_function *func)
+static void ccat_eth_remove(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
-	pr_info("%s()\n", __FUNCTION__);
-	ccat_eth_remove(eth);
+	unregister_netdev(eth->netdev);
+	ccat_eth_priv_free_dma(eth);
+	free_netdev(eth->netdev);
 }
 
 static struct ccat_driver eth_driver = {
 	.type = CCATINFO_ETHERCAT_MASTER_DMA,
 	.probe = ccat_eth_probe,
-	.remove = __ccat_eth_remove,
+	.remove = ccat_eth_remove,
 	.functions = LIST_HEAD_INIT(eth_driver.functions),
 };
 
