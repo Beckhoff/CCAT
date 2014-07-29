@@ -23,8 +23,7 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 
-#include "module.h"
-#include "netdev.h"
+#include "../module.h"
 
 /**
  * EtherCAT frame to enable forwarding on EtherCAT Terminals
@@ -431,24 +430,26 @@ static const struct net_device_ops ccat_eth_netdev_ops = {
 	.ndo_stop = ccat_eth_stop,
 };
 
-struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
-				    const void __iomem * const addr)
+static int ccat_eth_probe(struct ccat_function *func)
 {
 	struct ccat_eth_priv *priv;
 	struct net_device *const netdev = alloc_etherdev(sizeof(*priv));
 
+	if (!netdev)
+		return -ENOMEM;
+
 	priv = netdev_priv(netdev);
 	priv->netdev = netdev;
-	priv->ccatdev = ccatdev;
+	priv->ccatdev = func->ccat;
 
 	/* ccat register mappings */
-	memcpy_fromio(&priv->info, addr, sizeof(priv->info));
+	memcpy(&priv->info, &func->info, sizeof(priv->info));
 	ccat_eth_priv_init_mappings(priv);
 
 	if (ccat_eth_priv_init_dma(priv)) {
 		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
 		free_netdev(netdev);
-		return NULL;
+		return -1; // TODO return better error code
 	}
 
 	/* init netdev with MAC and stack callbacks */
@@ -460,15 +461,37 @@ struct ccat_eth_priv *ccat_eth_init(const struct ccat_device *const ccatdev,
 		pr_info("unable to register network device.\n");
 		ccat_eth_priv_free_dma(priv);
 		free_netdev(netdev);
-		return NULL;
+		return -1; // TODO return better error code
 	}
 	pr_info("registered %s as network device.\n", netdev->name);
-	return priv;
+	func->private_data = priv;
+	return 0;
 }
 
-void ccat_eth_remove(struct ccat_eth_priv *const priv)
+static void ccat_eth_remove(struct ccat_eth_priv *const priv)
 {
 	unregister_netdev(priv->netdev);
 	ccat_eth_priv_free_dma(priv);
 	free_netdev(priv->netdev);
 }
+
+static void __ccat_eth_remove(struct ccat_function *func)
+{
+	struct ccat_eth_priv *const eth = func->private_data;
+	pr_info("%s()\n", __FUNCTION__);
+	ccat_eth_remove(eth);
+}
+
+static struct ccat_driver eth_driver = {
+	.type = CCATINFO_ETHERCAT_MASTER_DMA,
+	.probe = ccat_eth_probe,
+	.remove = __ccat_eth_remove,
+	.functions = LIST_HEAD_INIT(eth_driver.functions),
+};
+
+module_driver(eth_driver, register_ccat_driver, unregister_ccat_driver);
+
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);

@@ -23,7 +23,6 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include "module.h"
-#include "netdev.h"
 #include "update.h"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -86,6 +85,8 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 	pr_debug("bar%llu I/O mem mapped to %p.\n", (u64) index, bar->ioaddr);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(ccat_dma_init);
+
 
 void ccat_dma_free(struct ccat_dma *const dma)
 {
@@ -95,6 +96,7 @@ void ccat_dma_free(struct ccat_dma *const dma)
 	memset(dma, 0, sizeof(*dma));
 	dma_free_coherent(tmp.dev, tmp.size, tmp.virt, tmp.phys);
 }
+EXPORT_SYMBOL_GPL(ccat_dma_free);
 
 /**
  * ccat_dma_init() - Initialize CCAT and host memory for DMA transfer
@@ -170,43 +172,6 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 			list_add(&next->list, &ccatdev->functions);
 			next->ccat = ccatdev;
 		}
-#if 0
-		const enum ccat_info_t type = ioread16(addr);
-		switch (type) {
-		case CCATINFO_NOTUSED:
-			break;
-#if 0
-		case CCATINFO_GPIO:
-			pr_info("Found: CCAT GPIO -> init()\n");
-			ccatdev->gpio = ccat_gpio_init(ccatdev, addr);
-			status += (NULL == ccatdev->gpio);
-			break;
-		case CCATINFO_EPCS_PROM:
-			pr_info("Found: CCAT update(EPCS_PROM) -> init()\n");
-			ccatdev->update = ccat_update_init(ccatdev, addr);
-			status += (NULL == ccatdev->update);
-			break;
-		case CCATINFO_ETHERCAT_MASTER_DMA:
-			pr_info("Found: ETHERCAT_MASTER_DMA -> init()\n");
-			ccatdev->ethdev = ccat_eth_init(ccatdev, addr);
-			status += (NULL == ccatdev->ethdev);
-			break;
-#endif
-		default:
-		{
-			struct ccat_driver *drv;
-			pr_info("Found: 0x%04x not supported\n", type);
-			list_for_each_entry(drv, &driver_list, list) {
-				if (drv->type == type) {
-					pr_info("found %d\n", type);
-					drv->probe(ccatdev);
-					break;
-				}
-			}
-		}
-			break;
-		}
-#endif
 		addr += block_size;
 	}
 	return status;
@@ -218,29 +183,7 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 static void ccat_functions_remove(struct ccat_device *const ccatdev)
 {
 	// TODO do something if device gets removed
-#if 0
-	if (!ccatdev->ethdev) {
-		pr_warn("%s(): 'ethdev' was not initialized.\n", __FUNCTION__);
-	} else {
-		struct ccat_eth_priv *const ethdev = ccatdev->ethdev;
-		ccatdev->ethdev = NULL;
-		ccat_eth_remove(ethdev);
-	}
-	if (!ccatdev->update) {
-		pr_warn("%s(): 'update' was not initialized.\n", __FUNCTION__);
-	} else {
-		struct ccat_update *const update = ccatdev->update;
-		ccatdev->update = NULL;
-		ccat_update_remove(update);
-	}
-	if (!ccatdev->gpio) {
-		pr_warn("%s(): 'update' was not initialized.\n", __FUNCTION__);
-	} else {
-		struct ccat_gpio *const gpio = ccatdev->gpio;
-		ccatdev->gpio = NULL;
-		ccat_gpio_remove(gpio);
-	}
-#endif
+	//WARN_ON(1);
 }
 
 static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
