@@ -33,7 +33,6 @@ struct ccat_gpio {
 	struct gpio_chip chip;
 	void __iomem *ioaddr;
 	struct mutex lock;
-	struct ccat_info_block info;
 };
 
 /** TODO implement in LED driver
@@ -113,7 +112,7 @@ static void ccat_gpio_set(struct gpio_chip *chip, unsigned nr, int val)
 }
 
 static const struct gpio_chip ccat_gpio_chip = {
-	.label = "ccat_gpio",
+	.label = KBUILD_MODNAME,
 	.owner = THIS_MODULE,
 	.get_direction = ccat_gpio_get_direction,
 	.direction_input = ccat_gpio_direction_input,
@@ -135,8 +134,7 @@ static int ccat_gpio_probe(struct ccat_function *func)
 
 	gpio->ioaddr = func->ccat->bar[0].ioaddr + func->info.addr;
 	memcpy(&gpio->chip, &ccat_gpio_chip, sizeof(gpio->chip));
-	memcpy(&gpio->info, &func->info, sizeof(gpio->info));
-	gpio->chip.ngpio = gpio->info.num_gpios;
+	gpio->chip.ngpio = func->info.num_gpios;
 	mutex_init(&gpio->lock);
 
 	ret = gpiochip_add(&gpio->chip);
@@ -145,12 +143,14 @@ static int ccat_gpio_probe(struct ccat_function *func)
 		return ret;
 	}
 	func->private_data = gpio;
+	pr_info_once("new GPIO function instance created\n");
 	return 0;
 }
 
 static void ccat_gpio_remove(struct ccat_function *func)
 {
 	struct ccat_gpio *const gpio = func->private_data;
+
 	gpiochip_remove(&gpio->chip);
 };
 
@@ -161,20 +161,7 @@ static struct ccat_driver gpio_driver = {
 	.functions = LIST_HEAD_INIT(gpio_driver.functions),
 };
 
-static __init int ccat_gpio_init(void)
-{
-	pr_info("%s(): %p\n", __FUNCTION__, &gpio_driver);
-	return register_ccat_driver(&gpio_driver);
-}
-
-static __exit void ccat_gpio_exit(void)
-{
-	pr_info("%s(): %p\n", __FUNCTION__, &gpio_driver);
-	unregister_ccat_driver(&gpio_driver);
-}
-
-module_init(ccat_gpio_init);
-module_exit(ccat_gpio_exit);
+module_driver(gpio_driver, register_ccat_driver, unregister_ccat_driver);
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
 MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
