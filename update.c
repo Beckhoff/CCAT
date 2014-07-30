@@ -46,14 +46,14 @@
 
 /**
  * struct ccat_update - CCAT Update function (update)
- * @kref: reference counter
+ * @in_use: reference counter
  * @ioaddr: PCI base address of the CCAT Update function
  * dev: device number for this update function
  * cdev: character device used for the CCAT Update function
  * class: pointer to a device class used when registering the CCAT Update device
  */
 struct ccat_update {
-	struct kref refcount;
+	atomic_t in_use;
 	void __iomem *ioaddr;
 	dev_t dev;
 	struct cdev cdev;
@@ -274,39 +274,20 @@ static void ccat_write_flash(const struct update_buffer *const update)
 	ccat_write_flash_block(update->update->ioaddr, off, (u16) len, buf);
 }
 
-/**
- * ccat_update_destroy() - Cleanup the CCAT Update function
- * @ref: pointer to a struct kref embedded into a struct ccat_update, which we intend to destroy
- *
- * Retrieves the parent struct ccat_update and destroys it.
- */
-static void ccat_update_destroy(struct kref *ref)
-{
-	struct ccat_update *update =
-	    container_of(ref, struct ccat_update, refcount);
-
-	cdev_del(&update->cdev);
-	device_destroy(update->class, update->dev);
-	class_destroy(update->class);
-	unregister_chrdev_region(update->dev, 1);
-	kfree(update);
-}
-
 static int ccat_update_open(struct inode *const i, struct file *const f)
 {
 	struct ccat_update *update =
-	    container_of(i->i_cdev, struct ccat_update, cdev);
+		container_of(i->i_cdev, struct ccat_update, cdev);
 	struct update_buffer *buf;
 
-	kref_get(&update->refcount);
-	if (atomic_read(&update->refcount.refcount) > 2) {
-		kref_put(&update->refcount, ccat_update_destroy);
+	if (!atomic_dec_and_test(&update->in_use)) {
+		atomic_inc(&update->in_use);
 		return -EBUSY;
 	}
 
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf) {
-		kref_put(&update->refcount, ccat_update_destroy);
+		atomic_inc(&update->in_use);
 		return -ENOMEM;
 	}
 
@@ -327,7 +308,7 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 		ccat_write_flash(buf);
 	}
 	kfree(f->private_data);
-	kref_put(&update->refcount, ccat_update_destroy);
+	atomic_inc(&update->in_use);
 	return 0;
 }
 
@@ -349,9 +330,6 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 {
 	struct update_buffer *update = f->private_data;
 
-	if (!buf || !off) {
-		return -EINVAL;
-	}
 	if (*off >= CCAT_FLASH_SIZE) {
 		return 0;
 	}
@@ -369,7 +347,7 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
  * @off: current offset in the configuration data
  *
  * Copies data from user space (possibly a *.rbf) to the CCAT FPGA's
- * configuration flash to user space.
+ * configuration flash.
  *
  * Return: the number of bytes written, or 0 if flash end is reached
  */
@@ -409,8 +387,8 @@ static int ccat_update_probe(struct ccat_function *func)
 	if (!update) {
 		return -ENOMEM;
 	}
-	kref_init(&update->refcount);
 	update->ioaddr = func->ccat->bar[0].ioaddr + func->info.addr;
+	atomic_set(&update->in_use, 1);
 
 	if (0x00 != func->info.rev) {
 		pr_warn("CCAT Update rev. %d not supported\n", func->info.rev);
@@ -425,14 +403,14 @@ static int ccat_update_probe(struct ccat_function *func)
 	update->class = class_create(THIS_MODULE, "ccat_update");
 	if (NULL == update->class) {
 		pr_warn("Create device class failed\n");
-		goto cleanup;
+		goto cleanup_region;
 	}
 
 	if (NULL ==
 	    device_create(update->class, NULL, update->dev, NULL,
 			  "ccat_update")) {
 		pr_warn("device_create() failed\n");
-		goto cleanup;
+		goto cleanup_class;
 	}
 
 	cdev_init(&update->cdev, &update_ops);
@@ -440,14 +418,20 @@ static int ccat_update_probe(struct ccat_function *func)
 	update->cdev.ops = &update_ops;
 	if (cdev_add(&update->cdev, update->dev, 1)) {
 		pr_warn("add update device failed\n");
-		goto cleanup;
+		goto cleanup_device;
 	}
 
 	pr_info("registered %s as character device.\n", update->class->name);
 	func->private_data = update;
 	return 0;
+cleanup_device:
+	device_destroy(update->class, update->dev);
+cleanup_class:
+	class_destroy(update->class);
+cleanup_region:
+	unregister_chrdev_region(update->dev, 1);
 cleanup:
-	kref_put(&update->refcount, ccat_update_destroy);
+	kfree(update);
 	return -1;
 }
 
@@ -457,7 +441,11 @@ cleanup:
 static void ccat_update_remove(struct ccat_function *func)
 {
 	struct ccat_update *const update = func->private_data;
-	kref_put(&update->refcount, ccat_update_destroy);
+	cdev_del(&update->cdev);
+	device_destroy(update->class, update->dev);
+	class_destroy(update->class);
+	unregister_chrdev_region(update->dev, 1);
+	kfree(update);
 }
 
 struct ccat_driver update_driver = {
