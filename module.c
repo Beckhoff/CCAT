@@ -33,10 +33,10 @@ MODULE_VERSION(DRV_VERSION);
  * configure the drivers capabilities here
  */
 static struct ccat_driver *const driver_list[] = {
-	&eth_driver,    /* load Ethernet MAC/EtherCAT Master driver from netdev.c */
-	&gpio_driver,   /* load GPIO driver from gpio.c */
-	&update_driver, /* load Update driver from update.c */
-	NULL            /* this entry is used to detect the end, don't remove it! */
+	&eth_driver,		/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
+	&gpio_driver,		/* load GPIO driver from gpio.c */
+	&update_driver,		/* load Update driver from update.c */
+	NULL			/* this entry is used to detect the end, don't remove it! */
 };
 
 static void ccat_bar_free(struct ccat_bar *bar)
@@ -90,7 +90,6 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 	pr_debug("bar%llu I/O mem mapped to %p.\n", (u64) index, bar->ioaddr);
 	return 0;
 }
-
 
 void ccat_dma_free(struct ccat_dma *const dma)
 {
@@ -153,7 +152,8 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	return 0;
 }
 
-static struct ccat_driver* ccat_function_connect(struct ccat_function *const func)
+static struct ccat_driver *ccat_function_connect(struct ccat_function *const
+						 func)
 {
 	size_t i;
 
@@ -188,8 +188,10 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 				next->ccat = ccatdev;
 				next->drv = ccat_function_connect(next);
 				if (next->drv) {
-					list_add(&next->list, &ccatdev->functions);
-					next = kzalloc(sizeof(*next), GFP_KERNEL);;
+					list_add(&next->list,
+						 &ccatdev->functions);
+					next =
+					    kzalloc(sizeof(*next), GFP_KERNEL);
 				}
 			}
 		}

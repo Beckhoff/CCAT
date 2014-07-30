@@ -573,7 +573,7 @@ static int ccat_eth_probe(struct ccat_function *func)
 	if (ccat_eth_priv_init_dma(priv)) {
 		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
 		free_netdev(netdev);
-		return -1; // TODO return better error code
+		return -1;	// TODO return better error code
 	}
 
 	/* init netdev with MAC and stack callbacks */
@@ -585,7 +585,7 @@ static int ccat_eth_probe(struct ccat_function *func)
 		pr_info("unable to register network device.\n");
 		ccat_eth_priv_free_dma(priv);
 		free_netdev(netdev);
-		return -1; // TODO return better error code
+		return -1;	// TODO return better error code
 	}
 	pr_info("registered %s as network device.\n", netdev->name);
 	func->private_data = priv;

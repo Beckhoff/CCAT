@@ -277,7 +277,7 @@ static void ccat_write_flash(const struct update_buffer *const update)
 static int ccat_update_open(struct inode *const i, struct file *const f)
 {
 	struct ccat_update *update =
-		container_of(i->i_cdev, struct ccat_update, cdev);
+	    container_of(i->i_cdev, struct ccat_update, cdev);
 	struct update_buffer *buf;
 
 	if (!atomic_dec_and_test(&update->in_use)) {

@@ -33,7 +33,6 @@
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-
 extern struct ccat_driver eth_driver;
 extern struct ccat_driver gpio_driver;
 extern struct ccat_driver update_driver;
@@ -120,7 +119,7 @@ struct ccat_info_block {
 };
 
 struct ccat_function {
-	struct ccat_driver* drv;
+	struct ccat_driver *drv;
 	struct ccat_device *ccat;
 	struct ccat_info_block info;
 	struct list_head list;
@@ -134,8 +133,8 @@ struct ccat_function {
  * @type: type of the FPGA function supported by this driver
  */
 struct ccat_driver {
-	int (*probe)(struct ccat_function *func);
-	void (*remove)(struct ccat_function *drv);
+	int (*probe) (struct ccat_function * func);
+	void (*remove) (struct ccat_function * drv);
 	enum ccat_info_t type;
 };
 #endif /* #ifndef _CCAT_H_ */

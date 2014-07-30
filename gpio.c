@@ -23,7 +23,6 @@
 #include <linux/gpio.h>
 #include "module.h"
 
-
 /**
  * struct ccat_gpio - CCAT GPIO function
  * @ioaddr: PCI base address of the CCAT Update function
