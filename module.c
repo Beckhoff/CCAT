@@ -29,9 +29,6 @@ MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 
-static LIST_HEAD(device_list);
-static DEFINE_MUTEX(ccat_mutex);
-
 static struct ccat_driver *const static_driver_list[] = {
 	&eth_driver,
 	&gpio_driver,
@@ -90,7 +87,6 @@ static int ccat_bar_init(struct ccat_bar *bar, size_t index,
 	pr_debug("bar%llu I/O mem mapped to %p.\n", (u64) index, bar->ioaddr);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(ccat_dma_init);
 
 
 void ccat_dma_free(struct ccat_dma *const dma)
@@ -101,7 +97,6 @@ void ccat_dma_free(struct ccat_dma *const dma)
 	memset(dma, 0, sizeof(*dma));
 	dma_free_coherent(tmp.dev, tmp.size, tmp.virt, tmp.phys);
 }
-EXPORT_SYMBOL_GPL(ccat_dma_free);
 
 /**
  * ccat_dma_init() - Initialize CCAT and host memory for DMA transfer
@@ -268,7 +263,6 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ccat_functions_init(ccatdev)) {
 		pr_warn("some functions couldn't be initialized\n");
 	}
-	list_add(&ccatdev->list, &device_list);
 	return 0;
 }
 
@@ -277,7 +271,6 @@ static void ccat_remove(struct pci_dev *pdev)
 	struct ccat_device *ccatdev = pci_get_drvdata(pdev);
 
 	if (ccatdev) {
-		list_del(&ccatdev->list);
 		ccat_functions_remove(ccatdev);
 		ccat_bar_free(&ccatdev->bar[2]);
 		ccat_bar_free(&ccatdev->bar[0]);
@@ -285,7 +278,6 @@ static void ccat_remove(struct pci_dev *pdev)
 		pci_set_drvdata(pdev, NULL);
 		kfree(ccatdev);
 	}
-	pr_debug("%s() done.\n", __FUNCTION__);
 }
 
 #define PCI_DEVICE_ID_BECKHOFF_CCAT 0x5000
@@ -304,4 +296,5 @@ static struct pci_driver ccat_driver = {
 	.probe = ccat_probe,
 	.remove = ccat_remove,
 };
+
 module_pci_driver(ccat_driver);

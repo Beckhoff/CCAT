@@ -158,5 +158,4 @@ struct ccat_driver gpio_driver = {
 	.type = CCATINFO_GPIO,
 	.probe = ccat_gpio_probe,
 	.remove = ccat_gpio_remove,
-	.functions = LIST_HEAD_INIT(gpio_driver.functions),
 };

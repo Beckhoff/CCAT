@@ -86,82 +86,21 @@ extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 			 void __iomem * const ioaddr, struct device *const dev);
 
 /**
- * struct ccat_eth_frame - Ethernet frame with DMA descriptor header in front
- * @reservedn: is not used and should always be set to 0
- * @received: used for reception, is set to 1 by the CCAT when data was written
- * @length: number of bytes in the frame including the DMA header
- * @sent: is set to 1 by the CCAT when data was transmitted
- * @timestamp: a 64 bit EtherCAT timestamp
- * @data: the bytes of the ethernet frame
- */
-struct ccat_eth_frame {
-	__le32 reserved1;
-	__le32 rx_flags;
-#define CCAT_FRAME_RECEIVED 0x1
-	__le16 length;
-	__le16 reserved3;
-	__le32 tx_flags;
-#define CCAT_FRAME_SENT 0x1
-	__le64 timestamp;
-	u8 data[0x800 - 3 * sizeof(u64)];
-#define CCAT_ETH_FRAME_HEAD_LEN offsetof(struct ccat_eth_frame, data)
-};
-
-/**
- * struct ccat_eth_register - CCAT register addresses in the PCI BAR
- * @mii: address of the CCAT management interface register
- * @tx_fifo: address of the CCAT TX DMA fifo register
- * @rx_fifo: address of the CCAT RX DMA fifo register
- * @mac: address of the CCAT media access control register
- * @rx_mem: address of the CCAT register holding the RX DMA address
- * @tx_mem: address of the CCAT register holding the TX DMA address
- * @misc: address of a CCAT register holding miscellaneous information
- */
-struct ccat_eth_register {
-	void __iomem *mii;
-	void __iomem *tx_fifo;
-	void __iomem *rx_fifo;
-	void __iomem *mac;
-	void __iomem *rx_mem;
-	void __iomem *tx_mem;
-	void __iomem *misc;
-};
-
-/**
- * struct ccat_eth_dma_fifo - CCAT RX or TX DMA fifo
- * @add: callback used to add a frame to this fifo
- * @reg: PCI register address of this DMA fifo
- * @dma: information about the associated DMA memory
- */
-struct ccat_eth_dma_fifo {
-	void (*add) (struct ccat_eth_dma_fifo *, struct ccat_eth_frame *);
-	void __iomem *reg;
-	const struct ccat_eth_frame *end;
-	struct ccat_eth_frame *next;
-	struct ccat_dma dma;
-};
-
-/**
  * struct ccat_device - CCAT device representation
  * @pdev: pointer to the pci object allocated by the kernel
- * @ethdev: CCAT Ethernet/EtherCAT Master (with DMA) function, NULL if function is not available or failed to initialize
- * @update: CCAT Update function, NULL if function is not available or failed to initialize
- * @bar [0] and [2] holding information about PCI BARs 0 and 2.
+ * @bar: [0] and [2] holding information about PCI BARs 0 and 2.
+ * @functions: list of available (driver loaded) FPGA functions
  *
  * One instance of a ccat_device should represent a physical CCAT. Since
- * a CCAT is implemented as FPGA the available functions can vary so
- * the function object pointers can be NULL.
+ * a CCAT is implemented as FPGA the available functions can vary.
+ *
  * Extra note: you will recognize that PCI BAR1 is not used and is a
  * waste of memory, thats true but right now, its very easy to use it
  * this way. So we might optimize it later.
  */
 struct ccat_device {
 	struct pci_dev *pdev;
-	struct ccat_eth_priv *ethdev;
-	struct ccat_update *update;
-	struct ccat_gpio *gpio;
 	struct ccat_bar bar[3];	//TODO optimize this
-	struct list_head list;
 	struct list_head functions;
 };
 
@@ -181,34 +120,6 @@ struct ccat_info_block {
 };
 
 /**
- * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
- * @ccatdev: pointer to the parent struct ccat_device
- * @netdev: the net_device structure used by the kernel networking stack
- * @info: holds a copy of the CCAT Ethernet/EtherCAT Master function information block (read from PCI config space)
- * @reg: register addresses in PCI config space of the Ethernet/EtherCAT Master function
- * @rx_fifo: DMA fifo used for RX DMA descriptors
- * @tx_fifo: DMA fifo used for TX DMA descriptors
- * @poll_timer: interval timer used to poll CCAT for events like link changed, rx done, tx done
- * @rx_bytes: number of bytes received -> reported with ndo_get_stats64()
- * @rx_dropped: number of received frames, which were dropped -> reported with ndo_get_stats64()
- * @tx_bytes: number of bytes send -> reported with ndo_get_stats64()
- * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
- */
-struct ccat_eth_priv {
-	const struct ccat_device *ccatdev;
-	struct net_device *netdev;
-	struct ccat_info_block info;
-	struct ccat_eth_register reg;
-	struct ccat_eth_dma_fifo rx_fifo;
-	struct ccat_eth_dma_fifo tx_fifo;
-	struct hrtimer poll_timer;
-	atomic64_t rx_bytes;
-	atomic64_t rx_dropped;
-	atomic64_t tx_bytes;
-	atomic64_t tx_dropped;
-};
-
-/**
  * same as: typedef struct _CCatInfoBlockOffs from CCatDefinitions.h
  * TODO add some checking facility outside of the linux tree
  */
@@ -222,49 +133,6 @@ struct ccat_mac_infoblock {
 	u32 misc;
 };
 
-struct ccat_mac_register {
-	/** MAC error register     @+0x0 */
-	u8 frame_len_err;
-	u8 rx_err;
-	u8 crc_err;
-	u8 link_lost_err;
-	u32 reserved1;
-	/** Buffer overflow errors @+0x8 */
-	u8 rx_mem_full;
-	u8 reserved2[7];
-	/** MAC frame counter      @+0x10 */
-	u32 tx_frames;
-	u32 rx_frames;
-	u64 reserved3;
-	/** MAC fifo level         @+0x20 */
-	u8 tx_fifo_level:7;
-	u8 reserved4:1;
-	u8 reserved5[7];
-	/** TX memory full error   @+0x28 */
-	u8 tx_mem_full;
-	u8 reserved6[7];
-	u64 reserved8[9];
-	/** Connection             @+0x78 */
-	u8 mii_connected;
-};
-
-/**
- * struct ccat_update - CCAT Update function (update)
- * @kref: reference counter
- * @ioaddr: PCI base address of the CCAT Update function
- * dev: device number for this update function
- * cdev: character device used for the CCAT Update function
- * class: pointer to a device class used when registering the CCAT Update device
- * @info: holds a copy of the CCAT Update function information block (read from PCI config space)
- */
-struct ccat_update {
-	struct kref refcount;
-	void __iomem *ioaddr;
-	dev_t dev;
-	struct cdev cdev;
-	struct class *class;
-};
-
 struct ccat_function {
 	struct ccat_driver* drv;
 	struct ccat_device *ccat;
@@ -275,20 +143,13 @@ struct ccat_function {
 
 /**
  * struct ccat_driver - CCAT FPGA function
- * @list: links ccat_drivers together for traversal
+ * @probe: add device instance
+ * @remove: remove device instance
  * @type: type of the FPGA function supported by this driver
- * @probe: add device instance callback
- * @remove: remove device instance callback
  */
 struct ccat_driver {
 	int (*probe)(struct ccat_function *func);
 	void (*remove)(struct ccat_function *drv);
-	struct list_head list;
 	enum ccat_info_t type;
-	struct list_head functions;
 };
-
-int register_ccat_driver(struct ccat_driver *drv);
-
-void unregister_ccat_driver(struct ccat_driver *drv);
 #endif /* #ifndef _CCAT_H_ */

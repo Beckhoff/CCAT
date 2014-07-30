@@ -45,6 +45,22 @@
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
 /**
+ * struct ccat_update - CCAT Update function (update)
+ * @kref: reference counter
+ * @ioaddr: PCI base address of the CCAT Update function
+ * dev: device number for this update function
+ * cdev: character device used for the CCAT Update function
+ * class: pointer to a device class used when registering the CCAT Update device
+ */
+struct ccat_update {
+	struct kref refcount;
+	void __iomem *ioaddr;
+	dev_t dev;
+	struct cdev cdev;
+	struct class *class;
+};
+
+/**
  * struct update_buffer - keep track of a CCAT FPGA update
  * @update: pointer to a valid ccat_update object
  * @data: buffer used for write operations
@@ -448,5 +464,4 @@ struct ccat_driver update_driver = {
 	.type = CCATINFO_EPCS_PROM,
 	.probe = ccat_update_probe,
 	.remove = ccat_update_remove,
-	.functions = LIST_HEAD_INIT(update_driver.functions),
 };
