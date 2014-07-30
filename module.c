@@ -29,11 +29,14 @@ MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 
-static struct ccat_driver *const static_driver_list[] = {
-	&eth_driver,
-	&gpio_driver,
-	&update_driver,
-	NULL /* this last entry is mandatory! */
+/**
+ * configure the drivers capabilities here
+ */
+static struct ccat_driver *const driver_list[] = {
+	&eth_driver,    /* load Ethernet MAC/EtherCAT Master driver from netdev.c */
+	&gpio_driver,   /* load GPIO driver from gpio.c */
+	&update_driver, /* load Update driver from update.c */
+	NULL            /* this entry is used to detect the end, don't remove it! */
 };
 
 static void ccat_bar_free(struct ccat_bar *bar)
@@ -154,8 +157,8 @@ static struct ccat_driver* ccat_function_connect(struct ccat_function *const fun
 {
 	size_t i;
 
-	for (i = 0; NULL != static_driver_list[i]; i++) {
-		struct ccat_driver *drv = static_driver_list[i];
+	for (i = 0; NULL != driver_list[i]; i++) {
+		struct ccat_driver *drv = driver_list[i];
 		if (func->info.type == drv->type) {
 			return drv->probe(func) ? NULL : drv;
 		}

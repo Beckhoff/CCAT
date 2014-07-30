@@ -119,20 +119,6 @@ struct ccat_info_block {
 	u32 size;
 };
 
-/**
- * same as: typedef struct _CCatInfoBlockOffs from CCatDefinitions.h
- * TODO add some checking facility outside of the linux tree
- */
-struct ccat_mac_infoblock {
-	u32 reserved;
-	u32 mii;
-	u32 tx_fifo;
-	u32 mac;
-	u32 rx_mem;
-	u32 tx_mem;
-	u32 misc;
-};
-
 struct ccat_function {
 	struct ccat_driver* drv;
 	struct ccat_device *ccat;

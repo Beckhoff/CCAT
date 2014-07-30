@@ -290,7 +290,6 @@ static void ccat_update_destroy(struct kref *ref)
 	class_destroy(update->class);
 	unregister_chrdev_region(update->dev, 1);
 	kfree(update);
-	pr_debug("%s(): done\n", __FUNCTION__);
 }
 
 static int ccat_update_open(struct inode *const i, struct file *const f)
@@ -444,6 +443,7 @@ static int ccat_update_probe(struct ccat_function *func)
 		goto cleanup;
 	}
 
+	pr_info("registered %s as character device.\n", update->class->name);
 	func->private_data = update;
 	return 0;
 cleanup:

@@ -102,6 +102,20 @@ struct ccat_eth_dma_fifo {
 };
 
 /**
+ * same as: typedef struct _CCatInfoBlockOffs from CCatDefinitions.h
+ * TODO add some checking facility outside of the linux tree
+ */
+struct ccat_mac_infoblock {
+	u32 reserved;
+	u32 mii;
+	u32 tx_fifo;
+	u32 mac;
+	u32 rx_mem;
+	u32 tx_mem;
+	u32 misc;
+};
+
+/**
  * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
  * @ccatdev: pointer to the parent struct ccat_device
  * @netdev: the net_device structure used by the kernel networking stack
