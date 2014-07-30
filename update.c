@@ -23,7 +23,7 @@
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/uaccess.h>
-#include "../module.h"
+#include "module.h"
 
 #define CCAT_DATA_IN_4 0x038
 #define CCAT_DATA_IN_N 0x7F0
@@ -444,16 +444,9 @@ static void ccat_update_remove(struct ccat_function *func)
 	kref_put(&update->refcount, ccat_update_destroy);
 }
 
-static struct ccat_driver update_driver = {
+struct ccat_driver update_driver = {
 	.type = CCATINFO_EPCS_PROM,
 	.probe = ccat_update_probe,
 	.remove = ccat_update_remove,
 	.functions = LIST_HEAD_INIT(update_driver.functions),
 };
-
-module_driver(update_driver, register_ccat_driver, unregister_ccat_driver);
-
-MODULE_DESCRIPTION(DRV_DESCRIPTION);
-MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
-MODULE_LICENSE("GPL");
-MODULE_VERSION(DRV_VERSION);

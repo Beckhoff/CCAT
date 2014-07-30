@@ -21,7 +21,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/gpio.h>
-#include "../module.h"
+#include "module.h"
 
 
 /**
@@ -154,16 +154,9 @@ static void ccat_gpio_remove(struct ccat_function *func)
 	gpiochip_remove(&gpio->chip);
 };
 
-static struct ccat_driver gpio_driver = {
+struct ccat_driver gpio_driver = {
 	.type = CCATINFO_GPIO,
 	.probe = ccat_gpio_probe,
 	.remove = ccat_gpio_remove,
 	.functions = LIST_HEAD_INIT(gpio_driver.functions),
 };
-
-module_driver(gpio_driver, register_ccat_driver, unregister_ccat_driver);
-
-MODULE_DESCRIPTION(DRV_DESCRIPTION);
-MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
-MODULE_LICENSE("GPL");
-MODULE_VERSION(DRV_VERSION);

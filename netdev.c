@@ -23,7 +23,7 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 
-#include "../module.h"
+#include "module.h"
 
 /**
  * EtherCAT frame to enable forwarding on EtherCAT Terminals
@@ -476,16 +476,9 @@ static void ccat_eth_remove(struct ccat_function *func)
 	free_netdev(eth->netdev);
 }
 
-static struct ccat_driver eth_driver = {
+struct ccat_driver eth_driver = {
 	.type = CCATINFO_ETHERCAT_MASTER_DMA,
 	.probe = ccat_eth_probe,
 	.remove = ccat_eth_remove,
 	.functions = LIST_HEAD_INIT(eth_driver.functions),
 };
-
-module_driver(eth_driver, register_ccat_driver, unregister_ccat_driver);
-
-MODULE_DESCRIPTION(DRV_DESCRIPTION);
-MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
-MODULE_LICENSE("GPL");
-MODULE_VERSION(DRV_VERSION);

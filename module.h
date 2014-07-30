@@ -33,6 +33,11 @@
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+
+extern struct ccat_driver eth_driver;
+extern struct ccat_driver gpio_driver;
+extern struct ccat_driver update_driver;
+
 /**
  * CCAT function type identifiers (u16)
  */
@@ -261,6 +266,7 @@ struct ccat_update {
 };
 
 struct ccat_function {
+	struct ccat_driver* drv;
 	struct ccat_device *ccat;
 	struct ccat_info_block info;
 	struct list_head list;
