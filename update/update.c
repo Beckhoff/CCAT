@@ -23,8 +23,7 @@
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/uaccess.h>
-#include "module.h"
-#include "update.h"
+#include "../module.h"
 
 #define CCAT_DATA_IN_4 0x038
 #define CCAT_DATA_IN_N 0x7F0
@@ -386,35 +385,20 @@ static struct file_operations update_ops = {
 };
 
 /**
- * ccat_get_prom_id() - Read CCAT PROM ID
- * @ioaddr: address of the CCAT Update function in PCI config space
- *
- * Return: the CCAT FPGA's PROM identifier
- */
-u8 ccat_get_prom_id(void __iomem * const ioaddr)
-{
-	ccat_update_cmd(ioaddr, CCAT_GET_PROM_ID);
-	return ioread8(ioaddr + 0x38);
-}
-
-/**
  * ccat_update_init() - Initialize the CCAT Update function
  */
-struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
-				     void __iomem * const addr)
+static int ccat_update_probe(struct ccat_function *func)
 {
 	struct ccat_update *const update = kzalloc(sizeof(*update), GFP_KERNEL);
 
 	if (!update) {
-		return NULL;
+		return -ENOMEM;
 	}
 	kref_init(&update->refcount);
-	update->ioaddr = ccatdev->bar[0].ioaddr + ioread32(addr + 0x8);
-	memcpy_fromio(&update->info, addr, sizeof(update->info));
+	update->ioaddr = func->ccat->bar[0].ioaddr + func->info.addr;
 
-	if (0x00 != update->info.rev) {
-		pr_warn("CCAT Update rev. %d not supported\n",
-			update->info.rev);
+	if (0x00 != func->info.rev) {
+		pr_warn("CCAT Update rev. %d not supported\n", func->info.rev);
 		goto cleanup;
 	}
 
@@ -443,17 +427,33 @@ struct ccat_update *ccat_update_init(const struct ccat_device *const ccatdev,
 		pr_warn("add update device failed\n");
 		goto cleanup;
 	}
-	return update;
+
+	func->private_data = update;
+	return 0;
 cleanup:
 	kref_put(&update->refcount, ccat_update_destroy);
-	return NULL;
+	return -1;
 }
 
 /**
  * ccat_update_remove() - Prepare the CCAT Update function for removal
  */
-void ccat_update_remove(struct ccat_update *update)
+static void ccat_update_remove(struct ccat_function *func)
 {
+	struct ccat_update *const update = func->private_data;
 	kref_put(&update->refcount, ccat_update_destroy);
-	pr_debug("%s(): done\n", __FUNCTION__);
 }
+
+static struct ccat_driver update_driver = {
+	.type = CCATINFO_EPCS_PROM,
+	.probe = ccat_update_probe,
+	.remove = ccat_update_remove,
+	.functions = LIST_HEAD_INIT(update_driver.functions),
+};
+
+module_driver(update_driver, register_ccat_driver, unregister_ccat_driver);
+
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);

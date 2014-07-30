@@ -41,7 +41,6 @@ enum ccat_info_t {
 	CCATINFO_GPIO = 0xd,
 	CCATINFO_EPCS_PROM = 0xf,
 	CCATINFO_ETHERCAT_MASTER_DMA = 0x14,
-	CCATINFO_COPY_BLOCK = 0x17,
 	CCATINFO_MAX
 };
 
@@ -259,7 +258,6 @@ struct ccat_update {
 	dev_t dev;
 	struct cdev cdev;
 	struct class *class;
-	struct ccat_info_block info;
 };
 
 struct ccat_function {
