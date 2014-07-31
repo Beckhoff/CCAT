@@ -155,12 +155,11 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 static struct ccat_driver *ccat_function_connect(struct ccat_function *const
 						 func)
 {
-	size_t i;
+	struct ccat_driver *const *drv;
 
-	for (i = 0; NULL != driver_list[i]; i++) {
-		struct ccat_driver *drv = driver_list[i];
-		if (func->info.type == drv->type) {
-			return drv->probe(func) ? NULL : drv;
+	for (drv = driver_list; NULL != *drv; drv++) {
+		if (func->info.type == (*drv)->type) {
+			return (*drv)->probe(func) ? NULL : *drv;
 		}
 	}
 	return NULL;
