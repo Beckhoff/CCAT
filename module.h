@@ -87,19 +87,17 @@ extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 /**
  * struct ccat_device - CCAT device representation
  * @pdev: pointer to the pci object allocated by the kernel
- * @bar: [0] and [2] holding information about PCI BARs 0 and 2.
+ * @bar_0: holding information about PCI BAR 0
+ * @bar_2: holding information about PCI BAR 2
  * @functions: list of available (driver loaded) FPGA functions
  *
  * One instance of a ccat_device should represent a physical CCAT. Since
  * a CCAT is implemented as FPGA the available functions can vary.
- *
- * Extra note: you will recognize that PCI BAR1 is not used and is a
- * waste of memory, thats true but right now, its very easy to use it
- * this way. So we might optimize it later.
  */
 struct ccat_device {
 	struct pci_dev *pdev;
-	struct ccat_bar bar[3];	//TODO optimize this
+	struct ccat_bar bar_0;
+	struct ccat_bar bar_2;
 	struct list_head functions;
 };
 

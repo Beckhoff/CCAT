@@ -175,7 +175,7 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 {
 	static const size_t block_size = sizeof(struct ccat_info_block);
 	struct ccat_function *next = kzalloc(sizeof(*next), GFP_KERNEL);
-	void __iomem *addr = ccatdev->bar[0].ioaddr; /** first block is the CCAT information block entry */
+	void __iomem *addr = ccatdev->bar_0.ioaddr; /** first block is the CCAT information block entry */
 	const u8 num_func = ioread8(addr + 4); /** number of CCAT function blocks is at offset 0x4 */
 	const void __iomem *end = addr + (block_size * num_func);
 	int status = 0;	/** count init function failures */
@@ -254,12 +254,12 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		pr_warn("No suitable DMA available, pci rev: %u\n", revision);
 	}
 
-	if (ccat_bar_init(&ccatdev->bar[0], 0, pdev)) {
+	if (ccat_bar_init(&ccatdev->bar_0, 0, pdev)) {
 		pr_warn("initialization of bar0 failed.\n");
 		return -EIO;
 	}
 
-	if (ccat_bar_init(&ccatdev->bar[2], 2, pdev)) {
+	if (ccat_bar_init(&ccatdev->bar_2, 2, pdev)) {
 		pr_warn("initialization of bar2 failed.\n");
 		return -EIO;
 	}
@@ -277,8 +277,8 @@ static void ccat_remove(struct pci_dev *pdev)
 
 	if (ccatdev) {
 		ccat_functions_remove(ccatdev);
-		ccat_bar_free(&ccatdev->bar[2]);
-		ccat_bar_free(&ccatdev->bar[0]);
+		ccat_bar_free(&ccatdev->bar_2);
+		ccat_bar_free(&ccatdev->bar_0);
 		pci_disable_device(pdev);
 		pci_set_drvdata(pdev, NULL);
 		kfree(ccatdev);

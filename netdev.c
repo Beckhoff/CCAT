@@ -233,7 +233,7 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 				  struct ccat_eth_priv *const priv)
 {
 	if (0 !=
-	    ccat_dma_init(&fifo->dma, channel, priv->ccatdev->bar[2].ioaddr,
+	    ccat_dma_init(&fifo->dma, channel, priv->ccatdev->bar_2.ioaddr,
 			  &priv->ccatdev->pdev->dev)) {
 		pr_info("init DMA%llu memory failed.\n", (u64) channel);
 		return -1;
@@ -293,7 +293,7 @@ static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
 {
 	struct ccat_mac_infoblock offsets;
 	void __iomem *const func_base =
-	    priv->ccatdev->bar[0].ioaddr + priv->info.addr;
+	    priv->ccatdev->bar_0.ioaddr + priv->info.addr;
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	priv->reg.mii = func_base + offsets.mii;
