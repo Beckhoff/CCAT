@@ -178,27 +178,21 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 	void __iomem *addr = ccatdev->bar_0.ioaddr; /** first block is the CCAT information block entry */
 	const u8 num_func = ioread8(addr + 4); /** number of CCAT function blocks is at offset 0x4 */
 	const void __iomem *end = addr + (block_size * num_func);
-	int status = 0;	/** count init function failures */
 
 	INIT_LIST_HEAD(&ccatdev->functions);
-	while (addr < end) {
-		if (next) {
-			memcpy_fromio(&next->info, addr, sizeof(next->info));
-			if (CCATINFO_NOTUSED != next->info.type) {
-				next->ccat = ccatdev;
-				next->drv = ccat_function_connect(next);
-				if (next->drv) {
-					list_add(&next->list,
-						 &ccatdev->functions);
-					next =
-					    kzalloc(sizeof(*next), GFP_KERNEL);
-				}
+	for (; addr < end && next; addr += block_size) {
+		memcpy_fromio(&next->info, addr, sizeof(next->info));
+		if (CCATINFO_NOTUSED != next->info.type) {
+			next->ccat = ccatdev;
+			next->drv = ccat_function_connect(next);
+			if (next->drv) {
+				list_add(&next->list, &ccatdev->functions);
+				next = kzalloc(sizeof(*next), GFP_KERNEL);
 			}
 		}
-		addr += block_size;
 	}
 	kfree(next);
-	return status;
+	return list_empty(&ccatdev->functions);
 }
 
 /**
