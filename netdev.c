@@ -195,8 +195,8 @@ static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
 typedef void (*fifo_add_function) (struct ccat_eth_dma_fifo *,
 				   struct ccat_eth_frame *);
 
-static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *fifo,
-				 struct ccat_eth_frame *frame)
+static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *const fifo,
+				 struct ccat_eth_frame *const frame)
 {
 	const size_t offset = ((void *)(frame) - fifo->dma.virt);
 	const u32 addr_and_length = (1 << 31) | offset;
@@ -205,14 +205,14 @@ static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *fifo,
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *fifo,
-				      struct ccat_eth_frame *frame)
+static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *const fifo,
+				      struct ccat_eth_frame *const frame)
 {
 	/* mark frame as ready to use for tx */
 	frame->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
-static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *fifo)
+static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
 {
 	/* reset hw fifo */
 	iowrite32(0, fifo->reg + 0x8);
@@ -342,7 +342,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	addr_and_length = offsetof(struct ccat_eth_frame, length);
 	addr_and_length += ((void *)fifo->next - fifo->dma.virt);
 	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
-	iowrite32(addr_and_length, priv->reg.tx_fifo);
+	iowrite32(addr_and_length, fifo->reg);
 
 	/* update stats */
 	atomic64_add(skb->len, &priv->tx_bytes);
