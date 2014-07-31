@@ -117,7 +117,7 @@ struct ccat_mac_infoblock {
 
 /**
  * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
- * @ccatdev: pointer to the parent struct ccat_device
+ * @func: pointer to the parent struct ccat_function
  * @netdev: the net_device structure used by the kernel networking stack
  * @info: holds a copy of the CCAT Ethernet/EtherCAT Master function information block (read from PCI config space)
  * @reg: register addresses in PCI config space of the Ethernet/EtherCAT Master function
@@ -130,9 +130,8 @@ struct ccat_mac_infoblock {
  * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
  */
 struct ccat_eth_priv {
-	const struct ccat_device *ccatdev;
+	const struct ccat_function *func;
 	struct net_device *netdev;
-	struct ccat_info_block info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
 	struct ccat_eth_dma_fifo tx_fifo;
@@ -230,11 +229,10 @@ static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
 static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 				  void __iomem * const fifo_reg,
 				  fifo_add_function add, size_t channel,
-				  struct ccat_eth_priv *const priv)
+				  struct ccat_device *const ccat)
 {
-	if (0 !=
-	    ccat_dma_init(&fifo->dma, channel, priv->ccatdev->bar_2.ioaddr,
-			  &priv->ccatdev->pdev->dev)) {
+	if (0 != ccat_dma_init(&fifo->dma, channel, ccat->bar_2.ioaddr,
+			       &ccat->pdev->dev)) {
 		pr_info("init DMA%llu memory failed.\n", (u64) channel);
 		return -1;
 	}
@@ -266,14 +264,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
 	if (ccat_eth_dma_fifo_init
 	    (&priv->rx_fifo, priv->reg.rx_fifo, ccat_eth_rx_fifo_add,
-	     priv->info.rx_dma_chan, priv)) {
+	     priv->func->info.rx_dma_chan, priv->func->ccat)) {
 		pr_warn("init Rx DMA fifo failed.\n");
 		return -1;
 	}
 
 	if (ccat_eth_dma_fifo_init
 	    (&priv->tx_fifo, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free,
-	     priv->info.tx_dma_chan, priv)) {
+	     priv->func->info.tx_dma_chan, priv->func->ccat)) {
 		pr_warn("init Tx DMA fifo failed.\n");
 		ccat_dma_free(&priv->rx_fifo.dma);
 		return -1;
@@ -286,23 +284,24 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 }
 
 /**
- * Initializes the CCat... members of the ccat_eth_priv structure.
- * Call this function only if info and ioaddr are already initialized!
+ * Initializes a struct ccat_eth_register with data from a corresponding
+ * CCAT function.
  */
-static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
+static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
+				   const struct ccat_function *const func)
 {
 	struct ccat_mac_infoblock offsets;
 	void __iomem *const func_base =
-	    priv->ccatdev->bar_0.ioaddr + priv->info.addr;
+	    func->ccat->bar_0.ioaddr + func->info.addr;
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
-	priv->reg.mii = func_base + offsets.mii;
-	priv->reg.tx_fifo = func_base + offsets.tx_fifo;
-	priv->reg.rx_fifo = func_base + offsets.tx_fifo + 0x10;
-	priv->reg.mac = func_base + offsets.mac;
-	priv->reg.rx_mem = func_base + offsets.rx_mem;
-	priv->reg.tx_mem = func_base + offsets.tx_mem;
-	priv->reg.misc = func_base + offsets.misc;
+	reg->mii = func_base + offsets.mii;
+	reg->tx_fifo = func_base + offsets.tx_fifo;
+	reg->rx_fifo = func_base + offsets.tx_fifo + 0x10;
+	reg->mac = func_base + offsets.mac;
+	reg->rx_mem = func_base + offsets.rx_mem;
+	reg->tx_mem = func_base + offsets.tx_mem;
+	reg->misc = func_base + offsets.misc;
 }
 
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
@@ -564,11 +563,10 @@ static int ccat_eth_probe(struct ccat_function *func)
 
 	priv = netdev_priv(netdev);
 	priv->netdev = netdev;
-	priv->ccatdev = func->ccat;
+	priv->func = func;
 
 	/* ccat register mappings */
-	memcpy(&priv->info, &func->info, sizeof(priv->info));
-	ccat_eth_priv_init_mappings(priv);
+	ccat_eth_priv_init_reg(&priv->reg, func);
 
 	if (ccat_eth_priv_init_dma(priv)) {
 		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
