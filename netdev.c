@@ -239,6 +239,7 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 	fifo->add = add;
 	fifo->end = ((struct ccat_eth_frame *)fifo->dma.virt) + FIFO_LENGTH;
 	fifo->reg = fifo_reg;
+	ccat_eth_dma_fifo_reset(fifo);
 	return 0;
 }
 
