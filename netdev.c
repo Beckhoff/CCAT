@@ -117,7 +117,7 @@ struct ccat_mac_infoblock {
 
 /**
  * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
- * @ccatdev: pointer to the parent struct ccat_device
+ * @func: pointer to the parent struct ccat_function
  * @netdev: the net_device structure used by the kernel networking stack
  * @info: holds a copy of the CCAT Ethernet/EtherCAT Master function information block (read from PCI config space)
  * @reg: register addresses in PCI config space of the Ethernet/EtherCAT Master function
@@ -130,9 +130,8 @@ struct ccat_mac_infoblock {
  * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
  */
 struct ccat_eth_priv {
-	const struct ccat_device *ccatdev;
+	const struct ccat_function *func;
 	struct net_device *netdev;
-	struct ccat_info_block info;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
 	struct ccat_eth_dma_fifo tx_fifo;
@@ -195,8 +194,8 @@ static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
 typedef void (*fifo_add_function) (struct ccat_eth_dma_fifo *,
 				   struct ccat_eth_frame *);
 
-static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *fifo,
-				 struct ccat_eth_frame *frame)
+static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *const fifo,
+				 struct ccat_eth_frame *const frame)
 {
 	const size_t offset = ((void *)(frame) - fifo->dma.virt);
 	const u32 addr_and_length = (1 << 31) | offset;
@@ -205,14 +204,14 @@ static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *fifo,
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *fifo,
-				      struct ccat_eth_frame *frame)
+static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *const fifo,
+				      struct ccat_eth_frame *const frame)
 {
 	/* mark frame as ready to use for tx */
 	frame->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
-static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *fifo)
+static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
 {
 	/* reset hw fifo */
 	iowrite32(0, fifo->reg + 0x8);
@@ -230,17 +229,17 @@ static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *fifo)
 static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 				  void __iomem * const fifo_reg,
 				  fifo_add_function add, size_t channel,
-				  struct ccat_eth_priv *const priv)
+				  struct ccat_device *const ccat)
 {
-	if (0 !=
-	    ccat_dma_init(&fifo->dma, channel, priv->ccatdev->bar[2].ioaddr,
-			  &priv->ccatdev->pdev->dev)) {
+	if (0 != ccat_dma_init(&fifo->dma, channel, ccat->bar_2.ioaddr,
+			       &ccat->pdev->dev)) {
 		pr_info("init DMA%llu memory failed.\n", (u64) channel);
 		return -1;
 	}
 	fifo->add = add;
 	fifo->end = ((struct ccat_eth_frame *)fifo->dma.virt) + FIFO_LENGTH;
 	fifo->reg = fifo_reg;
+	ccat_eth_dma_fifo_reset(fifo);
 	return 0;
 }
 
@@ -266,14 +265,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
 	if (ccat_eth_dma_fifo_init
 	    (&priv->rx_fifo, priv->reg.rx_fifo, ccat_eth_rx_fifo_add,
-	     priv->info.rx_dma_chan, priv)) {
+	     priv->func->info.rx_dma_chan, priv->func->ccat)) {
 		pr_warn("init Rx DMA fifo failed.\n");
 		return -1;
 	}
 
 	if (ccat_eth_dma_fifo_init
 	    (&priv->tx_fifo, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free,
-	     priv->info.tx_dma_chan, priv)) {
+	     priv->func->info.tx_dma_chan, priv->func->ccat)) {
 		pr_warn("init Tx DMA fifo failed.\n");
 		ccat_dma_free(&priv->rx_fifo.dma);
 		return -1;
@@ -286,23 +285,24 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 }
 
 /**
- * Initializes the CCat... members of the ccat_eth_priv structure.
- * Call this function only if info and ioaddr are already initialized!
+ * Initializes a struct ccat_eth_register with data from a corresponding
+ * CCAT function.
  */
-static void ccat_eth_priv_init_mappings(struct ccat_eth_priv *priv)
+static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
+				   const struct ccat_function *const func)
 {
 	struct ccat_mac_infoblock offsets;
 	void __iomem *const func_base =
-	    priv->ccatdev->bar[0].ioaddr + priv->info.addr;
+	    func->ccat->bar_0.ioaddr + func->info.addr;
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
-	priv->reg.mii = func_base + offsets.mii;
-	priv->reg.tx_fifo = func_base + offsets.tx_fifo;
-	priv->reg.rx_fifo = func_base + offsets.tx_fifo + 0x10;
-	priv->reg.mac = func_base + offsets.mac;
-	priv->reg.rx_mem = func_base + offsets.rx_mem;
-	priv->reg.tx_mem = func_base + offsets.tx_mem;
-	priv->reg.misc = func_base + offsets.misc;
+	reg->mii = func_base + offsets.mii;
+	reg->tx_fifo = func_base + offsets.tx_fifo;
+	reg->rx_fifo = func_base + offsets.tx_fifo + 0x10;
+	reg->mac = func_base + offsets.mac;
+	reg->rx_mem = func_base + offsets.rx_mem;
+	reg->tx_mem = func_base + offsets.tx_mem;
+	reg->misc = func_base + offsets.misc;
 }
 
 static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
@@ -342,7 +342,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	addr_and_length = offsetof(struct ccat_eth_frame, length);
 	addr_and_length += ((void *)fifo->next - fifo->dma.virt);
 	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
-	iowrite32(addr_and_length, priv->reg.tx_fifo);
+	iowrite32(addr_and_length, fifo->reg);
 
 	/* update stats */
 	atomic64_add(skb->len, &priv->tx_bytes);
@@ -564,11 +564,10 @@ static int ccat_eth_probe(struct ccat_function *func)
 
 	priv = netdev_priv(netdev);
 	priv->netdev = netdev;
-	priv->ccatdev = func->ccat;
+	priv->func = func;
 
 	/* ccat register mappings */
-	memcpy(&priv->info, &func->info, sizeof(priv->info));
-	ccat_eth_priv_init_mappings(priv);
+	ccat_eth_priv_init_reg(&priv->reg, func);
 
 	if (ccat_eth_priv_init_dma(priv)) {
 		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);

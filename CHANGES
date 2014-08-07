@@ -1,4 +1,22 @@
 
+0.11: IN WORK
+=====
+refactored the ccat driver to work more similar to the pci subsystem + device drivers:
+- uncouple ccat core functionality from FPGA function block specific drivers
+- adding multiple instances of the same function block should work automagically now
+- adding new drivers for other FPGA function block should be more easy now
+add driver for the GPIO function block
+
+Test log:
+-------------|      | generic/|
+    Kernel   | arch | ec_ccat | device |  os   |result (fping, netio, etherlab)
+=============|======|=========|================================================
+3.4.97-rt121 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
+
+
+* os/14.04 means Ubuntu 14.04 LTS
+
+
 0.10:
 =====
 buf fixes/new features:
