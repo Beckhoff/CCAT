@@ -12,6 +12,7 @@ Test log:
     Kernel   | arch | ec_ccat | device |  os   |result (fping, netio, etherlab)
 =============|======|=========|================================================
 3.4.97-rt121 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
+3.14.12-rt9  |x86_64| ec_ccat | CX2030 | 14.04 | no errors
 
 
 * os/14.04 means Ubuntu 14.04 LTS
