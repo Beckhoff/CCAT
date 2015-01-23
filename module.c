@@ -32,7 +32,7 @@ MODULE_VERSION(DRV_VERSION);
 /**
  * configure the drivers capabilities here
  */
-static struct ccat_driver *const driver_list[] = {
+static const struct ccat_driver *const driver_list[] = {
 	&eth_driver,		/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
 	&gpio_driver,		/* load GPIO driver from gpio.c */
 	&update_driver,		/* load Update driver from update.c */
@@ -152,10 +152,10 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	return 0;
 }
 
-static struct ccat_driver *ccat_function_connect(struct ccat_function *const
+static const struct ccat_driver *ccat_function_connect(struct ccat_function *const
 						 func)
 {
-	struct ccat_driver *const *drv;
+	const struct ccat_driver *const *drv;
 
 	for (drv = driver_list; NULL != *drv; drv++) {
 		if (func->info.type == (*drv)->type) {
@@ -216,8 +216,6 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	int status;
 	u8 revision;
 	struct ccat_device *ccatdev = kmalloc(sizeof(*ccatdev), GFP_KERNEL);
-
-	pr_info_once("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 
 	if (!ccatdev) {
 		pr_err("%s() out of memory.\n", __FUNCTION__);
@@ -295,4 +293,21 @@ static struct pci_driver ccat_driver = {
 	.remove = ccat_remove,
 };
 
-module_pci_driver(ccat_driver);
+extern void __exit ccat_update_exit(void);
+extern int __init ccat_update_init(void);
+
+static int __init ccat_init_module(void)
+{
+	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
+	ccat_update_init();
+	return pci_register_driver(&ccat_driver);
+}
+
+static void __exit ccat_exit(void)
+{
+	pci_unregister_driver(&ccat_driver);
+	ccat_update_exit();
+}
+
+module_init(ccat_init_module);
+module_exit(ccat_exit);

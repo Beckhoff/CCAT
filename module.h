@@ -88,7 +88,7 @@ extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
  * struct ccat_device - CCAT device representation
  * @pdev: pointer to the pci object allocated by the kernel
  * @bar_0: holding information about PCI BAR 0
- * @bar_2: holding information about PCI BAR 2
+ * @bar_2: holding information about PCI BAR 2 (optional)
  * @functions: list of available (driver loaded) FPGA functions
  *
  * One instance of a ccat_device should represent a physical CCAT. Since
@@ -117,7 +117,7 @@ struct ccat_info_block {
 };
 
 struct ccat_function {
-	struct ccat_driver *drv;
+	const struct ccat_driver *drv;
 	struct ccat_device *ccat;
 	struct ccat_info_block info;
 	struct list_head list;
