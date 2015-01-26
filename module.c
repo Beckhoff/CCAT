@@ -39,58 +39,6 @@ static const struct ccat_driver *const driver_list[] = {
 	NULL			/* this entry is used to detect the end, don't remove it! */
 };
 
-static void ccat_bar_free(struct ccat_bar *bar)
-{
-	if (bar->ioaddr) {
-		const struct ccat_bar tmp = *bar;
-		memset(bar, 0, sizeof(*bar));
-		iounmap(tmp.ioaddr);
-		release_mem_region(tmp.start, tmp.len);
-	} else {
-		pr_warn("%s(): %p was already done.\n", __FUNCTION__, bar);
-	}
-}
-
-/**
- * ccat_bar_init() - Initialize a CCAT pci bar
- * @bar object which should be initialized
- * @index 0 and 2 are valid for CCAT, meaning pci bar0 or pci bar2
- * @pdev the pci device as which the CCAT was recognized before
- *
- * Reading PCI config space; request and map memory region.
- */
-static int ccat_bar_init(struct ccat_bar *bar, size_t index,
-			 struct pci_dev *pdev)
-{
-	struct resource *res;
-
-	bar->start = pci_resource_start(pdev, index);
-	bar->end = pci_resource_end(pdev, index);
-	bar->len = pci_resource_len(pdev, index);
-	bar->flags = pci_resource_flags(pdev, index);
-	if (!(IORESOURCE_MEM & bar->flags)) {
-		pr_info("bar%llu is no mem_region -> abort.\n", (u64) index);
-		return -EIO;
-	}
-
-	res = request_mem_region(bar->start, bar->len, KBUILD_MODNAME);
-	if (!res) {
-		pr_info("allocate mem_region failed.\n");
-		return -EIO;
-	}
-	pr_debug("bar%llu at [%lx,%lx] len=%lu res: %p.\n", (u64) index,
-		 bar->start, bar->end, bar->len, res);
-
-	bar->ioaddr = ioremap(bar->start, bar->len);
-	if (!bar->ioaddr) {
-		pr_info("bar%llu ioremap failed.\n", (u64) index);
-		release_mem_region(bar->start, bar->len);
-		return -EIO;
-	}
-	pr_debug("bar%llu I/O mem mapped to %p.\n", (u64) index, bar->ioaddr);
-	return 0;
-}
-
 void ccat_dma_free(struct ccat_dma *const dma)
 {
 	const struct ccat_dma tmp = *dma;
@@ -237,6 +185,11 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto cleanup_pci_device;
 	}
 
+	if ((status = pci_request_regions(pdev, KBUILD_MODNAME))) {
+		pr_info("allocate mem_regions failed.\n");
+		goto cleanup_pci_device;
+	}
+
 	if (!dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64))) {
 		pr_debug("64 bit DMA supported, pci rev: %u\n", revision);
 	} else if (!dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32))) {
@@ -245,13 +198,13 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		pr_warn("No suitable DMA available, pci rev: %u\n", revision);
 	}
 
-	if (ccat_bar_init(&ccatdev->bar_0, 0, pdev)) {
+	if (!(ccatdev->bar_0.ioaddr = pci_iomap(pdev, 0, 0))) {
 		pr_warn("initialization of bar0 failed.\n");
 		status = -EIO;
 		goto cleanup_pci_device;
 	}
 
-	if (ccat_bar_init(&ccatdev->bar_2, 2, pdev)) {
+	if (!(ccatdev->bar_2.ioaddr = pci_iomap(pdev, 2, 0))) {
 		pr_warn("initialization of optional bar2 failed.\n");
 	}
 
@@ -271,8 +224,10 @@ static void ccat_remove(struct pci_dev *pdev)
 
 	if (ccatdev) {
 		ccat_functions_remove(ccatdev);
-		ccat_bar_free(&ccatdev->bar_2);
-		ccat_bar_free(&ccatdev->bar_0);
+		if (ccatdev->bar_2.ioaddr)
+			pci_iounmap(pdev, ccatdev->bar_2.ioaddr);
+		pci_iounmap(pdev, ccatdev->bar_0.ioaddr);
+		pci_release_regions(pdev);
 		pci_disable_device(pdev);
 	}
 }
