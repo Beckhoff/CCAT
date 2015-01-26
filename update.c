@@ -412,7 +412,7 @@ static int ccat_update_probe(struct ccat_function *func)
 		return -ENOMEM;
 	}
 
-	update->ioaddr = func->ccat->bar_0.ioaddr + func->info.addr;
+	update->ioaddr = func->ccat->bar_0 + func->info.addr;
 	atomic_set(&update->in_use, 1);
 
 	if (0x00 != func->info.rev) {

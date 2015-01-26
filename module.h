@@ -49,22 +49,6 @@ enum ccat_info_t {
 };
 
 /**
- * struct ccat_bar - CCAT PCI Base Address Register(BAR) configuration
- * @start: start address of this BAR
- * @end: end address of this BAR
- * @len: length of this BAR
- * @flags: flags set on this BAR
- * @ioaddr: ioremapped address of this bar
- */
-struct ccat_bar {
-	unsigned long start;
-	unsigned long end;
-	unsigned long len;
-	unsigned long flags;
-	void __iomem *ioaddr;
-};
-
-/**
  * struct ccat_dma - CCAT DMA channel configuration
  * @phys: device-viewed address(physical) of the associated DMA memory
  * @virt: CPU-viewed address(virtual) of the associated DMA memory
@@ -96,8 +80,8 @@ extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
  */
 struct ccat_device {
 	struct pci_dev *pdev;
-	struct ccat_bar bar_0;
-	struct ccat_bar bar_2;
+	void __iomem *bar_0;
+	void __iomem *bar_2;
 	struct list_head functions;
 };
 

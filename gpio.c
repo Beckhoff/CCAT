@@ -131,7 +131,7 @@ static int ccat_gpio_probe(struct ccat_function *func)
 	if (!gpio)
 		return -ENOMEM;
 
-	gpio->ioaddr = func->ccat->bar_0.ioaddr + func->info.addr;
+	gpio->ioaddr = func->ccat->bar_0 + func->info.addr;
 	memcpy(&gpio->chip, &ccat_gpio_chip, sizeof(gpio->chip));
 	gpio->chip.ngpio = func->info.num_gpios;
 	mutex_init(&gpio->lock);
