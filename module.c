@@ -152,8 +152,8 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	return 0;
 }
 
-static const struct ccat_driver *ccat_function_connect(struct ccat_function *const
-						 func)
+static const struct ccat_driver *ccat_function_connect(struct ccat_function
+						       *const func)
 {
 	const struct ccat_driver *const *drv;
 
@@ -251,8 +251,7 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	if (ccat_bar_init(&ccatdev->bar_2, 2, pdev)) {
-		pr_warn("initialization of bar2 failed.\n");
-		return -EIO;
+		pr_warn("initialization of optional bar2 failed.\n");
 	}
 
 	pci_set_master(pdev);

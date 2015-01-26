@@ -141,7 +141,8 @@ static int ccat_gpio_probe(struct ccat_function *func)
 		kfree(gpio);
 		return ret;
 	}
-	pr_info("registered %s as gpio chip with #%d GPIOs.\n", gpio->chip.label, gpio->chip.ngpio);
+	pr_info("registered %s as gpio chip with #%d GPIOs.\n",
+		gpio->chip.label, gpio->chip.ngpio);
 	func->private_data = gpio;
 	return 0;
 }

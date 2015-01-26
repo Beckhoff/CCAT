@@ -381,12 +381,12 @@ static struct file_operations update_ops = {
 	.write = ccat_update_write,
 };
 
-static void ccat_update_free(struct ccat_update* update)
+static void ccat_update_free(struct ccat_update *update)
 {
 	update->dev = 0;
 }
 
-static struct ccat_update* ccat_update_alloc(void)
+static struct ccat_update *ccat_update_alloc(void)
 {
 	int i = 0;
 
@@ -407,7 +407,8 @@ static int ccat_update_probe(struct ccat_function *func)
 	struct ccat_update *const update = ccat_update_alloc();
 
 	if (!update) {
-		pr_warn("exceeding max. number of update devices (%d)\n", CCAT_DEVICES_MAX);
+		pr_warn("exceeding max. number of update devices (%d)\n",
+			CCAT_DEVICES_MAX);
 		return -ENOMEM;
 	}
 
@@ -458,7 +459,8 @@ static void ccat_update_remove(struct ccat_function *func)
 
 int __init ccat_update_init(void)
 {
-	if (alloc_chrdev_region(&update_basedev, 0, CCAT_DEVICES_MAX, KBUILD_MODNAME)) {
+	if (alloc_chrdev_region
+	    (&update_basedev, 0, CCAT_DEVICES_MAX, KBUILD_MODNAME)) {
 		pr_warn("alloc_chrdev_region() failed\n");
 		return -1;
 	}

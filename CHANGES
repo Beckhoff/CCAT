@@ -1,4 +1,10 @@
 
+next:
+=====
+- fix crash on systems with multiple CCATs
+- make initialization of bar2 optional (f.e. CX2500 M310)
+
+
 0.11:
 =====
 refactored the ccat driver to work more similar to the pci subsystem + device drivers:
