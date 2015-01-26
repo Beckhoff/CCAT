@@ -213,28 +213,28 @@ static void ccat_functions_remove(struct ccat_device *const dev)
 
 static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
-	int status;
+	struct ccat_device *ccatdev;
 	u8 revision;
-	struct ccat_device *ccatdev = kmalloc(sizeof(*ccatdev), GFP_KERNEL);
+	int status;
 
+	ccatdev = devm_kzalloc(&pdev->dev, sizeof(*ccatdev), GFP_KERNEL);
 	if (!ccatdev) {
 		pr_err("%s() out of memory.\n", __FUNCTION__);
 		return -ENOMEM;
 	}
-	memset(ccatdev, 0, sizeof(*ccatdev));
 	ccatdev->pdev = pdev;
 	pci_set_drvdata(pdev, ccatdev);
 
 	status = pci_enable_device_mem(pdev);
 	if (status) {
 		pr_info("enable %s failed: %d\n", pdev->dev.kobj.name, status);
-		return status;
+		goto cleanup_pci_device;
 	}
 
 	status = pci_read_config_byte(pdev, PCI_REVISION_ID, &revision);
 	if (status) {
 		pr_warn("read CCAT pci revision failed with %d\n", status);
-		return status;
+		goto cleanup_pci_device;
 	}
 
 	if (!dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64))) {
@@ -247,7 +247,8 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	if (ccat_bar_init(&ccatdev->bar_0, 0, pdev)) {
 		pr_warn("initialization of bar0 failed.\n");
-		return -EIO;
+		status = -EIO;
+		goto cleanup_pci_device;
 	}
 
 	if (ccat_bar_init(&ccatdev->bar_2, 2, pdev)) {
@@ -259,6 +260,9 @@ static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		pr_warn("some functions couldn't be initialized\n");
 	}
 	return 0;
+cleanup_pci_device:
+	pci_disable_device(pdev);
+	return status;
 }
 
 static void ccat_remove(struct pci_dev *pdev)
@@ -270,8 +274,6 @@ static void ccat_remove(struct pci_dev *pdev)
 		ccat_bar_free(&ccatdev->bar_2);
 		ccat_bar_free(&ccatdev->bar_0);
 		pci_disable_device(pdev);
-		pci_set_drvdata(pdev, NULL);
-		kfree(ccatdev);
 	}
 }
 
