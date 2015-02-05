@@ -58,8 +58,8 @@ struct ccat_class {
 	const unsigned count;
 };
 
-extern int __init ccat_class_init(struct ccat_class *base, const char *name);
-extern void __exit ccat_class_exit(struct ccat_class *base);
+extern int ccat_class_init(struct ccat_class *base, const char *name);
+extern void ccat_class_exit(struct ccat_class *base);
 
 /**
  * struct ccat_dma - CCAT DMA channel configuration
@@ -133,6 +133,8 @@ struct ccat_function {
  * @type: type of the FPGA function supported by this driver
  */
 struct ccat_driver {
+	void (*exit) (void);
+	int (*init) (void);
 	int (*probe) (struct ccat_function * func);
 	void (*remove) (struct ccat_function * drv);
 	enum ccat_info_t type;

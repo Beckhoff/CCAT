@@ -37,10 +37,9 @@ static const struct ccat_driver *const driver_list[] = {
 	&gpio_driver,		/* load GPIO driver from gpio.c */
 	&sram_driver,		/* load SRAM driver from sram.c */
 	&update_driver,		/* load Update driver from update.c */
-	NULL			/* this entry is used to detect the end, don't remove it! */
 };
 
-int __init ccat_class_init(struct ccat_class *base, const char *name)
+int ccat_class_init(struct ccat_class *base, const char *name)
 {
 	if (alloc_chrdev_region(&base->dev, 0, base->count, KBUILD_MODNAME)) {
 		pr_warn("alloc_chrdev_region() for '%s' failed\n", name);
@@ -56,7 +55,7 @@ int __init ccat_class_init(struct ccat_class *base, const char *name)
 	return 0;
 }
 
-void __exit ccat_class_exit(struct ccat_class *base)
+void ccat_class_exit(struct ccat_class *base)
 {
 	class_destroy(base->class);
 	unregister_chrdev_region(base->dev, base->count);
@@ -126,11 +125,11 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 static const struct ccat_driver *ccat_function_connect(struct ccat_function
 						       *const func)
 {
-	const struct ccat_driver *const *drv;
+	int i;
 
-	for (drv = driver_list; NULL != *drv; drv++) {
-		if (func->info.type == (*drv)->type) {
-			return (*drv)->probe(func) ? NULL : *drv;
+	for (i = 0; i < ARRAY_SIZE(driver_list); ++i) {
+		if (func->info.type == driver_list[i]->type) {
+			return driver_list[i]->probe(func) ? NULL : driver_list[i];
 		}
 	}
 	return NULL;
@@ -272,20 +271,27 @@ static struct pci_driver ccat_driver = {
 	.remove = ccat_remove,
 };
 
-extern void __exit ccat_update_exit(void);
-extern int __init ccat_update_init(void);
+#define for_each_driver_do(func) \
+do { \
+	int i; \
+	for (i = 0; i < ARRAY_SIZE(driver_list); ++i) { \
+		if (driver_list[i]->func) { \
+			driver_list[i]->func(); \
+		} \
+	} \
+} while(0)
 
 static int __init ccat_init_module(void)
 {
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
-	ccat_update_init();
+	for_each_driver_do(init);
 	return pci_register_driver(&ccat_driver);
 }
 
 static void __exit ccat_exit(void)
 {
 	pci_unregister_driver(&ccat_driver);
-	ccat_update_exit();
+	for_each_driver_do(exit);
 }
 
 module_init(ccat_init_module);

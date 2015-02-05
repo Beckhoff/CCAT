@@ -459,18 +459,20 @@ static void ccat_update_remove(struct ccat_function *func)
 	ccat_update_free(update);
 }
 
-int __init ccat_update_init(void)
+int ccat_update_init(void)
 {
 	return ccat_class_init(&base, "ccat_update");
 }
 
-void __exit ccat_update_exit(void)
+void ccat_update_exit(void)
 {
 	ccat_class_exit(&base);
 }
 
 struct ccat_driver update_driver = {
 	.type = CCATINFO_EPCS_PROM,
+	.exit = ccat_update_exit,
+	.init = ccat_update_init,
 	.probe = ccat_update_probe,
 	.remove = ccat_update_remove,
 };
