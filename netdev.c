@@ -292,8 +292,7 @@ static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
 				   const struct ccat_function *const func)
 {
 	struct ccat_mac_infoblock offsets;
-	void __iomem *const func_base =
-	    func->ccat->bar_0 + func->info.addr;
+	void __iomem *const func_base = func->ccat->bar_0 + func->info.addr;
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	reg->mii = func_base + offsets.mii;

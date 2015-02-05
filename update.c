@@ -404,6 +404,7 @@ static struct ccat_update *ccat_update_alloc(void)
  */
 static int ccat_update_probe(struct ccat_function *func)
 {
+	static const u16 SUPPORTED_REVISION = 0x00;
 	struct ccat_update *const update = ccat_update_alloc();
 
 	if (!update) {
@@ -415,14 +416,14 @@ static int ccat_update_probe(struct ccat_function *func)
 	update->ioaddr = func->ccat->bar_0 + func->info.addr;
 	atomic_set(&update->in_use, 1);
 
-	if (0x00 != func->info.rev) {
+	if (SUPPORTED_REVISION != func->info.rev) {
 		pr_warn("CCAT Update rev. %d not supported\n", func->info.rev);
 		goto cleanup;
 	}
 
-	if (NULL ==
-	    device_create(update_class, NULL, update->dev, NULL,
-			  "ccat_update%d", MINOR(update->dev))) {
+	if (!device_create
+	    (update_class, NULL, update->dev, NULL, "ccat_update%d",
+	     MINOR(update->dev))) {
 		pr_warn("device_create() failed\n");
 		goto cleanup;
 	}
@@ -466,7 +467,7 @@ int __init ccat_update_init(void)
 	}
 
 	update_class = class_create(THIS_MODULE, "ccat_update");
-	if (NULL == update_class) {
+	if (!update_class) {
 		pr_warn("Create device class failed\n");
 		unregister_chrdev_region(update_basedev, CCAT_DEVICES_MAX);
 		return -1;
