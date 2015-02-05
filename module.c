@@ -35,6 +35,7 @@ MODULE_VERSION(DRV_VERSION);
 static const struct ccat_driver *const driver_list[] = {
 	&eth_driver,		/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
 	&gpio_driver,		/* load GPIO driver from gpio.c */
+	&sram_driver,		/* load SRAM driver from sram.c */
 	&update_driver,		/* load Update driver from update.c */
 	NULL			/* this entry is used to detect the end, don't remove it! */
 };

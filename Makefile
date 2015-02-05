@@ -1,7 +1,7 @@
 TARGET = ccat
 EXTRA_DIR = /lib/modules/$(shell uname -r)/extra/
 obj-m += $(TARGET).o
-$(TARGET)-objs := gpio.o module.o netdev.o update.o
+$(TARGET)-objs := gpio.o module.o netdev.o sram.o update.o
 #ccflags-y := -DDEBUG
 ccflags-y += -D__CHECK_ENDIAN__
 

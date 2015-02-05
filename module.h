@@ -27,7 +27,7 @@
 #include <linux/pci.h>
 
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.11" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.12" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 #undef pr_fmt
@@ -35,6 +35,7 @@
 
 extern struct ccat_driver eth_driver;
 extern struct ccat_driver gpio_driver;
+extern struct ccat_driver sram_driver;
 extern struct ccat_driver update_driver;
 
 /**
@@ -45,7 +46,7 @@ enum ccat_info_t {
 	CCATINFO_GPIO = 0xd,
 	CCATINFO_EPCS_PROM = 0xf,
 	CCATINFO_ETHERCAT_MASTER_DMA = 0x14,
-	CCATINFO_MAX
+	CCATINFO_SRAM = 0x16,
 };
 
 /**
@@ -94,6 +95,11 @@ struct ccat_info_block {
 		struct {
 			u8 tx_dma_chan;
 			u8 rx_dma_chan;
+		};
+		struct {
+			u8 sram_width;
+			u8 sram_size;
+			u16 reserved;
 		};
 	};
 	u32 addr;
