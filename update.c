@@ -391,7 +391,7 @@ static struct ccat_update *ccat_update_alloc(void)
 {
 	int i = 0;
 
-	for (i = 0; i < CCAT_DEVICES_MAX; ++i) {
+	for (i = 0; i < base.count; ++i) {
 		if (dev_table[i].dev == 0) {
 			dev_table[i].dev = MKDEV(MAJOR(base.dev), i);
 			return &dev_table[i];
@@ -410,7 +410,7 @@ static int ccat_update_probe(struct ccat_function *func)
 
 	if (!update) {
 		pr_warn("exceeding max. number of update devices (%d)\n",
-			CCAT_DEVICES_MAX);
+			base.count);
 		return -ENOMEM;
 	}
 
@@ -422,26 +422,13 @@ static int ccat_update_probe(struct ccat_function *func)
 		goto cleanup;
 	}
 
-	if (!device_create
-	    (base.class, NULL, update->dev, NULL, "ccat_update%d",
-	     MINOR(update->dev))) {
-		pr_warn("device_create() failed\n");
+	if (ccat_cdev_probe(&update->cdev, update->dev, base.class, &update_ops)) {
+		pr_warn("ccat_cdev_probe() failed\n");
 		goto cleanup;
 	}
 
-	cdev_init(&update->cdev, &update_ops);
-	update->cdev.owner = THIS_MODULE;
-	update->cdev.ops = &update_ops;
-	if (cdev_add(&update->cdev, update->dev, 1)) {
-		pr_warn("add update device failed\n");
-		goto cleanup_device;
-	}
-
-	pr_info("registered %s%d.\n", base.class->name, MINOR(update->dev));
 	func->private_data = update;
 	return 0;
-cleanup_device:
-	device_destroy(base.class, update->dev);
 cleanup:
 	ccat_update_free(update);
 	return -1;

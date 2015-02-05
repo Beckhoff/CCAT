@@ -39,6 +39,27 @@ static const struct ccat_driver *const driver_list[] = {
 	&update_driver,		/* load Update driver from update.c */
 };
 
+int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class, struct file_operations *fops)
+{
+	if (!device_create
+	    (class, NULL, dev, NULL, "ccat_update%d",
+	     MINOR(dev))) {
+		pr_warn("device_create() failed\n");
+		return -1;
+	}
+
+	cdev_init(cdev, fops);
+	cdev->owner = fops->owner;
+	if (cdev_add(cdev, dev, 1)) {
+		pr_warn("add update device failed\n");
+		device_destroy(class, dev);
+		return -1;
+	}
+
+	pr_info("registered %s%d.\n", class->name, MINOR(dev));
+	return 0;
+}
+
 int ccat_class_init(struct ccat_class *base, const char *name)
 {
 	if (alloc_chrdev_region(&base->dev, 0, base->count, KBUILD_MODNAME)) {

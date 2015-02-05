@@ -49,6 +49,8 @@ enum ccat_info_t {
 	CCATINFO_SRAM = 0x16,
 };
 
+extern int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class, struct file_operations *fops);
+
 /**
  * struct ccat_class - helper to register character device classes for CCAT functions
  */
