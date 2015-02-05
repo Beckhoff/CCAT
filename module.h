@@ -50,6 +50,18 @@ enum ccat_info_t {
 };
 
 /**
+ * struct ccat_class - helper to register character device classes for CCAT functions
+ */
+struct ccat_class {
+	dev_t dev;
+	struct class *class;
+	const unsigned count;
+};
+
+extern int __init ccat_class_init(struct ccat_class *base, const char *name);
+extern void __exit ccat_class_exit(struct ccat_class *base);
+
+/**
  * struct ccat_dma - CCAT DMA channel configuration
  * @phys: device-viewed address(physical) of the associated DMA memory
  * @virt: CPU-viewed address(virtual) of the associated DMA memory

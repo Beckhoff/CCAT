@@ -45,8 +45,9 @@
 #define SWAP_BITS(B) \
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
-static dev_t update_basedev;
-static struct class *update_class;
+static struct ccat_class base = {
+	.count = CCAT_DEVICES_MAX
+};
 
 /**
  * struct ccat_update - CCAT Update function (update)
@@ -392,7 +393,7 @@ static struct ccat_update *ccat_update_alloc(void)
 
 	for (i = 0; i < CCAT_DEVICES_MAX; ++i) {
 		if (dev_table[i].dev == 0) {
-			dev_table[i].dev = MKDEV(MAJOR(update_basedev), i);
+			dev_table[i].dev = MKDEV(MAJOR(base.dev), i);
 			return &dev_table[i];
 		}
 	}
@@ -422,7 +423,7 @@ static int ccat_update_probe(struct ccat_function *func)
 	}
 
 	if (!device_create
-	    (update_class, NULL, update->dev, NULL, "ccat_update%d",
+	    (base.class, NULL, update->dev, NULL, "ccat_update%d",
 	     MINOR(update->dev))) {
 		pr_warn("device_create() failed\n");
 		goto cleanup;
@@ -436,11 +437,11 @@ static int ccat_update_probe(struct ccat_function *func)
 		goto cleanup_device;
 	}
 
-	pr_info("registered %s%d.\n", update_class->name, MINOR(update->dev));
+	pr_info("registered %s%d.\n", base.class->name, MINOR(update->dev));
 	func->private_data = update;
 	return 0;
 cleanup_device:
-	device_destroy(update_class, update->dev);
+	device_destroy(base.class, update->dev);
 cleanup:
 	ccat_update_free(update);
 	return -1;
@@ -454,31 +455,18 @@ static void ccat_update_remove(struct ccat_function *func)
 	struct ccat_update *const update = func->private_data;
 
 	cdev_del(&update->cdev);
-	device_destroy(update_class, update->dev);
+	device_destroy(base.class, update->dev);
 	ccat_update_free(update);
 }
 
 int __init ccat_update_init(void)
 {
-	if (alloc_chrdev_region
-	    (&update_basedev, 0, CCAT_DEVICES_MAX, KBUILD_MODNAME)) {
-		pr_warn("alloc_chrdev_region() failed\n");
-		return -1;
-	}
-
-	update_class = class_create(THIS_MODULE, "ccat_update");
-	if (!update_class) {
-		pr_warn("Create device class failed\n");
-		unregister_chrdev_region(update_basedev, CCAT_DEVICES_MAX);
-		return -1;
-	}
-	return 0;
+	return ccat_class_init(&base, "ccat_update");
 }
 
 void __exit ccat_update_exit(void)
 {
-	class_destroy(update_class);
-	unregister_chrdev_region(update_basedev, CCAT_DEVICES_MAX);
+	ccat_class_exit(&base);
 }
 
 struct ccat_driver update_driver = {

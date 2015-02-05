@@ -40,6 +40,28 @@ static const struct ccat_driver *const driver_list[] = {
 	NULL			/* this entry is used to detect the end, don't remove it! */
 };
 
+int __init ccat_class_init(struct ccat_class *base, const char *name)
+{
+	if (alloc_chrdev_region(&base->dev, 0, base->count, KBUILD_MODNAME)) {
+		pr_warn("alloc_chrdev_region() for '%s' failed\n", name);
+		return -1;
+	}
+
+	base->class = class_create(THIS_MODULE, name);
+	if (!base->class) {
+		pr_warn("Create device class '%s' failed\n", name);
+		unregister_chrdev_region(base->dev, base->count);
+		return -1;
+	}
+	return 0;
+}
+
+void __exit ccat_class_exit(struct ccat_class *base)
+{
+	class_destroy(base->class);
+	unregister_chrdev_region(base->dev, base->count);
+}
+
 void ccat_dma_free(struct ccat_dma *const dma)
 {
 	const struct ccat_dma tmp = *dma;
