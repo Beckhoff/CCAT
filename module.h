@@ -65,6 +65,7 @@ struct ccat_class {
 	struct class *class;
 	const unsigned count;
 	struct ccat_cdev *devices;
+	const char *name;
 };
 
 
@@ -72,9 +73,6 @@ extern struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base);
 extern void free_ccat_cdev(struct ccat_cdev *ccdev);
 extern int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class, struct file_operations *fops);
 extern void ccat_cdev_remove(struct ccat_cdev *ccdev);
-
-extern int ccat_class_init(struct ccat_class *base, const char *name);
-extern void ccat_class_exit(struct ccat_class *base);
 
 /**
  * struct ccat_dma - CCAT DMA channel configuration
@@ -146,12 +144,12 @@ struct ccat_function {
  * @probe: add device instance
  * @remove: remove device instance
  * @type: type of the FPGA function supported by this driver
+ * @cdev_class: if not NULL that driver supports ccat_class_init()/_exit()
  */
 struct ccat_driver {
-	void (*exit) (void);
-	int (*init) (void);
 	int (*probe) (struct ccat_function * func);
 	void (*remove) (struct ccat_function * drv);
 	enum ccat_info_t type;
+	struct ccat_class *cdev_class;
 };
 #endif /* #ifndef _CCAT_H_ */

@@ -46,9 +46,10 @@
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
 static struct ccat_cdev dev_table[CCAT_DEVICES_MAX];
-static struct ccat_class base = {
+static struct ccat_class cdev_class = {
 	.count = CCAT_DEVICES_MAX,
 	.devices = dev_table,
+	.name = "ccat_update",
 };
 
 /**
@@ -373,7 +374,7 @@ static struct file_operations update_ops = {
 static int ccat_update_probe(struct ccat_function *func)
 {
 	static const u16 SUPPORTED_REVISION = 0x00;
-	struct ccat_cdev *const update = alloc_ccat_cdev(&base);
+	struct ccat_cdev *const update = alloc_ccat_cdev(&cdev_class);
 
 	if (!update) {
 		return -ENOMEM;
@@ -387,12 +388,12 @@ static int ccat_update_probe(struct ccat_function *func)
 		goto cleanup;
 	}
 
-	if (ccat_cdev_probe(&update->cdev, update->dev, base.class, &update_ops)) {
+	if (ccat_cdev_probe(&update->cdev, update->dev, cdev_class.class, &update_ops)) {
 		pr_warn("ccat_cdev_probe() failed\n");
 		goto cleanup;
 	}
 
-	update->class = base.class;
+	update->class = cdev_class.class;
 	func->private_data = update;
 	return 0;
 cleanup:
@@ -409,20 +410,9 @@ static void ccat_update_remove(struct ccat_function *func)
 	ccat_cdev_remove(update);
 }
 
-static int ccat_update_init(void)
-{
-	return ccat_class_init(&base, "ccat_update");
-}
-
-static void ccat_update_exit(void)
-{
-	ccat_class_exit(&base);
-}
-
 struct ccat_driver update_driver = {
 	.type = CCATINFO_EPCS_PROM,
-	.exit = ccat_update_exit,
-	.init = ccat_update_init,
 	.probe = ccat_update_probe,
 	.remove = ccat_update_remove,
+	.cdev_class = &cdev_class,
 };

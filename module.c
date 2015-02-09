@@ -87,23 +87,23 @@ void ccat_cdev_remove(struct ccat_cdev *ccdev)
 	free_ccat_cdev(ccdev);
 }
 
-int ccat_class_init(struct ccat_class *base, const char *name)
+static int __init ccat_class_init(struct ccat_class *base)
 {
 	if (alloc_chrdev_region(&base->dev, 0, base->count, KBUILD_MODNAME)) {
-		pr_warn("alloc_chrdev_region() for '%s' failed\n", name);
+		pr_warn("alloc_chrdev_region() for '%s' failed\n", base->name);
 		return -1;
 	}
 
-	base->class = class_create(THIS_MODULE, name);
+	base->class = class_create(THIS_MODULE, base->name);
 	if (!base->class) {
-		pr_warn("Create device class '%s' failed\n", name);
+		pr_warn("Create device class '%s' failed\n", base->name);
 		unregister_chrdev_region(base->dev, base->count);
 		return -1;
 	}
 	return 0;
 }
 
-void ccat_class_exit(struct ccat_class *base)
+static void ccat_class_exit(struct ccat_class *base)
 {
 	class_destroy(base->class);
 	unregister_chrdev_region(base->dev, base->count);
@@ -323,8 +323,9 @@ static void driver_list_exit(int num_drivers)
 {
 	int i = num_drivers;
 	while (--i >= 0) {
-		if (driver_list[i]->exit) {
-			driver_list[i]->exit();
+		const struct ccat_driver *const drv = driver_list[i];
+		if (drv->cdev_class) {
+			ccat_class_exit(drv->cdev_class);
 		}
 	}
 }
@@ -335,8 +336,9 @@ static int __init ccat_init_module(void)
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 
 	for (i = 0; i < ARRAY_SIZE(driver_list); ++i) {
-		if (driver_list[i]->init) {
-			if (driver_list[i]->init()) {
+		const struct ccat_driver *const drv = driver_list[i];
+		if (drv->cdev_class) {
+			if (ccat_class_init(drv->cdev_class)) {
 				driver_list_exit(i);
 				return -1;
 			}
