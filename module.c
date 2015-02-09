@@ -62,7 +62,8 @@ struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
 int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class,
 		    struct file_operations *fops)
 {
-	if (!device_create(class, NULL, dev, NULL, "ccat_update%d", MINOR(dev))) {
+	if (!device_create
+	    (class, NULL, dev, NULL, "%s%d", class->name, MINOR(dev))) {
 		pr_warn("device_create() failed\n");
 		return -1;
 	}
@@ -176,8 +177,8 @@ static const struct ccat_driver *ccat_function_connect(struct ccat_function
 
 	for (i = 0; i < ARRAY_SIZE(driver_list); ++i) {
 		if (func->info.type == driver_list[i]->type) {
-			return driver_list[i]->
-			    probe(func) ? NULL : driver_list[i];
+			return driver_list[i]->probe(func) ? NULL :
+			    driver_list[i];
 		}
 	}
 	return NULL;
