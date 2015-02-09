@@ -388,7 +388,8 @@ static int ccat_update_probe(struct ccat_function *func)
 		goto cleanup;
 	}
 
-	if (ccat_cdev_probe(&update->cdev, update->dev, cdev_class.class, &update_ops)) {
+	if (ccat_cdev_probe
+	    (&update->cdev, update->dev, cdev_class.class, &update_ops)) {
 		pr_warn("ccat_cdev_probe() failed\n");
 		goto cleanup;
 	}

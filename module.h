@@ -68,10 +68,10 @@ struct ccat_class {
 	const char *name;
 };
 
-
 extern struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base);
 extern void free_ccat_cdev(struct ccat_cdev *ccdev);
-extern int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class, struct file_operations *fops);
+extern int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class,
+			   struct file_operations *fops);
 extern void ccat_cdev_remove(struct ccat_cdev *ccdev);
 
 /**
