@@ -49,7 +49,13 @@ enum ccat_info_t {
 	CCATINFO_SRAM = 0x16,
 };
 
-extern int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class, struct file_operations *fops);
+struct ccat_cdev {
+	atomic_t in_use;
+	void __iomem *ioaddr;
+	dev_t dev;
+	struct cdev cdev;
+	struct class *class;
+};
 
 /**
  * struct ccat_class - helper to register character device classes for CCAT functions
@@ -58,7 +64,14 @@ struct ccat_class {
 	dev_t dev;
 	struct class *class;
 	const unsigned count;
+	struct ccat_cdev *devices;
 };
+
+
+extern struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base);
+extern void free_ccat_cdev(struct ccat_cdev *ccdev);
+extern int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class, struct file_operations *fops);
+extern void ccat_cdev_remove(struct ccat_cdev *ccdev);
 
 extern int ccat_class_init(struct ccat_class *base, const char *name);
 extern void ccat_class_exit(struct ccat_class *base);

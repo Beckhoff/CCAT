@@ -45,26 +45,11 @@
 #define SWAP_BITS(B) \
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
+static struct ccat_cdev dev_table[CCAT_DEVICES_MAX];
 static struct ccat_class base = {
-	.count = CCAT_DEVICES_MAX
+	.count = CCAT_DEVICES_MAX,
+	.devices = dev_table,
 };
-
-/**
- * struct ccat_update - CCAT Update function (update)
- * @in_use: reference counter
- * @ioaddr: PCI base address of the CCAT Update function
- * dev: device number for this update function
- * cdev: character device used for the CCAT Update function
- * class: pointer to a device class used when registering the CCAT Update device
- */
-struct ccat_update {
-	atomic_t in_use;
-	void __iomem *ioaddr;
-	dev_t dev;
-	struct cdev cdev;
-};
-
-static struct ccat_update dev_table[CCAT_DEVICES_MAX];
 
 /**
  * struct update_buffer - keep track of a CCAT FPGA update
@@ -73,7 +58,7 @@ static struct ccat_update dev_table[CCAT_DEVICES_MAX];
  * @size: number of bytes written to the data buffer, if 0 on ccat_update_release() no data will be written to FPGA
  */
 struct update_buffer {
-	struct ccat_update *update;
+	struct ccat_cdev *update;
 	char data[CCAT_FLASH_SIZE];
 	size_t size;
 };
@@ -282,8 +267,8 @@ static void ccat_write_flash(const struct update_buffer *const update)
 
 static int ccat_update_open(struct inode *const i, struct file *const f)
 {
-	struct ccat_update *update =
-	    container_of(i->i_cdev, struct ccat_update, cdev);
+	struct ccat_cdev *update =
+	    container_of(i->i_cdev, struct ccat_cdev, cdev);
 	struct update_buffer *buf;
 
 	if (!atomic_dec_and_test(&update->in_use)) {
@@ -305,7 +290,7 @@ static int ccat_update_open(struct inode *const i, struct file *const f)
 static int ccat_update_release(struct inode *const i, struct file *const f)
 {
 	const struct update_buffer *const buf = f->private_data;
-	struct ccat_update *const update = buf->update;
+	struct ccat_cdev *const update = buf->update;
 
 	if (buf->size > 0) {
 		ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
@@ -382,35 +367,15 @@ static struct file_operations update_ops = {
 	.write = ccat_update_write,
 };
 
-static void ccat_update_free(struct ccat_update *update)
-{
-	update->dev = 0;
-}
-
-static struct ccat_update *ccat_update_alloc(void)
-{
-	int i = 0;
-
-	for (i = 0; i < base.count; ++i) {
-		if (dev_table[i].dev == 0) {
-			dev_table[i].dev = MKDEV(MAJOR(base.dev), i);
-			return &dev_table[i];
-		}
-	}
-	return NULL;
-}
-
 /**
  * ccat_update_init() - Initialize the CCAT Update function
  */
 static int ccat_update_probe(struct ccat_function *func)
 {
 	static const u16 SUPPORTED_REVISION = 0x00;
-	struct ccat_update *const update = ccat_update_alloc();
+	struct ccat_cdev *const update = alloc_ccat_cdev(&base);
 
 	if (!update) {
-		pr_warn("exceeding max. number of update devices (%d)\n",
-			base.count);
 		return -ENOMEM;
 	}
 
@@ -427,10 +392,11 @@ static int ccat_update_probe(struct ccat_function *func)
 		goto cleanup;
 	}
 
+	update->class = base.class;
 	func->private_data = update;
 	return 0;
 cleanup:
-	ccat_update_free(update);
+	free_ccat_cdev(update);
 	return -1;
 }
 
@@ -439,19 +405,16 @@ cleanup:
  */
 static void ccat_update_remove(struct ccat_function *func)
 {
-	struct ccat_update *const update = func->private_data;
-
-	cdev_del(&update->cdev);
-	device_destroy(base.class, update->dev);
-	ccat_update_free(update);
+	struct ccat_cdev *const update = func->private_data;
+	ccat_cdev_remove(update);
 }
 
-int ccat_update_init(void)
+static int ccat_update_init(void)
 {
 	return ccat_class_init(&base, "ccat_update");
 }
 
-void ccat_update_exit(void)
+static void ccat_update_exit(void)
 {
 	ccat_class_exit(&base);
 }

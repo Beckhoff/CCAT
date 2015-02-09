@@ -39,6 +39,26 @@ static const struct ccat_driver *const driver_list[] = {
 	&update_driver,		/* load Update driver from update.c */
 };
 
+void free_ccat_cdev(struct ccat_cdev *ccdev)
+{
+	ccdev->dev = 0;
+}
+
+struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
+{
+	int i = 0;
+
+	for (i = 0; i < base->count; ++i) {
+		if (base->devices[i].dev == 0) {
+			base->devices[i].dev = MKDEV(MAJOR(base->dev), i);
+			return &base->devices[i];
+		}
+	}
+	pr_warn("exceeding max. number of '%s' devices (%d)\n",
+			base->class->name, base->count);
+	return NULL;
+}
+
 int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class, struct file_operations *fops)
 {
 	if (!device_create
@@ -58,6 +78,13 @@ int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class, struct fi
 
 	pr_info("registered %s%d.\n", class->name, MINOR(dev));
 	return 0;
+}
+
+void ccat_cdev_remove(struct ccat_cdev *ccdev)
+{
+	cdev_del(&ccdev->cdev);
+	device_destroy(ccdev->class, ccdev->dev);
+	free_ccat_cdev(ccdev);
 }
 
 int ccat_class_init(struct ccat_class *base, const char *name)
@@ -292,27 +319,36 @@ static struct pci_driver ccat_driver = {
 	.remove = ccat_remove,
 };
 
-#define for_each_driver_do(func) \
-do { \
-	int i; \
-	for (i = 0; i < ARRAY_SIZE(driver_list); ++i) { \
-		if (driver_list[i]->func) { \
-			driver_list[i]->func(); \
-		} \
-	} \
-} while(0)
+static void driver_list_exit(int num_drivers)
+{
+	int i = num_drivers;
+	while (--i >= 0) {
+		if (driver_list[i]->exit) {
+			driver_list[i]->exit();
+		}
+	}
+}
 
 static int __init ccat_init_module(void)
 {
+	int i;
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
-	for_each_driver_do(init);
+
+	for (i = 0; i < ARRAY_SIZE(driver_list); ++i) {
+		if (driver_list[i]->init) {
+			if (driver_list[i]->init()) {
+				driver_list_exit(i);
+				return -1;
+			}
+		}
+	}
 	return pci_register_driver(&ccat_driver);
 }
 
 static void __exit ccat_exit(void)
 {
 	pci_unregister_driver(&ccat_driver);
-	for_each_driver_do(exit);
+	driver_list_exit(ARRAY_SIZE(driver_list));
 }
 
 module_init(ccat_init_module);
