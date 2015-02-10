@@ -45,13 +45,13 @@
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
 /**
- * struct update_buffer - keep track of a CCAT FPGA update
+ * struct cdev_buffer - keep track of a CCAT FPGA update
  * @update: pointer to a valid ccat_update object
  * @data: buffer used for write operations
  * @size: number of bytes written to the data buffer, if 0 on ccat_update_release() no data will be written to FPGA
  */
-struct update_buffer {
-	struct ccat_cdev *update;
+struct cdev_buffer {
+	struct ccat_cdev *ccdev;
 	size_t size;
 	char data[];
 };
@@ -242,57 +242,57 @@ static int ccat_write_flash_block(void __iomem * const ioaddr,
  * ccat_write_flash() - Write a new CCAT configuration to FPGA's flash
  * @update: a CCAT Update buffer containing the new FPGA configuration
  */
-static void ccat_write_flash(const struct update_buffer *const buffer)
+static void ccat_write_flash(const struct cdev_buffer *const buffer)
 {
 	const char *buf = buffer->data;
 	u32 off = 0;
 	size_t len = buffer->size;
 
 	while (len > CCAT_WRITE_BLOCK_SIZE) {
-		ccat_write_flash_block(buffer->update->ioaddr, off,
+		ccat_write_flash_block(buffer->ccdev->ioaddr, off,
 				       (u16) CCAT_WRITE_BLOCK_SIZE, buf);
 		off += CCAT_WRITE_BLOCK_SIZE;
 		buf += CCAT_WRITE_BLOCK_SIZE;
 		len -= CCAT_WRITE_BLOCK_SIZE;
 	}
-	ccat_write_flash_block(buffer->update->ioaddr, off, (u16) len, buf);
+	ccat_write_flash_block(buffer->ccdev->ioaddr, off, (u16) len, buf);
 }
 
 static int ccat_update_open(struct inode *const i, struct file *const f)
 {
-	struct ccat_cdev *update =
+	struct ccat_cdev *ccdev =
 	    container_of(i->i_cdev, struct ccat_cdev, cdev);
-	struct update_buffer *buf;
+	struct cdev_buffer *buf;
 
-	if (!atomic_dec_and_test(&update->in_use)) {
-		atomic_inc(&update->in_use);
+	if (!atomic_dec_and_test(&ccdev->in_use)) {
+		atomic_inc(&ccdev->in_use);
 		return -EBUSY;
 	}
 
-	buf = kzalloc(sizeof(*buf) + update->iosize, GFP_KERNEL);
+	buf = kzalloc(sizeof(*buf) + ccdev->iosize, GFP_KERNEL);
 	if (!buf) {
-		atomic_inc(&update->in_use);
+		atomic_inc(&ccdev->in_use);
 		return -ENOMEM;
 	}
 
-	buf->update = update;
+	buf->ccdev = ccdev;
 	f->private_data = buf;
 	return 0;
 }
 
 static int ccat_update_release(struct inode *const i, struct file *const f)
 {
-	const struct update_buffer *const buf = f->private_data;
-	struct ccat_cdev *const update = buf->update;
+	const struct cdev_buffer *const buf = f->private_data;
+	struct ccat_cdev *const ccdev = buf->ccdev;
 
 	if (buf->size > 0) {
-		ccat_update_cmd(update->ioaddr, CCAT_WRITE_ENABLE);
-		ccat_update_cmd(update->ioaddr, CCAT_BULK_ERASE);
-		ccat_wait_status_cleared(update->ioaddr);
+		ccat_update_cmd(ccdev->ioaddr, CCAT_WRITE_ENABLE);
+		ccat_update_cmd(ccdev->ioaddr, CCAT_BULK_ERASE);
+		ccat_wait_status_cleared(ccdev->ioaddr);
 		ccat_write_flash(buf);
 	}
 	kfree(f->private_data);
-	atomic_inc(&update->in_use);
+	atomic_inc(&ccdev->in_use);
 	return 0;
 }
 
@@ -312,8 +312,8 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 				size_t len, loff_t * off)
 {
-	struct update_buffer *buffer = f->private_data;
-	const size_t iosize = buffer->update->iosize;
+	struct cdev_buffer *buffer = f->private_data;
+	const size_t iosize = buffer->ccdev->iosize;
 
 	if (*off >= iosize) {
 		return 0;
@@ -321,7 +321,7 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 	if (*off + len >= iosize) {
 		len = iosize - *off;
 	}
-	return ccat_read_flash(buffer->update->ioaddr, buf, len, off);
+	return ccat_read_flash(buffer->ccdev->ioaddr, buf, len, off);
 }
 
 /**
@@ -339,9 +339,9 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 static ssize_t ccat_update_write(struct file *const f, const char __user * buf,
 				 size_t len, loff_t * off)
 {
-	struct update_buffer *const buffer = f->private_data;
+	struct cdev_buffer *const buffer = f->private_data;
 
-	if (*off + len > buffer->update->iosize)
+	if (*off + len > buffer->ccdev->iosize)
 		return 0;
 
 	if (copy_from_user(buffer->data + *off, buf, len)) {
