@@ -47,19 +47,6 @@ static int ccat_sram_release(struct inode *const i, struct file *const f)
 	return 0;
 }
 
-/**
- * ccat_update_read() - Read CCAT configuration data from flash
- * @f: file handle previously initialized with ccat_update_open()
- * @buf: buffer in user space provided for our data
- * @len: length of the user space buffer
- * @off: current offset of our file operation
- *
- * Copies data from the CCAT FPGA's configuration flash to user space.
- * Note that the size of the FPGA's firmware is not known exactly so it
- * is very possible that the overall buffer ends with a lot of 0xff.
- *
- * Return: the number of bytes written, or 0 if EOF reached
- */
 static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
 				size_t len, loff_t * off)
 {
@@ -83,18 +70,6 @@ static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
 	return len;
 }
 
-/**
- * ccat_update_write() - Write data to the CCAT FPGA's configuration flash
- * @f: file handle previously initialized with ccat_update_open()
- * @buf: buffer in user space providing the new configuration data (from *.rbf)
- * @len: length of the user space buffer
- * @off: current offset in the configuration data
- *
- * Copies data from user space (possibly a *.rbf) to the CCAT FPGA's
- * configuration flash.
- *
- * Return: the number of bytes written, or 0 if flash end is reached
- */
 static ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
 				 size_t len, loff_t * off)
 {
