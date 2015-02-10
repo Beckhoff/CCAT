@@ -242,20 +242,20 @@ static int ccat_write_flash_block(void __iomem * const ioaddr,
  * ccat_write_flash() - Write a new CCAT configuration to FPGA's flash
  * @update: a CCAT Update buffer containing the new FPGA configuration
  */
-static void ccat_write_flash(const struct update_buffer *const update)
+static void ccat_write_flash(const struct update_buffer *const buffer)
 {
-	const char *buf = update->data;
+	const char *buf = buffer->data;
 	u32 off = 0;
-	size_t len = update->size;
+	size_t len = buffer->size;
 
 	while (len > CCAT_WRITE_BLOCK_SIZE) {
-		ccat_write_flash_block(update->update->ioaddr, off,
+		ccat_write_flash_block(buffer->update->ioaddr, off,
 				       (u16) CCAT_WRITE_BLOCK_SIZE, buf);
 		off += CCAT_WRITE_BLOCK_SIZE;
 		buf += CCAT_WRITE_BLOCK_SIZE;
 		len -= CCAT_WRITE_BLOCK_SIZE;
 	}
-	ccat_write_flash_block(update->update->ioaddr, off, (u16) len, buf);
+	ccat_write_flash_block(buffer->update->ioaddr, off, (u16) len, buf);
 }
 
 static int ccat_update_open(struct inode *const i, struct file *const f)
@@ -312,7 +312,7 @@ static int ccat_update_release(struct inode *const i, struct file *const f)
 static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 				size_t len, loff_t * off)
 {
-	struct update_buffer *update = f->private_data;
+	struct update_buffer *buffer = f->private_data;
 
 	if (*off >= CCAT_FLASH_SIZE) {
 		return 0;
@@ -320,7 +320,7 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 	if (*off + len >= CCAT_FLASH_SIZE) {
 		len = CCAT_FLASH_SIZE - *off;
 	}
-	return ccat_read_flash(update->update->ioaddr, buf, len, off);
+	return ccat_read_flash(buffer->update->ioaddr, buf, len, off);
 }
 
 /**
@@ -338,17 +338,17 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 static ssize_t ccat_update_write(struct file *const f, const char __user * buf,
 				 size_t len, loff_t * off)
 {
-	struct update_buffer *const update = f->private_data;
+	struct update_buffer *const buffer = f->private_data;
 
-	if (*off + len > sizeof(update->data))
+	if (*off + len > sizeof(buffer->data))
 		return 0;
 
-	if (copy_from_user(update->data + *off, buf, len)) {
+	if (copy_from_user(buffer->data + *off, buf, len)) {
 		return -EFAULT;
 	}
 
 	*off += len;
-	update->size = *off;
+	buffer->size = *off;
 	return len;
 }
 
