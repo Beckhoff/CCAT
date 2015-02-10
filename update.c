@@ -18,7 +18,6 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/sched.h>
@@ -44,13 +43,6 @@
 /* from http://graphics.stanford.edu/~seander/bithacks.html#ReverseByteWith32Bits */
 #define SWAP_BITS(B) \
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
-
-static struct ccat_cdev dev_table[CCAT_DEVICES_MAX];
-static struct ccat_class cdev_class = {
-	.count = CCAT_DEVICES_MAX,
-	.devices = dev_table,
-	.name = "ccat_update",
-};
 
 /**
  * struct update_buffer - keep track of a CCAT FPGA update
@@ -360,12 +352,18 @@ static ssize_t ccat_update_write(struct file *const f, const char __user * buf,
 	return len;
 }
 
-static struct file_operations update_ops = {
-	.owner = THIS_MODULE,
-	.open = ccat_update_open,
-	.release = ccat_update_release,
-	.read = ccat_update_read,
-	.write = ccat_update_write,
+static struct ccat_cdev dev_table[CCAT_DEVICES_MAX];
+static struct ccat_class cdev_class = {
+	.count = CCAT_DEVICES_MAX,
+	.devices = dev_table,
+	.name = "ccat_update",
+	.fops = {
+		.owner = THIS_MODULE,
+		.open = ccat_update_open,
+		.release = ccat_update_release,
+		.read = ccat_update_read,
+		.write = ccat_update_write,
+	},
 };
 
 /**
@@ -374,31 +372,12 @@ static struct file_operations update_ops = {
 static int ccat_update_probe(struct ccat_function *func)
 {
 	static const u16 SUPPORTED_REVISION = 0x00;
-	struct ccat_cdev *ccdev;
 
 	if (SUPPORTED_REVISION != func->info.rev) {
 		pr_warn("CCAT Update rev. %d not supported\n", func->info.rev);
 		return ENODEV;
 	}
-
-	ccdev = alloc_ccat_cdev(&cdev_class);
-	if (!ccdev) {
-		return -ENOMEM;
-	}
-
-	ccdev->ioaddr = func->ccat->bar_0 + func->info.addr;
-	atomic_set(&ccdev->in_use, 1);
-
-	if (ccat_cdev_probe
-	    (&ccdev->cdev, ccdev->dev, cdev_class.class, &update_ops)) {
-		pr_warn("ccat_cdev_probe() failed\n");
-		free_ccat_cdev(ccdev);
-		return -1;
-	}
-
-	ccdev->class = cdev_class.class;
-	func->private_data = ccdev;
-	return 0;
+	return ccat_cdev_probe(func, &cdev_class, 0);
 }
 
 static void ccat_update_remove(struct ccat_function *func)

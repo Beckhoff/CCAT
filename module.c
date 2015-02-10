@@ -39,12 +39,12 @@ static const struct ccat_driver *const driver_list[] = {
 	&update_driver,		/* load Update driver from update.c */
 };
 
-void free_ccat_cdev(struct ccat_cdev *ccdev)
+static void free_ccat_cdev(struct ccat_cdev *ccdev)
 {
 	ccdev->dev = 0;
 }
 
-struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
+static struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
 {
 	int i = 0;
 
@@ -59,7 +59,7 @@ struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
 	return NULL;
 }
 
-int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class,
+static int ccat_cdev_init(struct cdev *cdev, dev_t dev, struct class *class,
 		    struct file_operations *fops)
 {
 	if (!device_create
@@ -77,6 +77,28 @@ int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class,
 	}
 
 	pr_info("registered %s%d.\n", class->name, MINOR(dev));
+	return 0;
+}
+
+int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, size_t iosize)
+{
+	struct ccat_cdev *const ccdev = alloc_ccat_cdev(cdev_class);
+	if (!ccdev) {
+		return -ENOMEM;
+	}
+
+	ccdev->ioaddr = func->ccat->bar_0 + func->info.addr;
+	ccdev->iosize = iosize;	//TODO this is SRAM specific
+	atomic_set(&ccdev->in_use, 1); //TODO this is UPDATE specific
+
+	if (ccat_cdev_init
+	    (&ccdev->cdev, ccdev->dev, cdev_class->class, &cdev_class->fops)) {
+		pr_warn("ccat_cdev_probe() failed\n");
+		free_ccat_cdev(ccdev);
+		return -1;
+	}
+	ccdev->class = cdev_class->class;
+	func->private_data = ccdev;
 	return 0;
 }
 

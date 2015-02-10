@@ -22,6 +22,7 @@
 #define _CCAT_H_
 
 #include <linux/cdev.h>
+#include <linux/fs.h>
 #include <linux/hrtimer.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
@@ -57,23 +58,6 @@ struct ccat_cdev {
 	struct cdev cdev;
 	struct class *class;
 };
-
-/**
- * struct ccat_class - helper to register character device classes for CCAT functions
- */
-struct ccat_class {
-	dev_t dev;
-	struct class *class;
-	const unsigned count;
-	struct ccat_cdev *devices;
-	const char *name;
-};
-
-extern struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base);
-extern void free_ccat_cdev(struct ccat_cdev *ccdev);
-extern int ccat_cdev_probe(struct cdev *cdev, dev_t dev, struct class *class,
-			   struct file_operations *fops);
-extern void ccat_cdev_remove(struct ccat_cdev *ccdev);
 
 /**
  * struct ccat_dma - CCAT DMA channel configuration
@@ -140,6 +124,18 @@ struct ccat_function {
 	void *private_data;
 };
 
+struct ccat_class {
+	dev_t dev;
+	struct class *class;
+	const unsigned count;
+	struct ccat_cdev *devices;
+	const char *name;
+	struct file_operations fops;
+};
+
+extern void ccat_cdev_remove(struct ccat_cdev *ccdev);
+extern int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, size_t iosize);
+
 /**
  * struct ccat_driver - CCAT FPGA function
  * @probe: add device instance
@@ -153,4 +149,5 @@ struct ccat_driver {
 	enum ccat_info_t type;
 	struct ccat_class *cdev_class;
 };
+
 #endif /* #ifndef _CCAT_H_ */
