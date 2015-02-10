@@ -52,8 +52,8 @@
  */
 struct update_buffer {
 	struct ccat_cdev *update;
-	char data[CCAT_FLASH_SIZE];
 	size_t size;
+	char data[];
 };
 
 /**
@@ -269,7 +269,7 @@ static int ccat_update_open(struct inode *const i, struct file *const f)
 		return -EBUSY;
 	}
 
-	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
+	buf = kzalloc(sizeof(*buf) + update->iosize, GFP_KERNEL);
 	if (!buf) {
 		atomic_inc(&update->in_use);
 		return -ENOMEM;
@@ -313,12 +313,13 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 				size_t len, loff_t * off)
 {
 	struct update_buffer *buffer = f->private_data;
+	const size_t iosize = buffer->update->iosize;
 
-	if (*off >= CCAT_FLASH_SIZE) {
+	if (*off >= iosize) {
 		return 0;
 	}
-	if (*off + len >= CCAT_FLASH_SIZE) {
-		len = CCAT_FLASH_SIZE - *off;
+	if (*off + len >= iosize) {
+		len = iosize - *off;
 	}
 	return ccat_read_flash(buffer->update->ioaddr, buf, len, off);
 }
@@ -340,7 +341,7 @@ static ssize_t ccat_update_write(struct file *const f, const char __user * buf,
 {
 	struct update_buffer *const buffer = f->private_data;
 
-	if (*off + len > sizeof(buffer->data))
+	if (*off + len > buffer->update->iosize)
 		return 0;
 
 	if (copy_from_user(buffer->data + *off, buf, len)) {
@@ -374,7 +375,7 @@ static int ccat_update_probe(struct ccat_function *func)
 		pr_warn("CCAT Update rev. %d not supported\n", func->info.rev);
 		return -ENODEV;
 	}
-	return ccat_cdev_probe(func, &cdev_class, 0);
+	return ccat_cdev_probe(func, &cdev_class, CCAT_FLASH_SIZE);
 }
 
 struct ccat_driver update_driver = {
