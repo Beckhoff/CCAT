@@ -380,15 +380,9 @@ static int ccat_update_probe(struct ccat_function *func)
 	return ccat_cdev_probe(func, &cdev_class, 0);
 }
 
-static void ccat_update_remove(struct ccat_function *func)
-{
-	struct ccat_cdev *const update = func->private_data;
-	ccat_cdev_remove(update);
-}
-
 struct ccat_driver update_driver = {
 	.type = CCATINFO_EPCS_PROM,
 	.probe = ccat_update_probe,
-	.remove = ccat_update_remove,
+	.remove = ccat_cdev_remove,
 	.cdev_class = &cdev_class,
 };

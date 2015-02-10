@@ -102,8 +102,10 @@ int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, s
 	return 0;
 }
 
-void ccat_cdev_remove(struct ccat_cdev *ccdev)
+void ccat_cdev_remove(struct ccat_function *func)
 {
+	struct ccat_cdev *const ccdev = func->private_data;
+
 	cdev_del(&ccdev->cdev);
 	device_destroy(ccdev->class, ccdev->dev);
 	free_ccat_cdev(ccdev);

@@ -133,7 +133,7 @@ struct ccat_class {
 	struct file_operations fops;
 };
 
-extern void ccat_cdev_remove(struct ccat_cdev *ccdev);
+extern void ccat_cdev_remove(struct ccat_function *func);
 extern int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, size_t iosize);
 
 /**

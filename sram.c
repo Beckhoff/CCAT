@@ -112,15 +112,9 @@ static int ccat_sram_probe(struct ccat_function *func)
 	return ccat_cdev_probe(func, &cdev_class, iosize);
 }
 
-static void ccat_sram_remove(struct ccat_function *func)
-{
-	struct ccat_cdev *const ccdev = func->private_data;
-	ccat_cdev_remove(ccdev);
-}
-
 struct ccat_driver sram_driver = {
 	.type = CCATINFO_SRAM,
 	.probe = ccat_sram_probe,
-	.remove = ccat_sram_remove,
+	.remove = ccat_cdev_remove,
 	.cdev_class = &cdev_class,
 };
