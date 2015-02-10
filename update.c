@@ -372,7 +372,7 @@ static int ccat_update_probe(struct ccat_function *func)
 
 	if (SUPPORTED_REVISION != func->info.rev) {
 		pr_warn("CCAT Update rev. %d not supported\n", func->info.rev);
-		return ENODEV;
+		return -ENODEV;
 	}
 	return ccat_cdev_probe(func, &cdev_class, 0);
 }
