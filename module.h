@@ -52,6 +52,7 @@ enum ccat_info_t {
 struct ccat_cdev {
 	atomic_t in_use;
 	void __iomem *ioaddr;
+	size_t iosize;
 	dev_t dev;
 	struct cdev cdev;
 	struct class *class;

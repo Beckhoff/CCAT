@@ -374,37 +374,33 @@ static struct file_operations update_ops = {
 static int ccat_update_probe(struct ccat_function *func)
 {
 	static const u16 SUPPORTED_REVISION = 0x00;
-	struct ccat_cdev *const update = alloc_ccat_cdev(&cdev_class);
-
-	if (!update) {
-		return -ENOMEM;
-	}
-
-	update->ioaddr = func->ccat->bar_0 + func->info.addr;
-	atomic_set(&update->in_use, 1);
+	struct ccat_cdev *ccdev;
 
 	if (SUPPORTED_REVISION != func->info.rev) {
 		pr_warn("CCAT Update rev. %d not supported\n", func->info.rev);
-		goto cleanup;
+		return ENODEV;
 	}
+
+	ccdev = alloc_ccat_cdev(&cdev_class);
+	if (!ccdev) {
+		return -ENOMEM;
+	}
+
+	ccdev->ioaddr = func->ccat->bar_0 + func->info.addr;
+	atomic_set(&ccdev->in_use, 1);
 
 	if (ccat_cdev_probe
-	    (&update->cdev, update->dev, cdev_class.class, &update_ops)) {
+	    (&ccdev->cdev, ccdev->dev, cdev_class.class, &update_ops)) {
 		pr_warn("ccat_cdev_probe() failed\n");
-		goto cleanup;
+		free_ccat_cdev(ccdev);
+		return -1;
 	}
 
-	update->class = cdev_class.class;
-	func->private_data = update;
+	ccdev->class = cdev_class.class;
+	func->private_data = ccdev;
 	return 0;
-cleanup:
-	free_ccat_cdev(update);
-	return -1;
 }
 
-/**
- * ccat_update_remove() - Prepare the CCAT Update function for removal
- */
 static void ccat_update_remove(struct ccat_function *func)
 {
 	struct ccat_cdev *const update = func->private_data;
