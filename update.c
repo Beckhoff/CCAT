@@ -366,9 +366,6 @@ static struct ccat_class cdev_class = {
 	},
 };
 
-/**
- * ccat_update_init() - Initialize the CCAT Update function
- */
 static int ccat_update_probe(struct ccat_function *func)
 {
 	static const u16 SUPPORTED_REVISION = 0x00;

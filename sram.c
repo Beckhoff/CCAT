@@ -29,14 +29,22 @@ static int ccat_sram_open(struct inode *const i, struct file *const f)
 {
 	struct ccat_cdev *ccdev =
 	    container_of(i->i_cdev, struct ccat_cdev, cdev);
-	    f->private_data = ccdev;
-	pr_info("---->%s\n", __FUNCTION__);
+
+	f->private_data = ccdev;
+
+	if (!atomic_dec_and_test(&ccdev->in_use)) {
+		atomic_inc(&ccdev->in_use);
+		return -EBUSY;
+	}
 	return 0;
 }
 
 static int ccat_sram_release(struct inode *const i, struct file *const f)
 {
-	pr_info("---->%s\n", __FUNCTION__);
+	struct ccat_cdev *ccdev =
+	    container_of(i->i_cdev, struct ccat_cdev, cdev);
+
+	atomic_inc(&ccdev->in_use);
 	return 0;
 }
 
