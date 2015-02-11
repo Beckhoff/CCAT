@@ -110,8 +110,8 @@ int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, s
 	}
 
 	ccdev->ioaddr = func->ccat->bar_0 + func->info.addr;
-	ccdev->iosize = iosize;	//TODO this is SRAM specific
-	atomic_set(&ccdev->in_use, 1); //TODO this is UPDATE specific
+	ccdev->iosize = iosize;
+	atomic_set(&ccdev->in_use, 1);
 
 	if (ccat_cdev_init
 	    (&ccdev->cdev, ccdev->dev, cdev_class->class, &cdev_class->fops)) {

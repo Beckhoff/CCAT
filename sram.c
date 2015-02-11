@@ -52,8 +52,12 @@ static ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
 		return 0;
 	}
 
-	copy_from_user(buffer->data, buf, len);
+	if (copy_from_user(buffer->data, buf, len)) {
+		return -EFAULT;
+	}
+
 	memcpy_toio(buffer->ccdev->ioaddr + *off, buffer->data, len);
+
 	*off += len;
 	return len;
 }
