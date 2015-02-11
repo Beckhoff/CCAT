@@ -45,18 +45,6 @@
 	((((B) * 0x0802LU & 0x22110LU) | ((B) * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16)
 
 /**
- * struct cdev_buffer - keep track of a CCAT FPGA update
- * @update: pointer to a valid ccat_update object
- * @data: buffer used for write operations
- * @size: number of bytes written to the data buffer, if 0 on ccat_update_release() no data will be written to FPGA
- */
-struct cdev_buffer {
-	struct ccat_cdev *ccdev;
-	size_t size;
-	char data[];
-};
-
-/**
  * wait_until_busy_reset() - wait until the busy flag was reset
  * @ioaddr: address of the CCAT Update function in PCI config space
  */
@@ -258,42 +246,18 @@ static void ccat_write_flash(const struct cdev_buffer *const buffer)
 	ccat_write_flash_block(buffer->ccdev->ioaddr, off, (u16) len, buf);
 }
 
-static int ccat_update_open(struct inode *const i, struct file *const f)
-{
-	struct ccat_cdev *ccdev =
-	    container_of(i->i_cdev, struct ccat_cdev, cdev);
-	struct cdev_buffer *buf;
-
-	if (!atomic_dec_and_test(&ccdev->in_use)) {
-		atomic_inc(&ccdev->in_use);
-		return -EBUSY;
-	}
-
-	buf = kzalloc(sizeof(*buf) + ccdev->iosize, GFP_KERNEL);
-	if (!buf) {
-		atomic_inc(&ccdev->in_use);
-		return -ENOMEM;
-	}
-
-	buf->ccdev = ccdev;
-	f->private_data = buf;
-	return 0;
-}
-
 static int ccat_update_release(struct inode *const i, struct file *const f)
 {
 	const struct cdev_buffer *const buf = f->private_data;
-	struct ccat_cdev *const ccdev = buf->ccdev;
+	void __iomem *ioaddr = buf->ccdev->ioaddr;
 
 	if (buf->size > 0) {
-		ccat_update_cmd(ccdev->ioaddr, CCAT_WRITE_ENABLE);
-		ccat_update_cmd(ccdev->ioaddr, CCAT_BULK_ERASE);
-		ccat_wait_status_cleared(ccdev->ioaddr);
+		ccat_update_cmd(ioaddr, CCAT_WRITE_ENABLE);
+		ccat_update_cmd(ioaddr, CCAT_BULK_ERASE);
+		ccat_wait_status_cleared(ioaddr);
 		ccat_write_flash(buf);
 	}
-	kfree(f->private_data);
-	atomic_inc(&ccdev->in_use);
-	return 0;
+	return ccat_cdev_release(i, f);
 }
 
 /**
@@ -341,8 +305,9 @@ static ssize_t ccat_update_write(struct file *const f, const char __user * buf,
 {
 	struct cdev_buffer *const buffer = f->private_data;
 
-	if (*off + len > buffer->ccdev->iosize)
+	if (*off + len > buffer->ccdev->iosize) {
 		return 0;
+	}
 
 	if (copy_from_user(buffer->data + *off, buf, len)) {
 		return -EFAULT;
@@ -360,7 +325,7 @@ static struct ccat_class cdev_class = {
 	.name = "ccat_update",
 	.fops = {
 		.owner = THIS_MODULE,
-		.open = ccat_update_open,
+		.open = ccat_cdev_open,
 		.release = ccat_update_release,
 		.read = ccat_update_read,
 		.write = ccat_update_write,

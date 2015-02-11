@@ -80,6 +80,28 @@ static int ccat_cdev_init(struct cdev *cdev, dev_t dev, struct class *class,
 	return 0;
 }
 
+int ccat_cdev_open(struct inode *const i, struct file *const f)
+{
+	struct ccat_cdev *ccdev =
+	    container_of(i->i_cdev, struct ccat_cdev, cdev);
+	struct cdev_buffer *buf;
+
+	if (!atomic_dec_and_test(&ccdev->in_use)) {
+		atomic_inc(&ccdev->in_use);
+		return -EBUSY;
+	}
+
+	buf = kzalloc(sizeof(*buf) + ccdev->iosize, GFP_KERNEL);
+	if (!buf) {
+		atomic_inc(&ccdev->in_use);
+		return -ENOMEM;
+	}
+
+	buf->ccdev = ccdev;
+	f->private_data = buf;
+	return 0;
+}
+
 int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, size_t iosize)
 {
 	struct ccat_cdev *const ccdev = alloc_ccat_cdev(cdev_class);
@@ -99,6 +121,16 @@ int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, s
 	}
 	ccdev->class = cdev_class->class;
 	func->private_data = ccdev;
+	return 0;
+}
+
+int ccat_cdev_release(struct inode *const i, struct file *const f)
+{
+	const struct cdev_buffer *const buf = f->private_data;
+	struct ccat_cdev *const ccdev = buf->ccdev;
+
+	kfree(f->private_data);
+	atomic_inc(&ccdev->in_use);
 	return 0;
 }
 

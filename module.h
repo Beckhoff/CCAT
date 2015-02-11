@@ -60,6 +60,21 @@ struct ccat_cdev {
 };
 
 /**
+ * struct cdev_buffer
+ * @ccdev: referenced character device
+ * @data: buffer used for write operations
+ * @size: number of bytes written to the data buffer
+ */
+struct cdev_buffer {
+	struct ccat_cdev *ccdev;
+	size_t size;
+	char data[];
+};
+
+extern int ccat_cdev_open(struct inode *const i, struct file *const f);
+extern int ccat_cdev_release(struct inode *const i, struct file *const f);
+
+/**
  * struct ccat_dma - CCAT DMA channel configuration
  * @phys: device-viewed address(physical) of the associated DMA memory
  * @virt: CPU-viewed address(virtual) of the associated DMA memory

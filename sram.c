@@ -25,71 +25,36 @@
 
 #define CCAT_SRAM_DEVICES_MAX 4
 
-static int ccat_sram_open(struct inode *const i, struct file *const f)
-{
-	struct ccat_cdev *ccdev =
-	    container_of(i->i_cdev, struct ccat_cdev, cdev);
-
-	f->private_data = ccdev;
-
-	if (!atomic_dec_and_test(&ccdev->in_use)) {
-		atomic_inc(&ccdev->in_use);
-		return -EBUSY;
-	}
-	return 0;
-}
-
-static int ccat_sram_release(struct inode *const i, struct file *const f)
-{
-	struct ccat_cdev *ccdev =
-	    container_of(i->i_cdev, struct ccat_cdev, cdev);
-
-	atomic_inc(&ccdev->in_use);
-	return 0;
-}
-
 static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
 				size_t len, loff_t * off)
 {
-	struct ccat_cdev *ccdev = f->private_data;
-	u8 *kern_buf;
+	struct cdev_buffer *buffer = f->private_data;
+	const size_t iosize = buffer->ccdev->iosize;
 
-	if (*off >= ccdev->iosize) {
+	if (*off >= iosize) {
 		return 0;
 	}
 
-	len = min(len, (size_t)(ccdev->iosize - *off));
-	kern_buf = kzalloc(len, GFP_KERNEL);
-	if (!kern_buf) {
-		return -ENOMEM;
-	}
+	len = min(len, (size_t)(iosize - *off));
 
-	memcpy_fromio(kern_buf, ccdev->ioaddr + *off, len);
-	copy_to_user(buf, kern_buf, len);
+	memcpy_fromio(buffer->data, buffer->ccdev->ioaddr + *off, len);
+	copy_to_user(buf, buffer->data, len);
 	*off += len;
-	kfree(kern_buf);
 	return len;
 }
 
 static ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
 				 size_t len, loff_t * off)
 {
-	struct ccat_cdev *ccdev = f->private_data;
-	u8 *kern_buf;
+	struct cdev_buffer *const buffer = f->private_data;
 
-	if (*off + len > ccdev->iosize) {
+	if (*off + len > buffer->ccdev->iosize) {
 		return 0;
 	}
 
-	kern_buf = kzalloc(ccdev->iosize, GFP_KERNEL);
-	if (!kern_buf) {
-		return -ENOMEM;
-	}
-
-	copy_from_user(kern_buf, buf, len);
-	memcpy_toio(ccdev->ioaddr + *off, kern_buf, len);
+	copy_from_user(buffer->data, buf, len);
+	memcpy_toio(buffer->ccdev->ioaddr + *off, buffer->data, len);
 	*off += len;
-	kfree(kern_buf);
 	return len;
 }
 
@@ -100,8 +65,8 @@ static struct ccat_class cdev_class = {
 	.name = "ccat_sram",
 	.fops = {
 		.owner = THIS_MODULE,
-		.open = ccat_sram_open,
-		.release = ccat_sram_release,
+		.open = ccat_cdev_open,
+		.release = ccat_cdev_release,
 		.read = ccat_sram_read,
 		.write = ccat_sram_write,
 	},
