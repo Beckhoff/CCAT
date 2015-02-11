@@ -282,9 +282,9 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 	if (*off >= iosize) {
 		return 0;
 	}
-	if (*off + len >= iosize) {
-		len = iosize - *off;
-	}
+
+	len = min(len, (size_t)(iosize - *off));
+
 	return ccat_read_flash(buffer->ccdev->ioaddr, buf, len, off);
 }
 

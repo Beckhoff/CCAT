@@ -25,6 +25,15 @@
 
 #define CCAT_SRAM_DEVICES_MAX 4
 
+static ssize_t __sram_read(struct cdev_buffer *buffer, char __user * buf,
+				size_t len, loff_t * off)
+{
+	memcpy_fromio(buffer->data, buffer->ccdev->ioaddr + *off, len);
+	copy_to_user(buf, buffer->data, len);
+	*off += len;
+	return len;
+}
+
 static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
 				size_t len, loff_t * off)
 {
@@ -37,10 +46,7 @@ static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
 
 	len = min(len, (size_t)(iosize - *off));
 
-	memcpy_fromio(buffer->data, buffer->ccdev->ioaddr + *off, len);
-	copy_to_user(buf, buffer->data, len);
-	*off += len;
-	return len;
+	return __sram_read(buffer, buf, len, off);
 }
 
 static ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
