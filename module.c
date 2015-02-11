@@ -60,7 +60,7 @@ static struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
 }
 
 static int ccat_cdev_init(struct cdev *cdev, dev_t dev, struct class *class,
-		    struct file_operations *fops)
+			  struct file_operations *fops)
 {
 	if (!device_create
 	    (class, NULL, dev, NULL, "%s%d", class->name, MINOR(dev))) {
@@ -102,7 +102,8 @@ int ccat_cdev_open(struct inode *const i, struct file *const f)
 	return 0;
 }
 
-int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, size_t iosize)
+int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class,
+		    size_t iosize)
 {
 	struct ccat_cdev *const ccdev = alloc_ccat_cdev(cdev_class);
 	if (!ccdev) {

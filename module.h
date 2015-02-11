@@ -149,7 +149,8 @@ struct ccat_class {
 };
 
 extern void ccat_cdev_remove(struct ccat_function *func);
-extern int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class, size_t iosize);
+extern int ccat_cdev_probe(struct ccat_function *func,
+			   struct ccat_class *cdev_class, size_t iosize);
 
 /**
  * struct ccat_driver - CCAT FPGA function

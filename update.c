@@ -283,7 +283,7 @@ static ssize_t ccat_update_read(struct file *const f, char __user * buf,
 		return 0;
 	}
 
-	len = min(len, (size_t)(iosize - *off));
+	len = min(len, (size_t) (iosize - *off));
 
 	return ccat_read_flash(buffer->ccdev->ioaddr, buf, len, off);
 }
@@ -324,12 +324,12 @@ static struct ccat_class cdev_class = {
 	.devices = dev_table,
 	.name = "ccat_update",
 	.fops = {
-		.owner = THIS_MODULE,
-		.open = ccat_cdev_open,
-		.release = ccat_update_release,
-		.read = ccat_update_read,
-		.write = ccat_update_write,
-	},
+		 .owner = THIS_MODULE,
+		 .open = ccat_cdev_open,
+		 .release = ccat_update_release,
+		 .read = ccat_update_read,
+		 .write = ccat_update_write,
+		 },
 };
 
 static int ccat_update_probe(struct ccat_function *func)
