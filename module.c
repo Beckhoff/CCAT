@@ -378,10 +378,8 @@ static struct pci_driver ccat_driver = {
 
 static void drivers_exit(int num_drivers)
 {
-	int i = num_drivers;
-
-	while (--i >= 0) {
-		const struct ccat_driver *const drv = drivers[i];
+	while (--num_drivers >= 0) {
+		const struct ccat_driver *const drv = drivers[num_drivers];
 		if (drv->cdev_class) {
 			ccat_class_exit(drv->cdev_class);
 		}
