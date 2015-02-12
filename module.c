@@ -32,7 +32,7 @@ MODULE_VERSION(DRV_VERSION);
 /**
  * configure the drivers capabilities here
  */
-static const struct ccat_driver *const driver_list[] = {
+static const struct ccat_driver *const drivers[] = {
 	&eth_driver,		/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
 	&gpio_driver,		/* load GPIO driver from gpio.c */
 	&sram_driver,		/* load SRAM driver from sram.c */
@@ -232,10 +232,9 @@ static const struct ccat_driver *ccat_function_connect(struct ccat_function
 {
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(driver_list); ++i) {
-		if (func->info.type == driver_list[i]->type) {
-			return driver_list[i]->probe(func) ? NULL :
-			    driver_list[i];
+	for (i = 0; i < ARRAY_SIZE(drivers); ++i) {
+		if (func->info.type == drivers[i]->type) {
+			return drivers[i]->probe(func) ? NULL : drivers[i];
 		}
 	}
 	return NULL;
@@ -377,11 +376,12 @@ static struct pci_driver ccat_driver = {
 	.remove = ccat_remove,
 };
 
-static void driver_list_exit(int num_drivers)
+static void drivers_exit(int num_drivers)
 {
 	int i = num_drivers;
+
 	while (--i >= 0) {
-		const struct ccat_driver *const drv = driver_list[i];
+		const struct ccat_driver *const drv = drivers[i];
 		if (drv->cdev_class) {
 			ccat_class_exit(drv->cdev_class);
 		}
@@ -393,11 +393,11 @@ static int __init ccat_init_module(void)
 	int i;
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 
-	for (i = 0; i < ARRAY_SIZE(driver_list); ++i) {
-		const struct ccat_driver *const drv = driver_list[i];
+	for (i = 0; i < ARRAY_SIZE(drivers); ++i) {
+		const struct ccat_driver *const drv = drivers[i];
 		if (drv->cdev_class) {
 			if (ccat_class_init(drv->cdev_class)) {
-				driver_list_exit(i);
+				drivers_exit(i);
 				return -1;
 			}
 		}
@@ -408,7 +408,7 @@ static int __init ccat_init_module(void)
 static void __exit ccat_exit(void)
 {
 	pci_unregister_driver(&ccat_driver);
-	driver_list_exit(ARRAY_SIZE(driver_list));
+	drivers_exit(ARRAY_SIZE(drivers));
 }
 
 module_init(ccat_init_module);
