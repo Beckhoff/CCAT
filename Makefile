@@ -20,5 +20,5 @@ clean:
 	rm -f *.c~ *.h~ *.bin
 
 # indent the source files with the kernels Lindent script
-indent: gpio.c module.c module.h netdev.c update.c
+indent: gpio.c module.c module.h netdev.c sram.c update.c
 	./Lindent $?

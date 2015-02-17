@@ -27,7 +27,7 @@
 #define CCAT_SRAM_DEVICES_MAX 4
 
 static ssize_t __sram_read(struct cdev_buffer *buffer, char __user * buf,
-				size_t len, loff_t * off)
+			   size_t len, loff_t * off)
 {
 	memcpy_fromio(buffer->data, buffer->ccdev->ioaddr + *off, len);
 	copy_to_user(buf, buffer->data, len);
@@ -36,7 +36,7 @@ static ssize_t __sram_read(struct cdev_buffer *buffer, char __user * buf,
 }
 
 static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
-				size_t len, loff_t * off)
+			      size_t len, loff_t * off)
 {
 	struct cdev_buffer *buffer = f->private_data;
 	const size_t iosize = buffer->ccdev->iosize;
@@ -45,13 +45,13 @@ static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
 		return 0;
 	}
 
-	len = min(len, (size_t)(iosize - *off));
+	len = min(len, (size_t) (iosize - *off));
 
 	return __sram_read(buffer, buf, len, off);
 }
 
 static ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
-				 size_t len, loff_t * off)
+			       size_t len, loff_t * off)
 {
 	struct cdev_buffer *const buffer = f->private_data;
 
@@ -75,12 +75,12 @@ static struct ccat_class cdev_class = {
 	.devices = dev_table,
 	.name = "ccat_sram",
 	.fops = {
-		.owner = THIS_MODULE,
-		.open = ccat_cdev_open,
-		.release = ccat_cdev_release,
-		.read = ccat_sram_read,
-		.write = ccat_sram_write,
-	},
+		 .owner = THIS_MODULE,
+		 .open = ccat_cdev_open,
+		 .release = ccat_cdev_release,
+		 .read = ccat_sram_read,
+		 .write = ccat_sram_write,
+		 },
 };
 
 static int ccat_sram_probe(struct ccat_function *func)
@@ -89,7 +89,8 @@ static int ccat_sram_probe(struct ccat_function *func)
 	const u8 type = func->info.sram_width & 0x3;
 	const size_t iosize = (1 << func->info.sram_size);
 
-	pr_info("%s: 0x%04x rev: 0x%04x\n", __FUNCTION__, func->info.type, func->info.rev);
+	pr_info("%s: 0x%04x rev: 0x%04x\n", __FUNCTION__, func->info.type,
+		func->info.rev);
 	if (type == NO_SRAM_CONNECTED) {
 		return -ENODEV;
 	}
