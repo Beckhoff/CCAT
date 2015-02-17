@@ -21,6 +21,7 @@
 #include "module.h"
 #include <asm/io.h>
 #include <linux/fs.h>
+#include <linux/module.h>
 #include <linux/uaccess.h>
 
 #define CCAT_SRAM_DEVICES_MAX 4

@@ -4,6 +4,12 @@ next:
 - fix crash on systems with multiple CCATs
 - make initialization of bar2 optional (f.e. CX2500 M310)
 
+Test log:
+-------------|      | generic/|
+    Kernel   | arch | ec_ccat | device |  os   |result (fping, netio, etherlab)
+=============|======|=========|================================================
+3.10.67-rt71 |x86_64| generic | CX2030 | 14.04 | fping OK, netio OK
+
 
 0.11:
 =====
