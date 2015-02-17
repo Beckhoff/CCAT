@@ -9,6 +9,7 @@ Test log:
 -------------|      | generic/|
     Kernel   | arch | ec_ccat | device |  os   |result (fping, netio, etherlab)
 =============|======|=========|================================================
+3.19.0       |x86_64| ec_ccat | CX2030 | 14.04 | no errors + sram_rw + update_r
 3.14.31-rt28 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
 3.12.37-rt51 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
 3.10.67-rt71 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
