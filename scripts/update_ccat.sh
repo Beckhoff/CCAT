@@ -30,10 +30,10 @@
 # TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-rbf=$1
+rbf=$2
 tmp=$rbf.~ccat_update_tmp
 backup=$rbf.~ccat_update_backup
-update=/dev/ccat_update
+update=/dev/ccat_update${1}
 bytes=$(echo $(wc -c $rbf)|cut -d' ' -f1)
 
 # check if device file is available
