@@ -1,5 +1,5 @@
 
-next:
+0.12:
 =====
 - fix crash on systems with multiple CCATs
 - make initialization of bar2 optional (f.e. CX2500 M310)
@@ -15,6 +15,7 @@ Test log:
 3.10.67-rt71 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
 3.4.106-rt131|x86_64| ec_ccat | CX2030 | 14.04 | no errors
 3.12.18      | i386 | ec_ccat | CX5020 | 14.04 | no errors
+3.13.0-24-gen|x86_64| ec_ccat | CX5130 | 14.04 | no errors
 
 * os/14.04 means Ubuntu 14.04 LTS
 
