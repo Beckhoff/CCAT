@@ -1,4 +1,5 @@
 The Beckhoff CCAT FPGA linux driver provides support for different CCAT functions:
+==================================================================================
 - Ethernet
 - GPIO
 - SRAM
