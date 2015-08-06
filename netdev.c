@@ -95,6 +95,8 @@ struct ccat_eth_register {
  */
 struct ccat_eth_dma_fifo {
 	void (*add) (struct ccat_eth_dma_fifo *, struct ccat_eth_frame *);
+	void (*copy_to_skb)(struct ccat_eth_dma_fifo *, struct sk_buff *, size_t);
+	void (*queue_skb)(struct ccat_eth_dma_fifo *const, struct sk_buff *);
 	void __iomem *reg;
 	const struct ccat_eth_frame *end;
 	struct ccat_eth_frame *next;
@@ -179,10 +181,13 @@ static inline bool ccat_eth_tx_ready(const struct ccat_eth_priv *const priv)
 /**
  * Helper to check if CCAT is ready to RX another frame
  */
-static inline bool ccat_eth_frame_received(const struct ccat_eth_frame *const
+static inline size_t ccat_eth_frame_received(const struct ccat_eth_frame *const
 					   frame)
 {
-	return le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED;
+	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
+		return le16_to_cpu(frame->length);
+	}
+	return 0;
 }
 
 static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
@@ -214,8 +219,10 @@ static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *const fifo,
 static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
 {
 	/* reset hw fifo */
-	iowrite32(0, fifo->reg + 0x8);
-	wmb();
+	if (fifo->reg) {
+		iowrite32(0, fifo->reg + 0x8);
+		wmb();
+	}
 
 	if (fifo->add) {
 		fifo->next = fifo->dma.virt;
@@ -224,6 +231,36 @@ static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
 			ccat_eth_fifo_inc(fifo);
 		} while (fifo->next != fifo->dma.virt);
 	}
+}
+
+static void iofifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb, const size_t len)
+{
+	memcpy_fromio(skb->data, fifo->next->data, len);
+}
+
+static void iofifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb)
+{
+	const u32 addr_and_length = ((void *)fifo->next - fifo->dma.virt);
+
+	memcpy_toio(fifo->next->data, skb->data, skb->len);
+	iowrite32(addr_and_length, fifo->reg);
+}
+
+static void dmafifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb, const size_t len)
+{
+	skb_copy_to_linear_data(skb, fifo->next->data, len);
+}
+
+static void dmafifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb)
+{
+	u32 addr_and_length;
+	memcpy(fifo->next->data, skb->data, skb->len);
+
+	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
+	addr_and_length = offsetof(struct ccat_eth_frame, length);
+	addr_and_length += ((void *)fifo->next - fifo->dma.virt);
+	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
+	iowrite32(addr_and_length, fifo->reg);
 }
 
 static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
@@ -237,6 +274,8 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 		return -1;
 	}
 	fifo->add = add;
+	fifo->copy_to_skb = dmafifo_copy_to_linear_skb;
+	fifo->queue_skb = dmafifo_queue_skb;
 	fifo->end = ((struct ccat_eth_frame *)fifo->dma.virt) + FIFO_LENGTH - 1;
 	fifo->reg = fifo_reg;
 	ccat_eth_dma_fifo_reset(fifo);
@@ -309,7 +348,6 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 	struct ccat_eth_dma_fifo *const fifo = &priv->tx_fifo;
-	u32 addr_and_length;
 
 	if (skb_is_nonlinear(skb)) {
 		pr_warn("Non linear skb not supported -> drop frame.\n");
@@ -335,13 +373,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	/* prepare frame in DMA memory */
 	fifo->next->tx_flags = cpu_to_le32(0);
 	fifo->next->length = cpu_to_le16(skb->len);
-	memcpy(fifo->next->data, skb->data, skb->len);
-
-	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
-	addr_and_length = offsetof(struct ccat_eth_frame, length);
-	addr_and_length += ((void *)fifo->next - fifo->dma.virt);
-	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
-	iowrite32(addr_and_length, fifo->reg);
+	fifo->queue_skb(fifo, skb);
 
 	/* update stats */
 	atomic64_add(skb->len, &priv->tx_bytes);
@@ -385,7 +417,7 @@ static void ccat_eth_receive(struct net_device *const dev, const size_t len)
 	}
 	skb->dev = dev;
 	skb_reserve(skb, NET_IP_ALIGN);
-	skb_copy_to_linear_data(skb, priv->rx_fifo.next->data, len);
+	priv->rx_fifo.copy_to_skb(&priv->rx_fifo, skb, len);
 	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
@@ -453,11 +485,12 @@ static void poll_rx(struct ccat_eth_priv *const priv)
 	static const size_t overhead = CCAT_ETH_FRAME_HEAD_LEN - 4;
 	struct ccat_eth_dma_fifo *const fifo = &priv->rx_fifo;
 	/* TODO omit possible deadlock in situations with heavy traffic */
-	while (ccat_eth_frame_received(fifo->next)) {
-		const size_t len = le16_to_cpu(fifo->next->length) - overhead;
-		ccat_eth_receive(priv->netdev, len);
+	size_t len = ccat_eth_frame_received(fifo->next);
+	while (len) {
+		ccat_eth_receive(priv->netdev, len - overhead);
 		ccat_eth_rx_fifo_add(fifo, fifo->next);
 		ccat_eth_fifo_inc(fifo);
+		len = ccat_eth_frame_received(fifo->next);
 	}
 }
 
