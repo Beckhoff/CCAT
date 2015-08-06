@@ -263,25 +263,6 @@ static void dmafifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_bu
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
-				  void __iomem * const fifo_reg,
-				  fifo_add_function add, size_t channel,
-				  struct ccat_device *const ccat)
-{
-	if (0 != ccat_dma_init(&fifo->dma, channel, ccat->bar_2,
-			       &ccat->pdev->dev)) {
-		pr_info("init DMA%llu memory failed.\n", (u64) channel);
-		return -1;
-	}
-	fifo->add = add;
-	fifo->copy_to_skb = dmafifo_copy_to_linear_skb;
-	fifo->queue_skb = dmafifo_queue_skb;
-	fifo->end = ((struct ccat_eth_frame *)fifo->dma.virt) + FIFO_LENGTH - 1;
-	fifo->reg = fifo_reg;
-	ccat_eth_dma_fifo_reset(fifo);
-	return 0;
-}
-
 /**
  * Stop both (Rx/Tx) DMA fifo's and free related management structures
  */
@@ -302,20 +283,32 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
  */
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	if (ccat_eth_dma_fifo_init
-	    (&priv->rx_fifo, priv->reg.rx_fifo, ccat_eth_rx_fifo_add,
-	     priv->func->info.rx_dma_chan, priv->func->ccat)) {
-		pr_warn("init Rx DMA fifo failed.\n");
+	if (0 != ccat_dma_init(&priv->rx_fifo.dma, priv->func->info.rx_dma_chan, priv->func->ccat->bar_2,
+			       &priv->func->ccat->pdev->dev)) {
+		pr_info("init RX DMA memory failed.\n");
 		return -1;
 	}
 
-	if (ccat_eth_dma_fifo_init
-	    (&priv->tx_fifo, priv->reg.tx_fifo, ccat_eth_tx_fifo_add_free,
-	     priv->func->info.tx_dma_chan, priv->func->ccat)) {
-		pr_warn("init Tx DMA fifo failed.\n");
+	if (0 != ccat_dma_init(&priv->tx_fifo.dma, priv->func->info.tx_dma_chan, priv->func->ccat->bar_2,
+			       &priv->func->ccat->pdev->dev)) {
+		pr_info("init TX DMA memory failed.\n");
 		ccat_dma_free(&priv->rx_fifo.dma);
 		return -1;
 	}
+
+	priv->rx_fifo.add = ccat_eth_rx_fifo_add;
+	priv->rx_fifo.copy_to_skb = dmafifo_copy_to_linear_skb;
+	priv->rx_fifo.queue_skb = NULL;
+	priv->rx_fifo.end = ((struct ccat_eth_frame *)priv->rx_fifo.dma.virt) + FIFO_LENGTH - 1;
+	priv->rx_fifo.reg = priv->reg.rx_fifo;
+	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
+
+	priv->tx_fifo.add = ccat_eth_tx_fifo_add_free;
+	priv->tx_fifo.copy_to_skb = NULL;
+	priv->tx_fifo.queue_skb = dmafifo_queue_skb;
+	priv->tx_fifo.end = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + FIFO_LENGTH - 1;
+	priv->tx_fifo.reg = priv->reg.tx_fifo;
+	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
 
 	/* disable MAC filter */
 	iowrite8(0, priv->reg.mii + 0x8 + 6);
