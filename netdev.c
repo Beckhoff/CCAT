@@ -1,6 +1,6 @@
 /**
     Network Driver for Beckhoff CCAT communication controller
-    Copyright (C) 2014  Beckhoff Automation GmbH
+    Copyright (C) 2014 - 2015  Beckhoff Automation GmbH
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 
     This program is free software; you can redistribute it and/or modify
@@ -169,15 +169,15 @@ struct ccat_mac_register {
 };
 
 /**
- * Helper to check if frame in tx dma memory was already marked as sent by CCAT
+ * Helper to check if CCAT is ready to TX another frame
  */
-static inline bool ccat_eth_frame_sent(const struct ccat_eth_frame *const frame)
+static inline bool ccat_eth_tx_ready(const struct ccat_eth_priv *const priv)
 {
-	return le32_to_cpu(frame->tx_flags) & CCAT_FRAME_SENT;
+	return le32_to_cpu(priv->tx_fifo.next->tx_flags) & CCAT_FRAME_SENT;
 }
 
 /**
- * Helper to check if frame in tx dma memory was already marked as sent by CCAT
+ * Helper to check if CCAT is ready to RX another frame
  */
 static inline bool ccat_eth_frame_received(const struct ccat_eth_frame *const
 					   frame)
@@ -187,7 +187,7 @@ static inline bool ccat_eth_frame_received(const struct ccat_eth_frame *const
 
 static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
 {
-	if (++fifo->next >= fifo->end)
+	if (++fifo->next > fifo->end)
 		fifo->next = fifo->dma.virt;
 }
 
@@ -237,7 +237,7 @@ static int ccat_eth_dma_fifo_init(struct ccat_eth_dma_fifo *fifo,
 		return -1;
 	}
 	fifo->add = add;
-	fifo->end = ((struct ccat_eth_frame *)fifo->dma.virt) + FIFO_LENGTH;
+	fifo->end = ((struct ccat_eth_frame *)fifo->dma.virt) + FIFO_LENGTH - 1;
 	fifo->reg = fifo_reg;
 	ccat_eth_dma_fifo_reset(fifo);
 	return 0;
@@ -326,7 +326,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	if (!ccat_eth_frame_sent(fifo->next)) {
+	if (!ccat_eth_tx_ready(priv)) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
 		netif_stop_queue(priv->netdev);
 		return NETDEV_TX_BUSY;
@@ -350,7 +350,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	ccat_eth_fifo_inc(fifo);
 	/* stop queue if tx ring is full */
-	if (!ccat_eth_frame_sent(fifo->next)) {
+	if (!ccat_eth_tx_ready(priv)) {
 		netif_stop_queue(priv->netdev);
 	}
 	return NETDEV_TX_OK;
@@ -373,8 +373,7 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
 	ccat_eth_start_xmit(skb, dev);
 }
 
-static void ccat_eth_receive(struct net_device *const dev,
-			     const void *const data, const size_t len)
+static void ccat_eth_receive(struct net_device *const dev, const size_t len)
 {
 	struct sk_buff *const skb = dev_alloc_skb(len + NET_IP_ALIGN);
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
@@ -386,7 +385,7 @@ static void ccat_eth_receive(struct net_device *const dev,
 	}
 	skb->dev = dev;
 	skb_reserve(skb, NET_IP_ALIGN);
-	skb_copy_to_linear_data(skb, data, len);
+	skb_copy_to_linear_data(skb, priv->rx_fifo.next->data, len);
 	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
@@ -456,7 +455,7 @@ static void poll_rx(struct ccat_eth_priv *const priv)
 	/* TODO omit possible deadlock in situations with heavy traffic */
 	while (ccat_eth_frame_received(fifo->next)) {
 		const size_t len = le16_to_cpu(fifo->next->length) - overhead;
-		ccat_eth_receive(priv->netdev, fifo->next->data, len);
+		ccat_eth_receive(priv->netdev, len);
 		ccat_eth_rx_fifo_add(fifo, fifo->next);
 		ccat_eth_fifo_inc(fifo);
 	}
@@ -467,7 +466,7 @@ static void poll_rx(struct ccat_eth_priv *const priv)
  */
 static void poll_tx(struct ccat_eth_priv *const priv)
 {
-	if (ccat_eth_frame_sent(priv->tx_fifo.next)) {
+	if (ccat_eth_tx_ready(priv)) {
 		netif_wake_queue(priv->netdev);
 	}
 }
