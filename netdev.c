@@ -207,7 +207,8 @@ struct ccat_mac_register {
 
 static inline bool ccat_eth_tx_ready_dma(const struct ccat_eth_priv *const priv)
 {
-	return le32_to_cpu(priv->tx_fifo.next->tx_flags) & CCAT_FRAME_SENT;
+	const struct frame_header_dma *hdr = (struct frame_header_dma *)priv->tx_fifo.next;
+	return le32_to_cpu(hdr->tx_flags) & CCAT_FRAME_SENT;
 }
 
 static inline bool ccat_eth_tx_ready_nodma(const struct ccat_eth_priv *const priv)
@@ -218,7 +219,7 @@ static inline bool ccat_eth_tx_ready_nodma(const struct ccat_eth_priv *const pri
 
 static inline size_t ccat_eth_rx_ready_dma(const void *const __frame)
 {
-	const struct frame_header_dma *frame = __frame;
+	const struct frame_header_dma *const frame = __frame;
 	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
 		return le16_to_cpu(frame->length);
 	}
@@ -282,14 +283,19 @@ static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
 
 static void iofifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
-	memcpy_fromio(skb->data, fifo->next->data, len);
+	struct frame_nodma *frame = (struct frame_nodma *)fifo->next;
+	memcpy_fromio(skb->data, frame->data, len);
 }
 
 static void iofifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb)
 {
-	const u32 addr_and_length = ((void *)fifo->next - fifo->dma.virt);
+	struct frame_nodma *frame = (struct frame_nodma *)fifo->next;
+	const u32 addr_and_length = (void*)frame - fifo->dma.virt;
 
-	memcpy_toio(fifo->next->data, skb->data, skb->len);
+	frame->hdr.tx_flags = cpu_to_le32(0);
+	frame->hdr.length = cpu_to_le16(skb->len);
+
+	memcpy_toio(frame->data, skb->data, skb->len);
 	iowrite32(addr_and_length, fifo->reg);
 }
 
