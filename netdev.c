@@ -82,7 +82,6 @@ struct frame_header_nodma {
 #define CCAT_FRAME_SENT 0x1
 	__le64 timestamp;
 };
-#define CCAT_ETH_FRAME_HEAD_LEN sizeof(struct frame_header_dma)
 
 struct frame_nodma {
 	struct frame_header_nodma hdr;
@@ -90,7 +89,7 @@ struct frame_nodma {
 };
 
 #define MAX_PAYLOAD_SIZE \
-	(sizeof(struct ccat_eth_frame) - CCAT_ETH_FRAME_HEAD_LEN)
+	(sizeof(struct ccat_eth_frame) - sizeof(struct frame_header_dma))
 
 /**
  * struct ccat_eth_register - CCAT register addresses in the PCI BAR
@@ -211,17 +210,21 @@ static inline bool ccat_eth_tx_ready_nodma(const struct ccat_eth_priv *const pri
 
 static inline size_t ccat_eth_rx_ready_dma(const void *const __frame)
 {
+	static const size_t overhead = sizeof(struct frame_header_dma) - 4;
 	const struct frame_header_dma *const frame = __frame;
 	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
-		return le16_to_cpu(frame->length);
+		const size_t len = le16_to_cpu(frame->length);
+		return (len < overhead) ? 0 : len - overhead;
 	}
 	return 0;
 }
 
-static inline size_t ccat_eth_rx_ready_nodma(void *const __frame)
+static inline size_t ccat_eth_rx_ready_nodma(void *const frame)
 {
-	void __iomem *const frame = __frame;
-	return le16_to_cpu(ioread16(frame));
+	static const size_t overhead = sizeof(struct frame_header_nodma);
+	const size_t len = le16_to_cpu(ioread16(frame));
+
+	return (len < overhead) ? 0 : len - overhead;
 }
 
 static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
@@ -310,14 +313,16 @@ static void dmafifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_bu
 {
 	struct frame_dma *frame = (struct frame_dma *)fifo->next;
 	u32 addr_and_length;
+
 	frame->hdr.tx_flags = cpu_to_le32(0);
 	frame->hdr.length = cpu_to_le16(skb->len);
+
 	memcpy(frame->data, skb->data, skb->len);
 
 	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
 	addr_and_length = offsetof(struct frame_header_dma, length);
 	addr_and_length += ((void *)fifo->next - fifo->dma.virt);
-	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
+	addr_and_length += ((skb->len + sizeof(struct frame_header_dma)) / 8) << 24;
 	iowrite32(addr_and_length, fifo->reg);
 }
 
@@ -538,12 +543,11 @@ static void poll_link(struct ccat_eth_priv *const priv)
  */
 static void poll_rx(struct ccat_eth_priv *const priv)
 {
-	static const size_t overhead = CCAT_ETH_FRAME_HEAD_LEN - 4;
 	struct ccat_eth_dma_fifo *const fifo = &priv->rx_fifo;
 	/* TODO omit possible deadlock in situations with heavy traffic */
 	size_t len = priv->rx_ready(fifo->next);
 	while (len) {
-		ccat_eth_receive(priv->netdev, len - overhead);
+		ccat_eth_receive(priv->netdev, len);
 		fifo->add(fifo, fifo->next);
 		ccat_eth_fifo_inc(fifo);
 		len = priv->rx_ready(fifo->next);
