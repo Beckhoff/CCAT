@@ -89,7 +89,7 @@ struct frame_nodma {
 };
 
 #define MAX_PAYLOAD_SIZE \
-	(sizeof(struct ccat_eth_frame) - sizeof(struct frame_header_dma))
+	(sizeof(struct ccat_eth_frame) - max(sizeof(struct frame_header_dma), sizeof(struct frame_header_nodma)))
 
 /**
  * struct ccat_eth_register - CCAT register addresses in the PCI BAR
@@ -210,8 +210,9 @@ static inline bool ccat_eth_tx_ready_nodma(const struct ccat_eth_priv *const pri
 
 static inline size_t ccat_eth_rx_ready_dma(const void *const __frame)
 {
-	static const size_t overhead = sizeof(struct frame_header_dma) - 4;
+	static const size_t overhead = sizeof(struct frame_header_dma) - offsetof(struct frame_header_dma, rx_flags);
 	const struct frame_header_dma *const frame = __frame;
+
 	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
 		const size_t len = le16_to_cpu(frame->length);
 		return (len < overhead) ? 0 : len - overhead;
@@ -377,6 +378,45 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	priv->tx_fifo.copy_to_skb = NULL;
 	priv->tx_fifo.queue_skb = dmafifo_queue_skb;
 	priv->tx_fifo.end = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + FIFO_LENGTH - 1;
+	priv->tx_fifo.reg = priv->reg.tx_fifo;
+	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
+
+	/* disable MAC filter */
+	iowrite8(0, priv->reg.mii + 0x8 + 6);
+	wmb();
+	return 0;
+}
+
+static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
+{
+	priv->rx_ready = ccat_eth_rx_ready_nodma;
+	priv->tx_ready = ccat_eth_tx_ready_nodma;
+
+	priv->rx_fifo.dma.phys = 0; /* unused */
+	priv->rx_fifo.dma.channel = 0; /* unused */
+	priv->rx_fifo.dma.dev = NULL; /* unused &priv->func->ccat->pdev->dev; */
+
+	priv->rx_fifo.dma.virt = priv->reg.rx_mem;
+	priv->rx_fifo.dma.size = priv->func->info.rx_size;
+
+	priv->rx_fifo.add = ccat_eth_rx_fifo_nodma_add;
+	priv->rx_fifo.copy_to_skb = iofifo_copy_to_linear_skb;
+	priv->rx_fifo.queue_skb = NULL;
+	priv->rx_fifo.end = priv->rx_fifo.dma.virt;
+	priv->rx_fifo.reg = NULL;
+	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
+
+	priv->tx_fifo.dma.phys = 0; /* unused */
+	priv->tx_fifo.dma.channel = 0; /* unused */
+	priv->tx_fifo.dma.dev = NULL; /* unused &priv->func->ccat->pdev->dev; */
+
+	priv->tx_fifo.dma.virt = priv->reg.tx_mem;
+	priv->tx_fifo.dma.size = priv->func->info.tx_size;
+
+	priv->tx_fifo.add = ccat_eth_tx_fifo_nodma_add_free;
+	priv->tx_fifo.copy_to_skb = NULL;
+	priv->tx_fifo.queue_skb = iofifo_queue_skb;
+	priv->tx_fifo.end = priv->tx_fifo.dma.virt + priv->tx_fifo.dma.size - sizeof(*priv->tx_fifo.end);
 	priv->tx_fifo.reg = priv->reg.tx_fifo;
 	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
 
@@ -705,4 +745,33 @@ struct ccat_driver eth_driver = {
 	.type = CCATINFO_ETHERCAT_MASTER_DMA,
 	.probe = ccat_eth_probe_dma,
 	.remove = ccat_eth_remove_dma,
+};
+
+static int ccat_eth_probe_nodma(struct ccat_function *func)
+{
+	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
+
+	if (!priv)
+		return -ENOMEM;
+
+	if (ccat_eth_priv_init_nodma(priv)) {
+		pr_warn("%s(): memory initialization failed.\n", __FUNCTION__);
+		free_netdev(priv->netdev);
+		return -1;	// TODO return better error code
+	}
+	return ccat_eth_init_netdev(priv);
+}
+
+static void ccat_eth_remove_nodma(struct ccat_function *func)
+{
+	struct ccat_eth_priv *const eth = func->private_data;
+	unregister_netdev(eth->netdev);
+	ccat_eth_priv_free_nodma(eth);
+	free_netdev(eth->netdev);
+}
+
+struct ccat_driver eth_nodma_driver = {
+	.type = CCATINFO_ETHERCAT_NODMA,
+	.probe = ccat_eth_probe_nodma,
+	.remove = ccat_eth_remove_nodma,
 };

@@ -35,6 +35,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 extern struct ccat_driver eth_driver;
+extern struct ccat_driver eth_nodma_driver;
 extern struct ccat_driver gpio_driver;
 extern struct ccat_driver sram_driver;
 extern struct ccat_driver update_driver;
@@ -44,6 +45,7 @@ extern struct ccat_driver update_driver;
  */
 enum ccat_info_t {
 	CCATINFO_NOTUSED = 0,
+	CCATINFO_ETHERCAT_NODMA = 0x3,
 	CCATINFO_GPIO = 0xd,
 	CCATINFO_EPCS_PROM = 0xf,
 	CCATINFO_ETHERCAT_MASTER_DMA = 0x14,
@@ -117,6 +119,10 @@ struct ccat_info_block {
 	union {
 		u32 config;
 		u8 num_gpios;
+		struct {
+			u16 tx_size;
+			u16 rx_size;
+		};
 		struct {
 			u8 tx_dma_chan;
 			u8 rx_dma_chan;
