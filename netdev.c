@@ -64,8 +64,41 @@ struct ccat_eth_frame {
 #define CCAT_FRAME_SENT 0x1
 	__le64 timestamp;
 	u8 data[0x800 - 3 * sizeof(u64)];
-#define CCAT_ETH_FRAME_HEAD_LEN offsetof(struct ccat_eth_frame, data)
 };
+
+struct frame_header_dma {
+	__le32 reserved1;
+	__le32 rx_flags;
+#define CCAT_FRAME_RECEIVED 0x1
+	__le16 length;
+	__le16 reserved3;
+	__le32 tx_flags;
+#define CCAT_FRAME_SENT 0x1
+	__le64 timestamp;
+};
+
+struct frame_dma {
+	struct frame_header_dma hdr;
+	u8 data[0x800 - sizeof(struct frame_header_dma)];
+};
+
+struct frame_header_nodma {
+#define CCAT_FRAME_RECEIVED 0x1
+	__le16 length;
+	__le16 reserved3;
+	__le32 tx_flags;
+#define CCAT_FRAME_SENT 0x1
+	__le64 timestamp;
+};
+#define CCAT_ETH_FRAME_HEAD_LEN sizeof(struct frame_header_dma)
+
+struct frame_nodma {
+	struct frame_header_nodma hdr;
+	u8 data[0x800 - sizeof(struct frame_header_nodma)];
+};
+
+#define MAX_PAYLOAD_SIZE \
+	(sizeof(struct ccat_eth_frame) - CCAT_ETH_FRAME_HEAD_LEN)
 
 /**
  * struct ccat_eth_register - CCAT register addresses in the PCI BAR
@@ -94,7 +127,7 @@ struct ccat_eth_register {
  * @dma: information about the associated DMA memory
  */
 struct ccat_eth_dma_fifo {
-	void (*add) (struct ccat_eth_dma_fifo *, struct ccat_eth_frame *);
+	void (*add) (struct ccat_eth_dma_fifo *, void *);
 	void (*copy_to_skb)(struct ccat_eth_dma_fifo *, struct sk_buff *, size_t);
 	void (*queue_skb)(struct ccat_eth_dma_fifo *const, struct sk_buff *);
 	void __iomem *reg;
@@ -133,7 +166,7 @@ struct ccat_mac_infoblock {
  */
 struct ccat_eth_priv {
 	bool (*tx_ready)(const struct ccat_eth_priv *const);
-	size_t (*rx_ready)(const struct ccat_eth_frame *const);
+	size_t (*rx_ready)(const void *const);
 	struct ccat_function *func;
 	struct net_device *netdev;
 	struct ccat_eth_register reg;
@@ -172,24 +205,30 @@ struct ccat_mac_register {
 	u8 mii_connected;
 };
 
-/**
- * Helper to check if CCAT is ready to TX another frame
- */
 static inline bool ccat_eth_tx_ready_dma(const struct ccat_eth_priv *const priv)
 {
 	return le32_to_cpu(priv->tx_fifo.next->tx_flags) & CCAT_FRAME_SENT;
 }
 
-/**
- * Helper to check if CCAT is ready to RX another frame
- */
-static inline size_t ccat_eth_rx_ready_dma(const struct ccat_eth_frame *const
-					   frame)
+static inline bool ccat_eth_tx_ready_nodma(const struct ccat_eth_priv *const priv)
 {
+	static const u8 TX_FIFO_LEVEL_MASK = 0x3F;
+	return !(ioread8(priv->reg.mac + 0x20) & TX_FIFO_LEVEL_MASK);
+}
+
+static inline size_t ccat_eth_rx_ready_dma(const void *const __frame)
+{
+	const struct frame_header_dma *frame = __frame;
 	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
 		return le16_to_cpu(frame->length);
 	}
 	return 0;
+}
+
+static inline size_t ccat_eth_rx_ready_nodma(void *const __frame)
+{
+	void __iomem *const frame = __frame;
+	return le16_to_cpu(ioread16(frame));
 }
 
 static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
@@ -198,22 +237,28 @@ static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
 		fifo->next = fifo->dma.virt;
 }
 
-typedef void (*fifo_add_function) (struct ccat_eth_dma_fifo *,
-				   struct ccat_eth_frame *);
-
 static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_dma_fifo *const fifo,
-				 struct ccat_eth_frame *const frame)
+				 void *const frame)
 {
-	const size_t offset = ((void *)(frame) - fifo->dma.virt);
+	struct frame_header_dma *hdr = frame;
+	const size_t offset = frame - fifo->dma.virt;
 	const u32 addr_and_length = (1 << 31) | offset;
 
-	frame->rx_flags = cpu_to_le32(0);
+	hdr->rx_flags = cpu_to_le32(0);
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *const fifo,
-				      struct ccat_eth_frame *const frame)
+static void ccat_eth_rx_fifo_nodma_add(struct ccat_eth_dma_fifo *const fifo,
+				 void __iomem *const frame)
 {
+	iowrite16(0, frame);
+	wmb();
+}
+
+static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *const fifo,
+				      void *const __frame)
+{
+	struct frame_header_dma *frame = __frame;
 	/* mark frame as ready to use for tx */
 	frame->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
@@ -256,6 +301,8 @@ static void dmafifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, str
 static void dmafifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb)
 {
 	u32 addr_and_length;
+	fifo->next->tx_flags = cpu_to_le32(0);
+	fifo->next->length = cpu_to_le16(skb->len);
 	memcpy(fifo->next->data, skb->data, skb->len);
 
 	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
@@ -275,6 +322,13 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 	/* release dma */
 	ccat_dma_free(&priv->rx_fifo.dma);
 	ccat_dma_free(&priv->tx_fifo.dma);
+}
+
+static void ccat_eth_priv_free_nodma(struct ccat_eth_priv *priv)
+{
+	/* reset hw fifo's */
+	iowrite32(0, priv->tx_fifo.reg + 0x8);
+	wmb();
 }
 
 /**
@@ -351,9 +405,9 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	if (skb->len > sizeof(fifo->next->data)) {
+	if (skb->len > MAX_PAYLOAD_SIZE) {
 		pr_warn("skb.len %llu exceeds dma buffer %llu -> drop frame.\n",
-			(u64) skb->len, (u64) sizeof(fifo->next->data));
+			(u64) skb->len, (u64) MAX_PAYLOAD_SIZE);
 		atomic64_inc(&priv->tx_dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
@@ -366,8 +420,6 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	}
 
 	/* prepare frame in DMA memory */
-	fifo->next->tx_flags = cpu_to_le32(0);
-	fifo->next->length = cpu_to_le16(skb->len);
 	fifo->queue_skb(fifo, skb);
 
 	/* update stats */
