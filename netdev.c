@@ -132,7 +132,9 @@ struct ccat_mac_infoblock {
  * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
  */
 struct ccat_eth_priv {
-	const struct ccat_function *func;
+	bool (*tx_ready)(const struct ccat_eth_priv *const);
+	size_t (*rx_ready)(const struct ccat_eth_frame *const);
+	struct ccat_function *func;
 	struct net_device *netdev;
 	struct ccat_eth_register reg;
 	struct ccat_eth_dma_fifo rx_fifo;
@@ -173,7 +175,7 @@ struct ccat_mac_register {
 /**
  * Helper to check if CCAT is ready to TX another frame
  */
-static inline bool ccat_eth_tx_ready(const struct ccat_eth_priv *const priv)
+static inline bool ccat_eth_tx_ready_dma(const struct ccat_eth_priv *const priv)
 {
 	return le32_to_cpu(priv->tx_fifo.next->tx_flags) & CCAT_FRAME_SENT;
 }
@@ -181,7 +183,7 @@ static inline bool ccat_eth_tx_ready(const struct ccat_eth_priv *const priv)
 /**
  * Helper to check if CCAT is ready to RX another frame
  */
-static inline size_t ccat_eth_frame_received(const struct ccat_eth_frame *const
+static inline size_t ccat_eth_rx_ready_dma(const struct ccat_eth_frame *const
 					   frame)
 {
 	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
@@ -199,7 +201,7 @@ static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
 typedef void (*fifo_add_function) (struct ccat_eth_dma_fifo *,
 				   struct ccat_eth_frame *);
 
-static void ccat_eth_rx_fifo_add(struct ccat_eth_dma_fifo *const fifo,
+static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_dma_fifo *const fifo,
 				 struct ccat_eth_frame *const frame)
 {
 	const size_t offset = ((void *)(frame) - fifo->dma.virt);
@@ -263,9 +265,6 @@ static void dmafifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_bu
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-/**
- * Stop both (Rx/Tx) DMA fifo's and free related management structures
- */
 static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 {
 	/* reset hw fifo's */
@@ -283,6 +282,9 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
  */
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
+	priv->rx_ready = ccat_eth_rx_ready_dma;
+	priv->tx_ready = ccat_eth_tx_ready_dma;
+
 	if (0 != ccat_dma_init(&priv->rx_fifo.dma, priv->func->info.rx_dma_chan, priv->func->ccat->bar_2,
 			       &priv->func->ccat->pdev->dev)) {
 		pr_info("init RX DMA memory failed.\n");
@@ -296,7 +298,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		return -1;
 	}
 
-	priv->rx_fifo.add = ccat_eth_rx_fifo_add;
+	priv->rx_fifo.add = ccat_eth_rx_fifo_dma_add;
 	priv->rx_fifo.copy_to_skb = dmafifo_copy_to_linear_skb;
 	priv->rx_fifo.queue_skb = NULL;
 	priv->rx_fifo.end = ((struct ccat_eth_frame *)priv->rx_fifo.dma.virt) + FIFO_LENGTH - 1;
@@ -357,7 +359,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	if (!ccat_eth_tx_ready(priv)) {
+	if (!priv->tx_ready(priv)) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
 		netif_stop_queue(priv->netdev);
 		return NETDEV_TX_BUSY;
@@ -375,7 +377,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	ccat_eth_fifo_inc(fifo);
 	/* stop queue if tx ring is full */
-	if (!ccat_eth_tx_ready(priv)) {
+	if (!priv->tx_ready(priv)) {
 		netif_stop_queue(priv->netdev);
 	}
 	return NETDEV_TX_OK;
@@ -478,12 +480,12 @@ static void poll_rx(struct ccat_eth_priv *const priv)
 	static const size_t overhead = CCAT_ETH_FRAME_HEAD_LEN - 4;
 	struct ccat_eth_dma_fifo *const fifo = &priv->rx_fifo;
 	/* TODO omit possible deadlock in situations with heavy traffic */
-	size_t len = ccat_eth_frame_received(fifo->next);
+	size_t len = priv->rx_ready(fifo->next);
 	while (len) {
 		ccat_eth_receive(priv->netdev, len - overhead);
-		ccat_eth_rx_fifo_add(fifo, fifo->next);
+		fifo->add(fifo, fifo->next);
 		ccat_eth_fifo_inc(fifo);
-		len = ccat_eth_frame_received(fifo->next);
+		len = priv->rx_ready(fifo->next);
 	}
 }
 
@@ -492,7 +494,7 @@ static void poll_rx(struct ccat_eth_priv *const priv)
  */
 static void poll_tx(struct ccat_eth_priv *const priv)
 {
-	if (ccat_eth_tx_ready(priv)) {
+	if (priv->tx_ready(priv)) {
 		netif_wake_queue(priv->netdev);
 	}
 }
@@ -578,44 +580,55 @@ static const struct net_device_ops ccat_eth_netdev_ops = {
 	.ndo_stop = ccat_eth_stop,
 };
 
-static int ccat_eth_probe(struct ccat_function *func)
+static struct ccat_eth_priv* ccat_eth_alloc_netdev(struct ccat_function *func)
 {
-	struct ccat_eth_priv *priv;
+	struct ccat_eth_priv *priv = NULL;
 	struct net_device *const netdev = alloc_etherdev(sizeof(*priv));
 
-	if (!netdev)
-		return -ENOMEM;
-
-	priv = netdev_priv(netdev);
-	priv->netdev = netdev;
-	priv->func = func;
-
-	/* ccat register mappings */
-	ccat_eth_priv_init_reg(&priv->reg, func);
-
-	if (ccat_eth_priv_init_dma(priv)) {
-		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
-		free_netdev(netdev);
-		return -1;	// TODO return better error code
+	if (netdev) {
+		priv = netdev_priv(netdev);
+		priv->netdev = netdev;
+		priv->func = func;
+		/* ccat register mappings */
+		ccat_eth_priv_init_reg(&priv->reg, func);
 	}
+	return priv;
+}
 
+static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
+{
 	/* init netdev with MAC and stack callbacks */
-	memcpy_fromio(netdev->dev_addr, priv->reg.mii + 8, netdev->addr_len);
-	netdev->netdev_ops = &ccat_eth_netdev_ops;
-	netif_carrier_off(netdev);
+	memcpy_fromio(priv->netdev->dev_addr, priv->reg.mii + 8, priv->netdev->addr_len);
+	priv->netdev->netdev_ops = &ccat_eth_netdev_ops;
+	netif_carrier_off(priv->netdev);
 
-	if (register_netdev(netdev)) {
+	if (register_netdev(priv->netdev)) {
 		pr_info("unable to register network device.\n");
 		ccat_eth_priv_free_dma(priv);
-		free_netdev(netdev);
+		free_netdev(priv->netdev);
 		return -1;	// TODO return better error code
 	}
-	pr_info("registered %s as network device.\n", netdev->name);
-	func->private_data = priv;
+	pr_info("registered %s as network device.\n", priv->netdev->name);
+	priv->func->private_data = priv;
 	return 0;
 }
 
-static void ccat_eth_remove(struct ccat_function *func)
+static int ccat_eth_probe_dma(struct ccat_function *func)
+{
+	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
+
+	if (!priv)
+		return -ENOMEM;
+
+	if (ccat_eth_priv_init_dma(priv)) {
+		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
+		free_netdev(priv->netdev);
+		return -1;	// TODO return better error code
+	}
+	return ccat_eth_init_netdev(priv);
+}
+
+static void ccat_eth_remove_dma(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
@@ -625,6 +638,6 @@ static void ccat_eth_remove(struct ccat_function *func)
 
 struct ccat_driver eth_driver = {
 	.type = CCATINFO_ETHERCAT_MASTER_DMA,
-	.probe = ccat_eth_probe,
-	.remove = ccat_eth_remove,
+	.probe = ccat_eth_probe_dma,
+	.remove = ccat_eth_remove_dma,
 };
