@@ -256,12 +256,20 @@ static void ccat_eth_rx_fifo_nodma_add(struct ccat_eth_dma_fifo *const fifo,
 	wmb();
 }
 
-static void ccat_eth_tx_fifo_add_free(struct ccat_eth_dma_fifo *const fifo,
-				      void *const __frame)
+static void ccat_eth_tx_fifo_dma_add_free(struct ccat_eth_dma_fifo *const fifo,
+				      void *const frame)
 {
-	struct frame_header_dma *frame = __frame;
+	struct frame_header_dma *hdr = frame;
 	/* mark frame as ready to use for tx */
-	frame->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
+	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
+}
+
+static void ccat_eth_tx_fifo_nodma_add_free(struct ccat_eth_dma_fifo *const fifo,
+				      void *const frame)
+{
+	struct frame_header_nodma *hdr = frame;
+	/* mark frame as ready to use for tx */
+	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
 static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
@@ -365,7 +373,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	priv->rx_fifo.reg = priv->reg.rx_fifo;
 	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
 
-	priv->tx_fifo.add = ccat_eth_tx_fifo_add_free;
+	priv->tx_fifo.add = ccat_eth_tx_fifo_dma_add_free;
 	priv->tx_fifo.copy_to_skb = NULL;
 	priv->tx_fifo.queue_skb = dmafifo_queue_skb;
 	priv->tx_fifo.end = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + FIFO_LENGTH - 1;
