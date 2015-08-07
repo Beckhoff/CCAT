@@ -1,6 +1,6 @@
 /**
     Network Driver for Beckhoff CCAT communication controller
-    Copyright (C) 2014  Beckhoff Automation GmbH
+    Copyright (C) 2014-2015  Beckhoff Automation GmbH
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 
     This program is free software; you can redistribute it and/or modify
@@ -33,7 +33,11 @@ MODULE_VERSION(DRV_VERSION);
  * configure the drivers capabilities here
  */
 static const struct ccat_driver *const drivers[] = {
+#ifdef BUILD_CX9020
+	&eth_nodma_driver,	/* load Ethernet MAC/EtherCAT Master without DMA driver from */
+#else
 	&eth_driver,		/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
+#endif /* #ifdef BUILD_CX9020 */
 	&gpio_driver,		/* load GPIO driver from gpio.c */
 	&sram_driver,		/* load SRAM driver from sram.c */
 	&update_driver,		/* load Update driver from update.c */
@@ -166,6 +170,7 @@ static void ccat_class_exit(struct ccat_class *base)
 	unregister_chrdev_region(base->dev, base->count);
 }
 
+#ifndef BUILD_CX9020
 void ccat_dma_free(struct ccat_dma *const dma)
 {
 	const struct ccat_dma tmp = *dma;
@@ -226,6 +231,7 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	     memTranslate, (u64) dma->size);
 	return 0;
 }
+#endif /* #ifndef BUILD_CX9020 */
 
 static const struct ccat_driver *ccat_function_connect(struct ccat_function
 						       *const func)
