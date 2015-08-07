@@ -156,6 +156,7 @@ struct ccat_mac_infoblock {
  * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
  */
 struct ccat_eth_priv {
+	void (*free)(struct ccat_eth_priv *priv);
 	bool (*tx_ready)(const struct ccat_eth_priv *);
 	size_t (*rx_ready)(void *);
 	struct ccat_function *func;
@@ -355,6 +356,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	struct pci_dev *pdev = priv->func->ccat->pdev;
 	priv->rx_ready = ccat_eth_rx_ready_dma;
 	priv->tx_ready = ccat_eth_tx_ready_dma;
+	priv->free = ccat_eth_priv_free_dma;
 
 	if (0 != ccat_dma_init(&priv->rx_fifo.dma, priv->func->info.rx_dma_chan, priv->func->ccat->bar_2,
 			       &pdev->dev)) {
@@ -394,6 +396,7 @@ static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 {
 	priv->rx_ready = ccat_eth_rx_ready_nodma;
 	priv->tx_ready = ccat_eth_tx_ready_nodma;
+	priv->free = ccat_eth_priv_free_nodma;
 
 	priv->rx_fifo.dma.phys = 0; /* unused */
 	priv->rx_fifo.dma.channel = 0; /* unused */
@@ -712,7 +715,7 @@ static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 
 	if (register_netdev(priv->netdev)) {
 		pr_info("unable to register network device.\n");
-		ccat_eth_priv_free_dma(priv);
+		priv->free(priv);
 		free_netdev(priv->netdev);
 		return -1;	// TODO return better error code
 	}
@@ -741,7 +744,7 @@ static void ccat_eth_remove_dma(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
-	ccat_eth_priv_free_dma(eth);
+	eth->free(eth);
 	free_netdev(eth->netdev);
 }
 
@@ -771,7 +774,7 @@ static void ccat_eth_remove_nodma(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
-	ccat_eth_priv_free_nodma(eth);
+	eth->free(eth);
 	free_netdev(eth->netdev);
 }
 
