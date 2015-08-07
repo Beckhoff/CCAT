@@ -55,15 +55,7 @@ static const u8 frameForwardEthernetFrames[] = {
  * @data: the bytes of the ethernet frame
  */
 struct ccat_eth_frame {
-	__le32 reserved1;
-	__le32 rx_flags;
-#define CCAT_FRAME_RECEIVED 0x1
-	__le16 length;
-	__le16 reserved3;
-	__le32 tx_flags;
-#define CCAT_FRAME_SENT 0x1
-	__le64 timestamp;
-	u8 data[0x800 - 3 * sizeof(u64)];
+	u8 placeholder[0x800];
 };
 
 struct frame_header_dma {
@@ -309,18 +301,21 @@ static void iofifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buf
 
 static void dmafifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
-	skb_copy_to_linear_data(skb, fifo->next->data, len);
+	struct frame_dma *frame = (struct frame_dma *)fifo->next;
+
+	skb_copy_to_linear_data(skb, frame->data, len);
 }
 
 static void dmafifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb)
 {
+	struct frame_dma *frame = (struct frame_dma *)fifo->next;
 	u32 addr_and_length;
-	fifo->next->tx_flags = cpu_to_le32(0);
-	fifo->next->length = cpu_to_le16(skb->len);
-	memcpy(fifo->next->data, skb->data, skb->len);
+	frame->hdr.tx_flags = cpu_to_le32(0);
+	frame->hdr.length = cpu_to_le16(skb->len);
+	memcpy(frame->data, skb->data, skb->len);
 
 	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
-	addr_and_length = offsetof(struct ccat_eth_frame, length);
+	addr_and_length = offsetof(struct frame_header_dma, length);
 	addr_and_length += ((void *)fifo->next - fifo->dma.virt);
 	addr_and_length += ((skb->len + CCAT_ETH_FRAME_HEAD_LEN) / 8) << 24;
 	iowrite32(addr_and_length, fifo->reg);
