@@ -107,7 +107,7 @@ extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
  * a CCAT is implemented as FPGA the available functions can vary.
  */
 struct ccat_device {
-	struct pci_dev *pdev;
+	void *pdev;
 	void __iomem *bar_0;
 	void __iomem *bar_2;
 	struct list_head functions;

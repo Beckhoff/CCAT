@@ -156,8 +156,8 @@ struct ccat_mac_infoblock {
  * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
  */
 struct ccat_eth_priv {
-	bool (*tx_ready)(const struct ccat_eth_priv *const);
-	size_t (*rx_ready)(const void *const);
+	bool (*tx_ready)(const struct ccat_eth_priv *);
+	size_t (*rx_ready)(void *);
 	struct ccat_function *func;
 	struct net_device *netdev;
 	struct ccat_eth_register reg;
@@ -196,28 +196,10 @@ struct ccat_mac_register {
 	u8 mii_connected;
 };
 
-static inline bool ccat_eth_tx_ready_dma(const struct ccat_eth_priv *const priv)
-{
-	const struct frame_header_dma *hdr = (struct frame_header_dma *)priv->tx_fifo.next;
-	return le32_to_cpu(hdr->tx_flags) & CCAT_FRAME_SENT;
-}
-
 static inline bool ccat_eth_tx_ready_nodma(const struct ccat_eth_priv *const priv)
 {
 	static const u8 TX_FIFO_LEVEL_MASK = 0x3F;
 	return !(ioread8(priv->reg.mac + 0x20) & TX_FIFO_LEVEL_MASK);
-}
-
-static inline size_t ccat_eth_rx_ready_dma(const void *const __frame)
-{
-	static const size_t overhead = sizeof(struct frame_header_dma) - offsetof(struct frame_header_dma, rx_flags);
-	const struct frame_header_dma *const frame = __frame;
-
-	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
-		const size_t len = le16_to_cpu(frame->length);
-		return (len < overhead) ? 0 : len - overhead;
-	}
-	return 0;
 }
 
 static inline size_t ccat_eth_rx_ready_nodma(void *const frame)
@@ -234,30 +216,11 @@ static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
 		fifo->next = fifo->dma.virt;
 }
 
-static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_dma_fifo *const fifo,
-				 void *const frame)
-{
-	struct frame_header_dma *hdr = frame;
-	const size_t offset = frame - fifo->dma.virt;
-	const u32 addr_and_length = (1 << 31) | offset;
-
-	hdr->rx_flags = cpu_to_le32(0);
-	iowrite32(addr_and_length, fifo->reg);
-}
-
 static void ccat_eth_rx_fifo_nodma_add(struct ccat_eth_dma_fifo *const fifo,
 				 void __iomem *const frame)
 {
 	iowrite16(0, frame);
 	wmb();
-}
-
-static void ccat_eth_tx_fifo_dma_add_free(struct ccat_eth_dma_fifo *const fifo,
-				      void *const frame)
-{
-	struct frame_header_dma *hdr = frame;
-	/* mark frame as ready to use for tx */
-	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
 static void ccat_eth_tx_fifo_nodma_add_free(struct ccat_eth_dma_fifo *const fifo,
@@ -266,23 +229,6 @@ static void ccat_eth_tx_fifo_nodma_add_free(struct ccat_eth_dma_fifo *const fifo
 	struct frame_header_nodma *hdr = frame;
 	/* mark frame as ready to use for tx */
 	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
-}
-
-static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
-{
-	/* reset hw fifo */
-	if (fifo->reg) {
-		iowrite32(0, fifo->reg + 0x8);
-		wmb();
-	}
-
-	if (fifo->add) {
-		fifo->next = fifo->dma.virt;
-		do {
-			fifo->add(fifo, fifo->next);
-			ccat_eth_fifo_inc(fifo);
-		} while (fifo->next != fifo->dma.virt);
-	}
 }
 
 static void iofifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb, const size_t len)
@@ -301,6 +247,68 @@ static void iofifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buf
 
 	memcpy_toio(frame->data, skb->data, skb->len);
 	iowrite32(addr_and_length, fifo->reg);
+}
+
+static void ccat_eth_priv_free_nodma(struct ccat_eth_priv *priv)
+{
+	/* reset hw fifo's */
+	iowrite32(0, priv->tx_fifo.reg + 0x8);
+	wmb();
+}
+
+//TODO rename to fifo_reset
+static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
+{
+	/* reset hw fifo */
+	if (fifo->reg) {
+		iowrite32(0, fifo->reg + 0x8);
+		wmb();
+	}
+
+	if (fifo->add) {
+		fifo->next = fifo->dma.virt;
+		do {
+			fifo->add(fifo, fifo->next);
+			ccat_eth_fifo_inc(fifo);
+		} while (fifo->next != fifo->dma.virt);
+	}
+}
+#ifndef BUILD_CX9020
+static inline bool ccat_eth_tx_ready_dma(const struct ccat_eth_priv *const priv)
+{
+	const struct frame_header_dma *hdr = (struct frame_header_dma *)priv->tx_fifo.next;
+	return le32_to_cpu(hdr->tx_flags) & CCAT_FRAME_SENT;
+}
+
+static inline size_t ccat_eth_rx_ready_dma(void *const __frame)
+{
+	static const size_t overhead = sizeof(struct frame_header_dma) - offsetof(struct frame_header_dma, rx_flags);
+	const struct frame_header_dma *const frame = __frame;
+
+	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
+		const size_t len = le16_to_cpu(frame->length);
+		return (len < overhead) ? 0 : len - overhead;
+	}
+	return 0;
+}
+
+static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_dma_fifo *const fifo,
+				 void *const frame)
+{
+	struct frame_header_dma *hdr = frame;
+	const size_t offset = frame - fifo->dma.virt;
+	const u32 addr_and_length = (1 << 31) | offset;
+
+	hdr->rx_flags = cpu_to_le32(0);
+	iowrite32(addr_and_length, fifo->reg);
+}
+
+static void ccat_eth_tx_fifo_dma_add_free(struct ccat_eth_dma_fifo *const fifo,
+				      void *const frame)
+{
+	struct frame_header_dma *hdr = frame;
+	/* mark frame as ready to use for tx */
+	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
 static void dmafifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb, const size_t len)
@@ -339,29 +347,23 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 	ccat_dma_free(&priv->tx_fifo.dma);
 }
 
-static void ccat_eth_priv_free_nodma(struct ccat_eth_priv *priv)
-{
-	/* reset hw fifo's */
-	iowrite32(0, priv->tx_fifo.reg + 0x8);
-	wmb();
-}
-
 /**
  * Initalizes both (Rx/Tx) DMA fifo's and related management structures
  */
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
+	struct pci_dev *pdev = priv->func->ccat->pdev;
 	priv->rx_ready = ccat_eth_rx_ready_dma;
 	priv->tx_ready = ccat_eth_tx_ready_dma;
 
 	if (0 != ccat_dma_init(&priv->rx_fifo.dma, priv->func->info.rx_dma_chan, priv->func->ccat->bar_2,
-			       &priv->func->ccat->pdev->dev)) {
+			       &pdev->dev)) {
 		pr_info("init RX DMA memory failed.\n");
 		return -1;
 	}
 
 	if (0 != ccat_dma_init(&priv->tx_fifo.dma, priv->func->info.tx_dma_chan, priv->func->ccat->bar_2,
-			       &priv->func->ccat->pdev->dev)) {
+			       &pdev->dev)) {
 		pr_info("init TX DMA memory failed.\n");
 		ccat_dma_free(&priv->rx_fifo.dma);
 		return -1;
@@ -386,6 +388,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	wmb();
 	return 0;
 }
+#endif /* #ifndef BUILD_CX9020 */
 
 static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 {
@@ -718,6 +721,7 @@ static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 	return 0;
 }
 
+#ifndef BUILD_CX9020
 static int ccat_eth_probe_dma(struct ccat_function *func)
 {
 	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
@@ -746,6 +750,7 @@ struct ccat_driver eth_driver = {
 	.probe = ccat_eth_probe_dma,
 	.remove = ccat_eth_remove_dma,
 };
+#endif /* #ifndef BUILD_CX9020 */
 
 static int ccat_eth_probe_nodma(struct ccat_function *func)
 {
