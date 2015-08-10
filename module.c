@@ -22,6 +22,7 @@
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/platform_device.h>
 #include "module.h"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -177,7 +178,66 @@ void ccat_cdev_remove(struct ccat_function *func)
 	free_ccat_cdev(ccdev);
 }
 
-#ifndef BUILD_CX9020
+static const struct ccat_driver *ccat_function_connect(struct ccat_function
+						       *const func)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(drivers); ++i) {
+		if (func->info.type == drivers[i]->type) {
+			return drivers[i]->probe(func) ? NULL : drivers[i];
+		}
+	}
+	return NULL;
+}
+
+/**
+ * Initialize all available CCAT functions.
+ *
+ * Return: count of failed functions
+ */
+static int ccat_functions_init(struct ccat_device *const ccatdev)
+{
+	static const size_t block_size = sizeof(struct ccat_info_block);
+	struct ccat_function *next = kzalloc(sizeof(*next), GFP_KERNEL);
+	void __iomem *addr = ccatdev->bar_0; /** first block is the CCAT information block entry */
+	const u8 num_func = ioread8(addr + 4); /** number of CCAT function blocks is at offset 0x4 */
+	const void __iomem *end = addr + (block_size * num_func);
+
+	INIT_LIST_HEAD(&ccatdev->functions);
+	for (; addr < end && next; addr += block_size) {
+		memcpy_fromio(&next->info, addr, sizeof(next->info));
+		if (CCATINFO_NOTUSED != next->info.type) {
+			next->ccat = ccatdev;
+			next->drv = ccat_function_connect(next);
+			if (next->drv) {
+				list_add(&next->list, &ccatdev->functions);
+				next = kzalloc(sizeof(*next), GFP_KERNEL);
+			}
+		}
+	}
+	kfree(next);
+	return list_empty(&ccatdev->functions);
+}
+
+/**
+ * Destroy all previously initialized CCAT functions
+ */
+static void ccat_functions_remove(struct ccat_device *const dev)
+{
+	struct ccat_function *func;
+	struct ccat_function *tmp;
+	list_for_each_entry_safe(func, tmp, &dev->functions, list) {
+		if (func->drv) {
+			func->drv->remove(func);
+			func->drv = NULL;
+		}
+		list_del(&func->list);
+		kfree(func);
+	}
+}
+
+#ifdef CONFIG_PCI
 void ccat_dma_free(struct ccat_dma *const dma)
 {
 	const struct ccat_dma tmp = *dma;
@@ -238,68 +298,8 @@ int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	     memTranslate, (u64) dma->size);
 	return 0;
 }
-#endif /* #ifndef BUILD_CX9020 */
 
-static const struct ccat_driver *ccat_function_connect(struct ccat_function
-						       *const func)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(drivers); ++i) {
-		if (func->info.type == drivers[i]->type) {
-			return drivers[i]->probe(func) ? NULL : drivers[i];
-		}
-	}
-	return NULL;
-}
-
-/**
- * Initialize all available CCAT functions.
- *
- * Return: count of failed functions
- */
-static int ccat_functions_init(struct ccat_device *const ccatdev)
-{
-	static const size_t block_size = sizeof(struct ccat_info_block);
-	struct ccat_function *next = kzalloc(sizeof(*next), GFP_KERNEL);
-	void __iomem *addr = ccatdev->bar_0; /** first block is the CCAT information block entry */
-	const u8 num_func = ioread8(addr + 4); /** number of CCAT function blocks is at offset 0x4 */
-	const void __iomem *end = addr + (block_size * num_func);
-
-	INIT_LIST_HEAD(&ccatdev->functions);
-	for (; addr < end && next; addr += block_size) {
-		memcpy_fromio(&next->info, addr, sizeof(next->info));
-		if (CCATINFO_NOTUSED != next->info.type) {
-			next->ccat = ccatdev;
-			next->drv = ccat_function_connect(next);
-			if (next->drv) {
-				list_add(&next->list, &ccatdev->functions);
-				next = kzalloc(sizeof(*next), GFP_KERNEL);
-			}
-		}
-	}
-	kfree(next);
-	return list_empty(&ccatdev->functions);
-}
-
-/**
- * Destroy all previously initialized CCAT functions
- */
-static void ccat_functions_remove(struct ccat_device *const dev)
-{
-	struct ccat_function *func;
-	struct ccat_function *tmp;
-	list_for_each_entry_safe(func, tmp, &dev->functions, list) {
-		if (func->drv) {
-			func->drv->remove(func);
-			func->drv = NULL;
-		}
-		list_del(&func->list);
-		kfree(func);
-	}
-}
-
-static int ccat_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+static int ccat_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct ccat_device *ccatdev;
 	u8 revision;
@@ -358,7 +358,7 @@ cleanup_pci_device:
 	return status;
 }
 
-static void ccat_remove(struct pci_dev *pdev)
+static void ccat_pci_remove(struct pci_dev *pdev)
 {
 	struct ccat_device *ccatdev = pci_get_drvdata(pdev);
 
@@ -385,13 +385,14 @@ MODULE_DEVICE_TABLE(pci, pci_ids);
 static struct pci_driver ccat_pci_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = pci_ids,
-	.probe = ccat_probe,
-	.remove = ccat_remove,
+	.probe = ccat_pci_probe,
+	.remove = ccat_pci_remove,
 };
 module_pci_driver(ccat_pci_driver);
+#endif /* #ifdef CONFIG_PCI */
 
 #ifdef BUILD_CX9020
-static int ccat_platform_probe(struct platform_device *pdev)
+static int ccat_eim_probe(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev;
 
@@ -421,7 +422,7 @@ static int ccat_platform_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static void ccat_platform_remove(struct platform_device *pdev)
+static int ccat_eim_remove(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev = platform_get_drvdata(pdev);
 
@@ -430,7 +431,7 @@ static void ccat_platform_remove(struct platform_device *pdev)
 		iounmap(ccatdev->bar_0);
 		release_mem_region(0xf0000000, 0x02000000);
 	}
-	pr_info("%s()...\n", __FUNCTION__);
+	return 0;
 }
 
 static const struct of_device_id bhf_eim_ccat_ids[] = {
@@ -444,8 +445,8 @@ static struct platform_driver ccat_eim_driver = {
 		.name = "cx9020-ccat",
 		.of_match_table = bhf_eim_ccat_ids,
 	},
-	.probe = ccat_platform_probe,
-	.remove = ccat_platform_remove,
+	.probe = ccat_eim_probe,
+	.remove = ccat_eim_remove,
 };
 module_platform_driver(ccat_eim_driver);
 #endif /* #ifdef BUILD_CX9020 */

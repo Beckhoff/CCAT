@@ -71,6 +71,7 @@ static ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
 
 static struct ccat_cdev dev_table[CCAT_SRAM_DEVICES_MAX];
 static struct ccat_class cdev_class = {
+	.instances = {0},
 	.count = CCAT_SRAM_DEVICES_MAX,
 	.devices = dev_table,
 	.name = "ccat_sram",
