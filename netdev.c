@@ -273,7 +273,8 @@ static void ccat_eth_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
 		} while (fifo->next != fifo->dma.virt);
 	}
 }
-#ifndef BUILD_CX9020
+
+#ifdef CONFIG_PCI
 static inline bool ccat_eth_tx_ready_dma(const struct ccat_eth_priv *const priv)
 {
 	const struct frame_header_dma *hdr = (struct frame_header_dma *)priv->tx_fifo.next;
@@ -389,7 +390,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	wmb();
 	return 0;
 }
-#endif /* #ifndef BUILD_CX9020 */
+#endif /* #ifdef CONFIG_PCI */
 
 static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 {
@@ -723,8 +724,8 @@ static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 	return 0;
 }
 
-#ifndef BUILD_CX9020
-static int ccat_eth_probe_dma(struct ccat_function *func)
+#ifdef CONFIG_PCI
+static int ccat_eth_dma_probe(struct ccat_function *func)
 {
 	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
 
@@ -739,7 +740,7 @@ static int ccat_eth_probe_dma(struct ccat_function *func)
 	return ccat_eth_init_netdev(priv);
 }
 
-static void ccat_eth_remove_dma(struct ccat_function *func)
+static void ccat_eth_dma_remove(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
@@ -749,12 +750,12 @@ static void ccat_eth_remove_dma(struct ccat_function *func)
 
 struct ccat_driver eth_dma_driver = {
 	.type = CCATINFO_ETHERCAT_MASTER_DMA,
-	.probe = ccat_eth_probe_dma,
-	.remove = ccat_eth_remove_dma,
+	.probe = ccat_eth_dma_probe,
+	.remove = ccat_eth_dma_remove,
 };
-#endif /* #ifndef BUILD_CX9020 */
+#endif /* #ifdef CONFIG_PCI */
 
-static int ccat_eth_probe_nodma(struct ccat_function *func)
+static int ccat_eth_iomem_probe(struct ccat_function *func)
 {
 	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
 
@@ -769,7 +770,7 @@ static int ccat_eth_probe_nodma(struct ccat_function *func)
 	return ccat_eth_init_netdev(priv);
 }
 
-static void ccat_eth_remove_nodma(struct ccat_function *func)
+static void ccat_eth_iomem_remove(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
@@ -779,6 +780,6 @@ static void ccat_eth_remove_nodma(struct ccat_function *func)
 
 struct ccat_driver eth_iomem_driver = {
 	.type = CCATINFO_ETHERCAT_NODMA,
-	.probe = ccat_eth_probe_nodma,
-	.remove = ccat_eth_remove_nodma,
+	.probe = ccat_eth_iomem_probe,
+	.remove = ccat_eth_iomem_remove,
 };
