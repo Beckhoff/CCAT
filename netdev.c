@@ -257,8 +257,7 @@ static void ccat_eth_priv_free_nodma(struct ccat_eth_priv *priv)
 	wmb();
 }
 
-//TODO rename to fifo_reset
-static void ccat_eth_dma_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
+static void ccat_eth_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
 {
 	/* reset hw fifo */
 	if (fifo->reg) {
@@ -376,14 +375,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	priv->rx_fifo.queue_skb = NULL;
 	priv->rx_fifo.end = ((struct ccat_eth_frame *)priv->rx_fifo.dma.virt) + FIFO_LENGTH - 1;
 	priv->rx_fifo.reg = priv->reg.rx_fifo;
-	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
+	ccat_eth_fifo_reset(&priv->rx_fifo);
 
 	priv->tx_fifo.add = ccat_eth_tx_fifo_dma_add_free;
 	priv->tx_fifo.copy_to_skb = NULL;
 	priv->tx_fifo.queue_skb = dmafifo_queue_skb;
 	priv->tx_fifo.end = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + FIFO_LENGTH - 1;
 	priv->tx_fifo.reg = priv->reg.tx_fifo;
-	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
+	ccat_eth_fifo_reset(&priv->tx_fifo);
 
 	/* disable MAC filter */
 	iowrite8(0, priv->reg.mii + 0x8 + 6);
@@ -410,7 +409,7 @@ static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 	priv->rx_fifo.queue_skb = NULL;
 	priv->rx_fifo.end = priv->rx_fifo.dma.virt;
 	priv->rx_fifo.reg = NULL;
-	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
+	ccat_eth_fifo_reset(&priv->rx_fifo);
 
 	priv->tx_fifo.dma.phys = 0; /* unused */
 	priv->tx_fifo.dma.channel = 0; /* unused */
@@ -424,7 +423,7 @@ static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 	priv->tx_fifo.queue_skb = iofifo_queue_skb;
 	priv->tx_fifo.end = priv->tx_fifo.dma.virt + priv->tx_fifo.dma.size - sizeof(*priv->tx_fifo.end);
 	priv->tx_fifo.reg = priv->reg.tx_fifo;
-	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
+	ccat_eth_fifo_reset(&priv->tx_fifo);
 
 	/* disable MAC filter */
 	iowrite8(0, priv->reg.mii + 0x8 + 6);
@@ -548,8 +547,8 @@ static void ccat_eth_link_up(struct net_device *const dev)
 	   speed == SPEED_100 ? 100 : 10,
 	   cmd.duplex == DUPLEX_FULL ? "Full" : "Half"); */
 
-	ccat_eth_dma_fifo_reset(&priv->rx_fifo);
-	ccat_eth_dma_fifo_reset(&priv->tx_fifo);
+	ccat_eth_fifo_reset(&priv->rx_fifo);
+	ccat_eth_fifo_reset(&priv->tx_fifo);
 
 	/* TODO reset CCAT MAC register */
 
