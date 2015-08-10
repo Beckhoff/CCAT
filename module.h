@@ -58,7 +58,7 @@ struct ccat_cdev {
 	size_t iosize;
 	dev_t dev;
 	struct cdev cdev;
-	struct class *class;
+	struct ccat_class *class;
 };
 
 /**
@@ -148,6 +148,7 @@ struct ccat_function {
 struct ccat_class {
 	dev_t dev;
 	struct class *class;
+	atomic_t instances;
 	const unsigned count;
 	struct ccat_cdev *devices;
 	const char *name;

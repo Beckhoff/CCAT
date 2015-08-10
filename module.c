@@ -43,8 +43,35 @@ static const struct ccat_driver *const drivers[] = {
 	&update_driver,		/* load Update driver from update.c */
 };
 
+static int __init ccat_class_init(struct ccat_class *base)
+{
+	if (1 == atomic_inc_return(&base->instances)) {
+		if (alloc_chrdev_region(&base->dev, 0, base->count, KBUILD_MODNAME)) {
+			pr_warn("alloc_chrdev_region() for '%s' failed\n", base->name);
+			return -1;
+		}
+
+		base->class = class_create(THIS_MODULE, base->name);
+		if (!base->class) {
+			pr_warn("Create device class '%s' failed\n", base->name);
+			unregister_chrdev_region(base->dev, base->count);
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static void ccat_class_exit(struct ccat_class *base)
+{
+	if ( !atomic_dec_return(&base->instances) ) {
+		class_destroy(base->class);
+		unregister_chrdev_region(base->dev, base->count);
+	}
+}
+
 static void free_ccat_cdev(struct ccat_cdev *ccdev)
 {
+	ccat_class_exit(ccdev->class);
 	ccdev->dev = 0;
 }
 
@@ -52,6 +79,7 @@ static struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
 {
 	int i = 0;
 
+	ccat_class_init(base);
 	for (i = 0; i < base->count; ++i) {
 		if (base->devices[i].dev == 0) {
 			base->devices[i].dev = MKDEV(MAJOR(base->dev), i);
@@ -60,6 +88,7 @@ static struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
 	}
 	pr_warn("exceeding max. number of '%s' devices (%d)\n",
 		base->class->name, base->count);
+	atomic_dec_return(&base->instances);
 	return NULL;
 }
 
@@ -124,7 +153,7 @@ int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class,
 		free_ccat_cdev(ccdev);
 		return -1;
 	}
-	ccdev->class = cdev_class->class;
+	ccdev->class = cdev_class;
 	func->private_data = ccdev;
 	return 0;
 }
@@ -144,30 +173,8 @@ void ccat_cdev_remove(struct ccat_function *func)
 	struct ccat_cdev *const ccdev = func->private_data;
 
 	cdev_del(&ccdev->cdev);
-	device_destroy(ccdev->class, ccdev->dev);
+	device_destroy(ccdev->class->class, ccdev->dev);
 	free_ccat_cdev(ccdev);
-}
-
-static int __init ccat_class_init(struct ccat_class *base)
-{
-	if (alloc_chrdev_region(&base->dev, 0, base->count, KBUILD_MODNAME)) {
-		pr_warn("alloc_chrdev_region() for '%s' failed\n", base->name);
-		return -1;
-	}
-
-	base->class = class_create(THIS_MODULE, base->name);
-	if (!base->class) {
-		pr_warn("Create device class '%s' failed\n", base->name);
-		unregister_chrdev_region(base->dev, base->count);
-		return -1;
-	}
-	return 0;
-}
-
-static void ccat_class_exit(struct ccat_class *base)
-{
-	class_destroy(base->class);
-	unregister_chrdev_region(base->dev, base->count);
 }
 
 #ifndef BUILD_CX9020
@@ -382,38 +389,78 @@ static struct pci_driver ccat_driver = {
 	.remove = ccat_remove,
 };
 
-static void drivers_exit(int num_drivers)
-{
-	while (--num_drivers >= 0) {
-		const struct ccat_driver *const drv = drivers[num_drivers];
-		if (drv->cdev_class) {
-			ccat_class_exit(drv->cdev_class);
-		}
-	}
-}
-
 static int __init ccat_init_module(void)
 {
 	int i;
 	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 
-	for (i = 0; i < ARRAY_SIZE(drivers); ++i) {
-		const struct ccat_driver *const drv = drivers[i];
-		if (drv->cdev_class) {
-			if (ccat_class_init(drv->cdev_class)) {
-				drivers_exit(i);
-				return -1;
-			}
-		}
-	}
 	return pci_register_driver(&ccat_driver);
 }
 
 static void __exit ccat_exit(void)
 {
 	pci_unregister_driver(&ccat_driver);
-	drivers_exit(ARRAY_SIZE(drivers));
 }
 
 module_init(ccat_init_module);
 module_exit(ccat_exit);
+
+#ifdef BUILD_CX9020
+static int ccat_platform_probe(struct platform_device *pdev)
+{
+	struct ccat_device *ccatdev;
+
+	ccatdev = devm_kzalloc(&pdev->dev, sizeof(*ccatdev), GFP_KERNEL);
+	if (!ccatdev) {
+		pr_err("%s() out of memory.\n", __FUNCTION__);
+		return -ENOMEM;
+	}
+	ccatdev->pdev = pdev;
+	platform_set_drvdata(pdev, ccatdev);
+
+	if (!request_mem_region(0xf0000000, 0x02000000, pdev->name)) {
+		pr_warn("request mem region failed.\n");
+		return -EIO;
+	}
+
+	if (!(ccatdev->bar_0 = ioremap(0xf0000000, 0x02000000))) {
+		pr_warn("initialization of bar0 failed.\n");
+		return -EIO;
+	}
+
+	ccatdev->bar_2 = NULL;
+
+	if (ccat_functions_init(ccatdev)) {
+		pr_warn("some functions couldn't be initialized\n");
+	}
+	return 0;
+}
+
+static void ccat_platform_remove(struct platform_device *pdev)
+{
+	struct ccat_device *ccatdev = platform_get_drvdata(pdev);
+
+	if (ccatdev) {
+		ccat_functions_remove(ccatdev);
+		iounmap(ccatdev->bar_0);
+		release_mem_region(0xf0000000, 0x02000000);
+	}
+	pr_info("%s()...\n", __FUNCTION__);
+}
+
+static const struct of_device_id bhf_cx9020_ids[] = {
+	{ .compatible = "bhf,emi-ccat", },
+	{}
+};
+MODULE_DEVICE_TABLE(of, bhf_cx9020_ids);
+
+static struct platform_driver cx9020_ccat_driver = {
+	.driver = {
+		.name = "cx9020-ccat",
+		.of_match_table = bhf_cx9020_ids,
+	},
+	.probe = ccat_platform_probe,
+	.remove = ccat_platform_remove,
+};
+module_platform_driver(cx9020_ccat_driver);
+#endif /* #ifdef BUILD_CX9020 */
