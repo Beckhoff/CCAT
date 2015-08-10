@@ -382,28 +382,13 @@ static const struct pci_device_id pci_ids[] = {
 
 MODULE_DEVICE_TABLE(pci, pci_ids);
 
-static struct pci_driver ccat_driver = {
+static struct pci_driver ccat_pci_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = pci_ids,
 	.probe = ccat_probe,
 	.remove = ccat_remove,
 };
-
-static int __init ccat_init_module(void)
-{
-	int i;
-	pr_info("%s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
-
-	return pci_register_driver(&ccat_driver);
-}
-
-static void __exit ccat_exit(void)
-{
-	pci_unregister_driver(&ccat_driver);
-}
-
-module_init(ccat_init_module);
-module_exit(ccat_exit);
+module_pci_driver(ccat_pci_driver);
 
 #ifdef BUILD_CX9020
 static int ccat_platform_probe(struct platform_device *pdev)
@@ -448,19 +433,19 @@ static void ccat_platform_remove(struct platform_device *pdev)
 	pr_info("%s()...\n", __FUNCTION__);
 }
 
-static const struct of_device_id bhf_cx9020_ids[] = {
+static const struct of_device_id bhf_eim_ccat_ids[] = {
 	{ .compatible = "bhf,emi-ccat", },
 	{}
 };
-MODULE_DEVICE_TABLE(of, bhf_cx9020_ids);
+MODULE_DEVICE_TABLE(of, bhf_eim_ccat_ids);
 
-static struct platform_driver cx9020_ccat_driver = {
+static struct platform_driver ccat_eim_driver = {
 	.driver = {
 		.name = "cx9020-ccat",
-		.of_match_table = bhf_cx9020_ids,
+		.of_match_table = bhf_eim_ccat_ids,
 	},
 	.probe = ccat_platform_probe,
 	.remove = ccat_platform_remove,
 };
-module_platform_driver(cx9020_ccat_driver);
+module_platform_driver(ccat_eim_driver);
 #endif /* #ifdef BUILD_CX9020 */
