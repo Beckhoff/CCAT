@@ -34,11 +34,10 @@ MODULE_VERSION(DRV_VERSION);
  * configure the drivers capabilities here
  */
 static const struct ccat_driver *const drivers[] = {
-#ifdef BUILD_CX9020
-	&eth_nodma_driver,	/* load Ethernet MAC/EtherCAT Master without DMA driver from */
-#else
-	&eth_driver,		/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
-#endif /* #ifdef BUILD_CX9020 */
+	&eth_iomem_driver,	/* load Ethernet MAC/EtherCAT Master without DMA driver from */
+#ifdef CONFIG_PCI
+	&eth_dma_driver,		/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
+#endif
 	&gpio_driver,		/* load GPIO driver from gpio.c */
 	&sram_driver,		/* load SRAM driver from sram.c */
 	&update_driver,		/* load Update driver from update.c */

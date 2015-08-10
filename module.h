@@ -34,8 +34,8 @@
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-extern struct ccat_driver eth_driver;
-extern struct ccat_driver eth_nodma_driver;
+extern struct ccat_driver eth_iomem_driver;
+extern struct ccat_driver eth_dma_driver;
 extern struct ccat_driver gpio_driver;
 extern struct ccat_driver sram_driver;
 extern struct ccat_driver update_driver;
