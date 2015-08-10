@@ -389,9 +389,9 @@ static struct pci_driver ccat_pci_driver = {
 	.remove = ccat_pci_remove,
 };
 module_pci_driver(ccat_pci_driver);
-#endif /* #ifdef CONFIG_PCI */
 
-#ifdef BUILD_CX9020
+#else /* #ifdef CONFIG_PCI */
+
 static int ccat_eim_probe(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev;
@@ -449,4 +449,4 @@ static struct platform_driver ccat_eim_driver = {
 	.remove = ccat_eim_remove,
 };
 module_platform_driver(ccat_eim_driver);
-#endif /* #ifdef BUILD_CX9020 */
+#endif /* #ifdef CONFIG_PCI */
