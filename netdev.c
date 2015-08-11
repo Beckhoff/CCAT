@@ -197,13 +197,13 @@ struct ccat_mac_register {
 	u8 mii_connected;
 };
 
-static inline bool ccat_eth_tx_ready_nodma(const struct ccat_eth_priv *const priv)
+static inline bool fifo_iomem_tx_ready(const struct ccat_eth_priv *const priv)
 {
 	static const u8 TX_FIFO_LEVEL_MASK = 0x3F;
 	return !(ioread8(priv->reg.mac + 0x20) & TX_FIFO_LEVEL_MASK);
 }
 
-static inline size_t ccat_eth_rx_ready_nodma(void *const frame)
+static inline size_t fifo_iomem_rx_ready(void *const frame)
 {
 	static const size_t overhead = sizeof(struct frame_header_nodma);
 	const size_t len = le16_to_cpu(ioread16(frame));
@@ -283,7 +283,7 @@ static inline bool ccat_eth_tx_ready_dma(const struct ccat_eth_priv *const priv)
 
 static inline size_t ccat_eth_rx_ready_dma(void *const __frame)
 {
-	static const size_t overhead = sizeof(struct frame_header_dma) - offsetof(struct frame_header_dma, rx_flags);
+	static const size_t overhead = offsetof(struct frame_header_dma, rx_flags);
 	const struct frame_header_dma *const frame = __frame;
 
 	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
@@ -394,8 +394,8 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 
 static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 {
-	priv->rx_ready = ccat_eth_rx_ready_nodma;
-	priv->tx_ready = ccat_eth_tx_ready_nodma;
+	priv->rx_ready = fifo_iomem_rx_ready;
+	priv->tx_ready = fifo_iomem_tx_ready;
 	priv->free = ccat_eth_priv_free_nodma;
 
 	priv->rx_fifo.dma.phys = 0; /* unused */
