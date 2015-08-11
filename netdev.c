@@ -232,13 +232,13 @@ static void ccat_eth_tx_fifo_nodma_add_free(struct ccat_eth_fifo *const fifo,
 	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
-static void iofifo_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
+static void fifo_iomem_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
 	struct frame_nodma *frame = (struct frame_nodma *)fifo->next;
 	memcpy_fromio(skb->data, frame->data, len);
 }
 
-static void iofifo_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
+static void fifo_iomem_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
 {
 	struct frame_nodma *frame = (struct frame_nodma *)fifo->next;
 	const u32 addr_and_length = (void*)frame - fifo->dma.virt;
@@ -275,13 +275,13 @@ static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
 }
 
 #ifdef CONFIG_PCI
-static inline bool ccat_eth_tx_ready_dma(const struct ccat_eth_priv *const priv)
+static inline bool fifo_dma_tx_ready(const struct ccat_eth_priv *const priv)
 {
 	const struct frame_header_dma *hdr = (struct frame_header_dma *)priv->tx_fifo.next;
 	return le32_to_cpu(hdr->tx_flags) & CCAT_FRAME_SENT;
 }
 
-static inline size_t ccat_eth_rx_ready_dma(void *const __frame)
+static inline size_t fifo_dma_rx_ready(void *const __frame)
 {
 	static const size_t overhead = offsetof(struct frame_header_dma, rx_flags);
 	const struct frame_header_dma *const frame = __frame;
@@ -312,14 +312,14 @@ static void ccat_eth_tx_fifo_dma_add_free(struct ccat_eth_fifo *const fifo,
 	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
-static void dmafifo_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
+static void fifo_dma_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
 	struct frame_dma *frame = (struct frame_dma *)fifo->next;
 
 	skb_copy_to_linear_data(skb, frame->data, len);
 }
 
-static void dmafifo_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
+static void fifo_dma_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
 {
 	struct frame_dma *frame = (struct frame_dma *)fifo->next;
 	u32 addr_and_length;
@@ -354,8 +354,8 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
 	struct pci_dev *pdev = priv->func->ccat->pdev;
-	priv->rx_ready = ccat_eth_rx_ready_dma;
-	priv->tx_ready = ccat_eth_tx_ready_dma;
+	priv->rx_ready = fifo_dma_rx_ready;
+	priv->tx_ready = fifo_dma_tx_ready;
 	priv->free = ccat_eth_priv_free_dma;
 
 	if (0 != ccat_dma_init(&priv->rx_fifo.dma, priv->func->info.rx_dma_chan, priv->func->ccat->bar_2,
@@ -372,7 +372,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	}
 
 	priv->rx_fifo.add = ccat_eth_rx_fifo_dma_add;
-	priv->rx_fifo.copy_to_skb = dmafifo_copy_to_linear_skb;
+	priv->rx_fifo.copy_to_skb = fifo_dma_copy_to_linear_skb;
 	priv->rx_fifo.queue_skb = NULL;
 	priv->rx_fifo.end = ((struct ccat_eth_frame *)priv->rx_fifo.dma.virt) + FIFO_LENGTH - 1;
 	priv->rx_fifo.reg = priv->reg.rx_fifo;
@@ -380,7 +380,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 
 	priv->tx_fifo.add = ccat_eth_tx_fifo_dma_add_free;
 	priv->tx_fifo.copy_to_skb = NULL;
-	priv->tx_fifo.queue_skb = dmafifo_queue_skb;
+	priv->tx_fifo.queue_skb = fifo_dma_queue_skb;
 	priv->tx_fifo.end = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + FIFO_LENGTH - 1;
 	priv->tx_fifo.reg = priv->reg.tx_fifo;
 	ccat_eth_fifo_reset(&priv->tx_fifo);
@@ -406,7 +406,7 @@ static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 	priv->rx_fifo.dma.size = priv->func->info.rx_size;
 
 	priv->rx_fifo.add = ccat_eth_rx_fifo_nodma_add;
-	priv->rx_fifo.copy_to_skb = iofifo_copy_to_linear_skb;
+	priv->rx_fifo.copy_to_skb = fifo_iomem_copy_to_linear_skb;
 	priv->rx_fifo.queue_skb = NULL;
 	priv->rx_fifo.end = priv->rx_fifo.dma.virt;
 	priv->rx_fifo.reg = NULL;
@@ -421,7 +421,7 @@ static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 
 	priv->tx_fifo.add = ccat_eth_tx_fifo_nodma_add_free;
 	priv->tx_fifo.copy_to_skb = NULL;
-	priv->tx_fifo.queue_skb = iofifo_queue_skb;
+	priv->tx_fifo.queue_skb = fifo_iomem_queue_skb;
 	priv->tx_fifo.end = priv->tx_fifo.dma.virt + priv->tx_fifo.dma.size - sizeof(*priv->tx_fifo.end);
 	priv->tx_fifo.reg = priv->reg.tx_fifo;
 	ccat_eth_fifo_reset(&priv->tx_fifo);
