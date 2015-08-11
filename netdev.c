@@ -83,7 +83,7 @@ struct frame_header_nodma {
 	__le64 timestamp;
 };
 
-struct frame_nodma {
+struct frame_iomem {
 	struct frame_header_nodma hdr;
 	u8 data[0x800 - sizeof(struct frame_header_nodma)];
 };
@@ -122,8 +122,12 @@ struct ccat_eth_fifo {
 	void (*copy_to_skb)(struct ccat_eth_fifo *, struct sk_buff *, size_t);
 	void (*queue_skb)(struct ccat_eth_fifo *const, struct sk_buff *);
 	void __iomem *reg;
-	const struct ccat_eth_frame *end;
-	struct ccat_eth_frame *next;
+	const void *end;
+	union {
+		void *next_xxx;
+		struct frame_dma *next_dma;
+		struct frame_iomem __iomem *next_iomem;
+	};
 	struct ccat_dma dma;
 };
 
@@ -200,44 +204,45 @@ struct ccat_mac_register {
 static inline bool fifo_iomem_tx_ready(const struct ccat_eth_priv *const priv)
 {
 	static const u8 TX_FIFO_LEVEL_MASK = 0x3F;
+
 	return !(ioread8(priv->reg.mac + 0x20) & TX_FIFO_LEVEL_MASK);
 }
 
 static inline size_t fifo_iomem_rx_ready(void *const __frame)
 {
-	struct frame_nodma __iomem *frame = (struct frame_nodma __iomem *)__frame;
-	static const size_t overhead = sizeof(frame->hdr);
+	struct frame_iomem __iomem *frame = (struct frame_iomem __iomem *)__frame;
+	static const size_t OVERHEAD = sizeof(frame->hdr);
 	const size_t len = ioread16(frame);
 
-	return (len < overhead) ? 0 : len - overhead;
+	return (len < OVERHEAD) ? 0 : len - OVERHEAD;
 }
 
 static void ccat_eth_fifo_inc(struct ccat_eth_fifo *fifo)
 {
-	if (++fifo->next > fifo->end)
-		fifo->next = fifo->dma.virt;
+	fifo->next_xxx += sizeof(struct ccat_eth_frame);
+	if (fifo->next_xxx > fifo->end)
+		fifo->next_xxx = fifo->dma.virt;
 }
 
 static void fifo_iomem_rx_add(struct ccat_eth_fifo *const fifo)
 {
-	struct frame_nodma __iomem *frame = (struct frame_nodma __iomem*)fifo->next;
+	struct frame_iomem __iomem *frame = fifo->next_iomem;
 	iowrite16(0, frame);
 	wmb();
 }
 
-static void ccat_nop(struct ccat_eth_fifo *const fifo)
+static void fifo_iomem_tx_add(struct ccat_eth_fifo *const fifo)
 {
 }
 
 static void fifo_iomem_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
-	struct frame_nodma __iomem *frame = (struct frame_nodma __iomem*)fifo->next;
-	memcpy_fromio(skb->data, frame->data, len);
+	memcpy_fromio(skb->data, fifo->next_iomem->data, len);
 }
 
 static void fifo_iomem_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
 {
-	struct frame_nodma __iomem *frame = (struct frame_nodma __iomem*)fifo->next;
+	struct frame_iomem __iomem *frame = fifo->next_iomem;
 	const u32 addr_and_length = (void __iomem*)frame - (void __iomem*)fifo->dma.virt;
 
 	const __le16 length = cpu_to_le16(skb->len);
@@ -262,61 +267,57 @@ static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
 	}
 
 	if (fifo->add) {
-		fifo->next = fifo->dma.virt;
+		fifo->next_xxx = fifo->dma.virt;
 		do {
 			fifo->add(fifo);
 			ccat_eth_fifo_inc(fifo);
-		} while (fifo->next != fifo->dma.virt);
+		} while (fifo->next_xxx != fifo->dma.virt);
 	}
 }
 
 #ifdef CONFIG_PCI
 static inline bool fifo_dma_tx_ready(const struct ccat_eth_priv *const priv)
 {
-	const struct frame_header_dma *hdr = (struct frame_header_dma *)priv->tx_fifo.next;
-	return le32_to_cpu(hdr->tx_flags) & CCAT_FRAME_SENT;
+	const struct frame_dma *frame = priv->tx_fifo.next_dma;
+	return le32_to_cpu(frame->hdr.tx_flags) & CCAT_FRAME_SENT;
 }
 
 static inline size_t fifo_dma_rx_ready(void *const __frame)
 {
-	static const size_t overhead = offsetof(struct frame_header_dma, rx_flags);
+	static const size_t OVERHEAD = offsetof(struct frame_header_dma, rx_flags);
 	const struct frame_header_dma *const frame = __frame;
 
 	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
 		const size_t len = le16_to_cpu(frame->length);
-		return (len < overhead) ? 0 : len - overhead;
+		return (len < OVERHEAD) ? 0 : len - OVERHEAD;
 	}
 	return 0;
 }
 
 static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_fifo *const fifo)
 {
-	void *const frame = fifo->next;
-	struct frame_header_dma *hdr = frame;
-	const size_t offset = frame - fifo->dma.virt;
+	struct frame_dma *const frame = fifo->next_dma;
+	const size_t offset = (void*)frame - fifo->dma.virt;
 	const u32 addr_and_length = (1 << 31) | offset;
 
-	hdr->rx_flags = cpu_to_le32(0);
+	frame->hdr.rx_flags = cpu_to_le32(0);
 	iowrite32(addr_and_length, fifo->reg);
 }
 
 static void ccat_eth_tx_fifo_dma_add_free(struct ccat_eth_fifo *const fifo)
 {
-	struct frame_dma *frame = (struct frame_dma*)fifo->next;
 	/* mark frame as ready to use for tx */
-	frame->hdr.tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
+	fifo->next_dma->hdr.tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
 static void fifo_dma_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
-	struct frame_dma *frame = (struct frame_dma *)fifo->next;
-
-	skb_copy_to_linear_data(skb, frame->data, len);
+	skb_copy_to_linear_data(skb, fifo->next_dma->data, len);
 }
 
 static void fifo_dma_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
 {
-	struct frame_dma *frame = (struct frame_dma *)fifo->next;
+	struct frame_dma *frame = fifo->next_dma;
 	u32 addr_and_length;
 
 	frame->hdr.tx_flags = cpu_to_le32(0);
@@ -326,7 +327,7 @@ static void fifo_dma_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff 
 
 	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
 	addr_and_length = offsetof(struct frame_header_dma, length);
-	addr_and_length += ((void *)fifo->next - fifo->dma.virt);
+	addr_and_length += ((void *)frame - fifo->dma.virt);
 	addr_and_length += ((skb->len + sizeof(struct frame_header_dma)) / 8) << 24;
 	iowrite32(addr_and_length, fifo->reg);
 }
@@ -369,14 +370,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	priv->rx_fifo.add = ccat_eth_rx_fifo_dma_add;
 	priv->rx_fifo.copy_to_skb = fifo_dma_copy_to_linear_skb;
 	priv->rx_fifo.queue_skb = NULL;
-	priv->rx_fifo.end = ((struct ccat_eth_frame *)priv->rx_fifo.dma.virt) + FIFO_LENGTH - 1;
+	priv->rx_fifo.end = priv->rx_fifo.dma.virt + FIFO_LENGTH - 1;
 	priv->rx_fifo.reg = priv->reg.rx_fifo;
 	ccat_eth_fifo_reset(&priv->rx_fifo);
 
 	priv->tx_fifo.add = ccat_eth_tx_fifo_dma_add_free;
 	priv->tx_fifo.copy_to_skb = NULL;
 	priv->tx_fifo.queue_skb = fifo_dma_queue_skb;
-	priv->tx_fifo.end = ((struct ccat_eth_frame *)priv->tx_fifo.dma.virt) + FIFO_LENGTH - 1;
+	priv->tx_fifo.end = priv->tx_fifo.dma.virt + FIFO_LENGTH - 1;
 	priv->tx_fifo.reg = priv->reg.tx_fifo;
 	ccat_eth_fifo_reset(&priv->tx_fifo);
 
@@ -414,10 +415,10 @@ static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 	priv->tx_fifo.dma.virt = priv->reg.tx_mem;
 	priv->tx_fifo.dma.size = priv->func->info.tx_size;
 
-	priv->tx_fifo.add = ccat_nop;
+	priv->tx_fifo.add = fifo_iomem_tx_add;
 	priv->tx_fifo.copy_to_skb = NULL;
 	priv->tx_fifo.queue_skb = fifo_iomem_queue_skb;
-	priv->tx_fifo.end = priv->tx_fifo.dma.virt + priv->tx_fifo.dma.size - sizeof(*priv->tx_fifo.end);
+	priv->tx_fifo.end = priv->tx_fifo.dma.virt + priv->tx_fifo.dma.size - sizeof(struct ccat_eth_frame);
 	priv->tx_fifo.reg = priv->reg.tx_fifo;
 	ccat_eth_fifo_reset(&priv->tx_fifo);
 
@@ -586,12 +587,12 @@ static void poll_rx(struct ccat_eth_priv *const priv)
 {
 	struct ccat_eth_fifo *const fifo = &priv->rx_fifo;
 	/* TODO omit possible deadlock in situations with heavy traffic */
-	size_t len = priv->rx_ready(fifo->next);
+	size_t len = priv->rx_ready(fifo->next_xxx);
 	while (len) {
 		ccat_eth_receive(priv->netdev, len);
 		fifo->add(fifo);
 		ccat_eth_fifo_inc(fifo);
-		len = priv->rx_ready(fifo->next);
+		len = priv->rx_ready(fifo->next_xxx);
 	}
 }
 
