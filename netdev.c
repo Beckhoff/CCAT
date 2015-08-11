@@ -112,15 +112,15 @@ struct ccat_eth_register {
 };
 
 /**
- * struct ccat_eth_dma_fifo - CCAT RX or TX DMA fifo
+ * struct ccat_eth_fifo - CCAT RX or TX DMA fifo
  * @add: callback used to add a frame to this fifo
  * @reg: PCI register address of this DMA fifo
  * @dma: information about the associated DMA memory
  */
-struct ccat_eth_dma_fifo {
-	void (*add) (struct ccat_eth_dma_fifo *, void *);
-	void (*copy_to_skb)(struct ccat_eth_dma_fifo *, struct sk_buff *, size_t);
-	void (*queue_skb)(struct ccat_eth_dma_fifo *const, struct sk_buff *);
+struct ccat_eth_fifo {
+	void (*add) (struct ccat_eth_fifo *, void *);
+	void (*copy_to_skb)(struct ccat_eth_fifo *, struct sk_buff *, size_t);
+	void (*queue_skb)(struct ccat_eth_fifo *const, struct sk_buff *);
 	void __iomem *reg;
 	const struct ccat_eth_frame *end;
 	struct ccat_eth_frame *next;
@@ -162,8 +162,8 @@ struct ccat_eth_priv {
 	struct ccat_function *func;
 	struct net_device *netdev;
 	struct ccat_eth_register reg;
-	struct ccat_eth_dma_fifo rx_fifo;
-	struct ccat_eth_dma_fifo tx_fifo;
+	struct ccat_eth_fifo rx_fifo;
+	struct ccat_eth_fifo tx_fifo;
 	struct hrtimer poll_timer;
 	atomic64_t rx_bytes;
 	atomic64_t rx_dropped;
@@ -211,20 +211,20 @@ static inline size_t ccat_eth_rx_ready_nodma(void *const frame)
 	return (len < overhead) ? 0 : len - overhead;
 }
 
-static void ccat_eth_fifo_inc(struct ccat_eth_dma_fifo *fifo)
+static void ccat_eth_fifo_inc(struct ccat_eth_fifo *fifo)
 {
 	if (++fifo->next > fifo->end)
 		fifo->next = fifo->dma.virt;
 }
 
-static void ccat_eth_rx_fifo_nodma_add(struct ccat_eth_dma_fifo *const fifo,
+static void ccat_eth_rx_fifo_nodma_add(struct ccat_eth_fifo *const fifo,
 				 void __iomem *const frame)
 {
 	iowrite16(0, frame);
 	wmb();
 }
 
-static void ccat_eth_tx_fifo_nodma_add_free(struct ccat_eth_dma_fifo *const fifo,
+static void ccat_eth_tx_fifo_nodma_add_free(struct ccat_eth_fifo *const fifo,
 				      void *const frame)
 {
 	struct frame_header_nodma *hdr = frame;
@@ -232,13 +232,13 @@ static void ccat_eth_tx_fifo_nodma_add_free(struct ccat_eth_dma_fifo *const fifo
 	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
-static void iofifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb, const size_t len)
+static void iofifo_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
 	struct frame_nodma *frame = (struct frame_nodma *)fifo->next;
 	memcpy_fromio(skb->data, frame->data, len);
 }
 
-static void iofifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb)
+static void iofifo_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
 {
 	struct frame_nodma *frame = (struct frame_nodma *)fifo->next;
 	const u32 addr_and_length = (void*)frame - fifo->dma.virt;
@@ -257,7 +257,7 @@ static void ccat_eth_priv_free_nodma(struct ccat_eth_priv *priv)
 	wmb();
 }
 
-static void ccat_eth_fifo_reset(struct ccat_eth_dma_fifo *const fifo)
+static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
 {
 	/* reset hw fifo */
 	if (fifo->reg) {
@@ -293,7 +293,7 @@ static inline size_t ccat_eth_rx_ready_dma(void *const __frame)
 	return 0;
 }
 
-static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_dma_fifo *const fifo,
+static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_fifo *const fifo,
 				 void *const frame)
 {
 	struct frame_header_dma *hdr = frame;
@@ -304,7 +304,7 @@ static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_dma_fifo *const fifo,
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_tx_fifo_dma_add_free(struct ccat_eth_dma_fifo *const fifo,
+static void ccat_eth_tx_fifo_dma_add_free(struct ccat_eth_fifo *const fifo,
 				      void *const frame)
 {
 	struct frame_header_dma *hdr = frame;
@@ -312,14 +312,14 @@ static void ccat_eth_tx_fifo_dma_add_free(struct ccat_eth_dma_fifo *const fifo,
 	hdr->tx_flags = cpu_to_le32(CCAT_FRAME_SENT);
 }
 
-static void dmafifo_copy_to_linear_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb, const size_t len)
+static void dmafifo_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
 	struct frame_dma *frame = (struct frame_dma *)fifo->next;
 
 	skb_copy_to_linear_data(skb, frame->data, len);
 }
 
-static void dmafifo_queue_skb(struct ccat_eth_dma_fifo *const fifo, struct sk_buff *skb)
+static void dmafifo_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
 {
 	struct frame_dma *frame = (struct frame_dma *)fifo->next;
 	u32 addr_and_length;
@@ -456,7 +456,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 				       struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
-	struct ccat_eth_dma_fifo *const fifo = &priv->tx_fifo;
+	struct ccat_eth_fifo *const fifo = &priv->tx_fifo;
 
 	if (skb_is_nonlinear(skb)) {
 		pr_warn("Non linear skb not supported -> drop frame.\n");
@@ -589,7 +589,7 @@ static void poll_link(struct ccat_eth_priv *const priv)
  */
 static void poll_rx(struct ccat_eth_priv *const priv)
 {
-	struct ccat_eth_dma_fifo *const fifo = &priv->rx_fifo;
+	struct ccat_eth_fifo *const fifo = &priv->rx_fifo;
 	/* TODO omit possible deadlock in situations with heavy traffic */
 	size_t len = priv->rx_ready(fifo->next);
 	while (len) {
