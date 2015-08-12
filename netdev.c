@@ -134,9 +134,15 @@ struct ccat_iomem {
 	size_t size;
 };
 
+struct ccat_mem {
+	struct ccat_eth_frame *next;
+	void *virt;
+};
+
 static void __init dummy_static_checker(void)
 {
-	BUILD_BUG_ON(offsetof(struct ccat_dma, next) != 0);
+	BUILD_BUG_ON(offsetof(struct ccat_dma, next) != offsetof(struct ccat_mem, next));
+	BUILD_BUG_ON(offsetof(struct ccat_dma, virt) != offsetof(struct ccat_mem, virt));
 	BUILD_BUG_ON(offsetof(struct ccat_dma, next) != offsetof(struct ccat_iomem, next));
 	BUILD_BUG_ON(offsetof(struct ccat_dma, virt) != offsetof(struct ccat_iomem, virt));
 	BUILD_BUG_ON(offsetof(struct ccat_dma, size) != offsetof(struct ccat_iomem, size));
@@ -153,9 +159,9 @@ struct ccat_eth_fifo {
 	void (*copy_to_skb)(struct ccat_eth_fifo *, struct sk_buff *, size_t);
 	void (*queue_skb)(struct ccat_eth_fifo *const, struct sk_buff *);
 	void __iomem *reg;
-	const struct frame_header_dma *end;
+	const struct ccat_eth_frame *end;
 	union {
-		struct frame_header_dma *next_xxx;
+		struct ccat_mem mem;
 		struct ccat_dma dma;
 		struct ccat_iomem iomem;
 	};
@@ -312,9 +318,9 @@ static inline size_t fifo_iomem_rx_ready(struct ccat_eth_fifo *const fifo)
 
 static void ccat_eth_fifo_inc(struct ccat_eth_fifo *fifo)
 {
-	fifo->next_xxx += sizeof(struct ccat_eth_frame);
-	if (fifo->next_xxx > fifo->end)
-		fifo->next_xxx = fifo->dma.virt;
+	fifo->mem.next += sizeof(struct ccat_eth_frame);
+	if (fifo->mem.next > fifo->end)
+		fifo->mem.next = fifo->mem.virt;
 }
 
 static void fifo_iomem_rx_add(struct ccat_eth_fifo *const fifo)
@@ -360,11 +366,11 @@ static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
 	}
 
 	if (fifo->add) {
-		fifo->next_xxx = fifo->dma.virt;
+		fifo->mem.next = fifo->mem.virt;
 		do {
 			fifo->add(fifo);
 			ccat_eth_fifo_inc(fifo);
-		} while (fifo->next_xxx != fifo->dma.virt);
+		} while (fifo->mem.next != fifo->mem.virt);
 	}
 }
 
