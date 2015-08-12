@@ -137,15 +137,6 @@ struct ccat_mem {
 	void *virt;
 };
 
-static void __init dummy_static_checker(void)
-{
-	BUILD_BUG_ON(offsetof(struct ccat_dma, next) != offsetof(struct ccat_mem, next));
-	BUILD_BUG_ON(offsetof(struct ccat_dma, virt) != offsetof(struct ccat_mem, virt));
-	BUILD_BUG_ON(offsetof(struct ccat_dma, next) != offsetof(struct ccat_iomem, next));
-	BUILD_BUG_ON(offsetof(struct ccat_dma, virt) != offsetof(struct ccat_iomem, virt));
-	BUILD_BUG_ON(offsetof(struct ccat_dma, size) != offsetof(struct ccat_iomem, size));
-}
-
 /**
  * struct ccat_eth_fifo - CCAT RX or TX DMA fifo
  * @add: callback used to add a frame to this fifo
@@ -527,6 +518,15 @@ static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
 {
 	struct ccat_mac_infoblock offsets;
 	void __iomem *const func_base = func->ccat->bar_0 + func->info.addr;
+
+	/* struct ccat_eth_fifo contains a union of ccat_dma, ccat_iomem and ccat_mem
+	 * the members next, virt and size have to overlay the exact same memory,
+	 * to support 'polymorphic' usage of them */
+	BUILD_BUG_ON(offsetof(struct ccat_dma, next) != offsetof(struct ccat_mem, next));
+	BUILD_BUG_ON(offsetof(struct ccat_dma, virt) != offsetof(struct ccat_mem, virt));
+	BUILD_BUG_ON(offsetof(struct ccat_dma, next) != offsetof(struct ccat_iomem, next));
+	BUILD_BUG_ON(offsetof(struct ccat_dma, virt) != offsetof(struct ccat_iomem, virt));
+	BUILD_BUG_ON(offsetof(struct ccat_dma, size) != offsetof(struct ccat_iomem, size));
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	reg->mii = func_base + offsets.mii;
