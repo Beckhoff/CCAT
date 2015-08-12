@@ -451,14 +451,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	priv->rx_fifo.add = ccat_eth_rx_fifo_dma_add;
 	priv->rx_fifo.copy_to_skb = fifo_dma_copy_to_linear_skb;
 	priv->rx_fifo.queue_skb = NULL;
-	priv->rx_fifo.end = priv->rx_fifo.dma.start + FIFO_LENGTH - 1;
+	priv->rx_fifo.end = ((struct ccat_eth_frame *)priv->rx_fifo.dma.start) + FIFO_LENGTH - 1;
 	priv->rx_fifo.reg = priv->reg.rx_fifo;
 	ccat_eth_fifo_reset(&priv->rx_fifo);
 
 	priv->tx_fifo.add = ccat_eth_tx_fifo_dma_add_free;
 	priv->tx_fifo.copy_to_skb = NULL;
 	priv->tx_fifo.queue_skb = fifo_dma_queue_skb;
-	priv->tx_fifo.end = priv->tx_fifo.dma.start + FIFO_LENGTH - 1;
+	priv->tx_fifo.end = ((struct ccat_eth_frame *)priv->tx_fifo.dma.start) + FIFO_LENGTH - 1;
 	priv->tx_fifo.reg = priv->reg.tx_fifo;
 	ccat_eth_fifo_reset(&priv->tx_fifo);
 
