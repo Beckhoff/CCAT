@@ -35,7 +35,7 @@ MODULE_VERSION(DRV_VERSION);
 static const struct ccat_driver *const drivers[] = {
 	&eth_iomem_driver,	/* load Ethernet MAC/EtherCAT Master without DMA driver from */
 #ifdef CONFIG_PCI
-	&eth_dma_driver,		/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
+	&eth_dma_driver,	/* load Ethernet MAC/EtherCAT Master driver from netdev.c */
 #endif
 	&gpio_driver,		/* load GPIO driver from gpio.c */
 	&sram_driver,		/* load SRAM driver from sram.c */

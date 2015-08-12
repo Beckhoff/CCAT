@@ -149,7 +149,6 @@ struct ccat_eth_fifo {
 
 /**
  * same as: typedef struct _CCatInfoBlockOffs from CCatDefinitions.h
- * TODO add some checking facility outside of the linux tree
  */
 struct ccat_mac_infoblock {
 	u32 reserved;
@@ -259,13 +258,13 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	dma->start = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
 	if (!dma->start || !dma->phys) {
 		pr_info("init DMA%llu memory failed.\n", (u64) channel);
-		return -1;
+		return -ENOMEM;
 	}
 
 	if (request_dma(channel, KBUILD_MODNAME)) {
 		pr_info("request dma channel %llu failed\n", (u64) channel);
 		ccat_dma_free(dma);
-		return -1;
+		return -EINVAL;
 	}
 
 	translateAddr = (dma->phys + memSize - PAGE_SIZE) & memTranslate;
@@ -429,22 +428,24 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
  */
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	struct pci_dev *pdev = priv->func->ccat->pdev;
+	struct ccat_function *const func = priv->func;
+	struct pci_dev *pdev = func->ccat->pdev;
+	int status = 0;
 	priv->rx_ready = fifo_dma_rx_ready;
 	priv->tx_ready = fifo_dma_tx_ready;
 	priv->free = ccat_eth_priv_free_dma;
 
-	if (0 != ccat_dma_init(&priv->rx_fifo.dma, priv->func->info.rx_dma_chan, priv->func->ccat->bar_2,
-			       &pdev->dev)) {
+	status = ccat_dma_init(&priv->rx_fifo.dma, func->info.rx_dma_chan, func->ccat->bar_2, &pdev->dev);
+	if (status) {
 		pr_info("init RX DMA memory failed.\n");
-		return -1;
+		return status;
 	}
 
-	if (0 != ccat_dma_init(&priv->tx_fifo.dma, priv->func->info.tx_dma_chan, priv->func->ccat->bar_2,
-			       &pdev->dev)) {
+	status =ccat_dma_init(&priv->tx_fifo.dma, func->info.tx_dma_chan, func->ccat->bar_2, &pdev->dev);
+	if (status) {
 		pr_info("init TX DMA memory failed.\n");
 		ccat_dma_free(&priv->rx_fifo.dma);
-		return -1;
+		return status;
 	}
 
 	priv->rx_fifo.add = ccat_eth_rx_fifo_dma_add;
@@ -785,16 +786,18 @@ static struct ccat_eth_priv* ccat_eth_alloc_netdev(struct ccat_function *func)
 
 static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 {
+	int status;
 	/* init netdev with MAC and stack callbacks */
 	memcpy_fromio(priv->netdev->dev_addr, priv->reg.mii + 8, priv->netdev->addr_len);
 	priv->netdev->netdev_ops = &ccat_eth_netdev_ops;
 	netif_carrier_off(priv->netdev);
 
-	if (register_netdev(priv->netdev)) {
+	status = register_netdev(priv->netdev);
+	if (status) {
 		pr_info("unable to register network device.\n");
 		priv->free(priv);
 		free_netdev(priv->netdev);
-		return -1;	// TODO return better error code
+		return status;
 	}
 	pr_info("registered %s as network device.\n", priv->netdev->name);
 	priv->func->private_data = priv;
@@ -805,14 +808,16 @@ static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 static int ccat_eth_dma_probe(struct ccat_function *func)
 {
 	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
+	int status;
 
 	if (!priv)
 		return -ENOMEM;
 
-	if (ccat_eth_priv_init_dma(priv)) {
+	status = ccat_eth_priv_init_dma(priv);
+	if (status) {
 		pr_warn("%s(): DMA initialization failed.\n", __FUNCTION__);
 		free_netdev(priv->netdev);
-		return -1;	// TODO return better error code
+		return status;
 	}
 	return ccat_eth_init_netdev(priv);
 }
@@ -835,14 +840,16 @@ struct ccat_driver eth_dma_driver = {
 static int ccat_eth_iomem_probe(struct ccat_function *func)
 {
 	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
+	int status;
 
 	if (!priv)
 		return -ENOMEM;
 
-	if (ccat_eth_priv_init_iomem(priv)) {
+	status = ccat_eth_priv_init_iomem(priv);
+	if (status) {
 		pr_warn("%s(): memory initialization failed.\n", __FUNCTION__);
 		free_netdev(priv->netdev);
-		return -1;	// TODO return better error code
+		return status;
 	}
 	return ccat_eth_init_netdev(priv);
 }
