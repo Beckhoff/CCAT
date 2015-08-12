@@ -18,7 +18,6 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include <asm/dma.h>
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -237,67 +236,6 @@ static void ccat_functions_remove(struct ccat_device *const dev)
 }
 
 #ifdef CONFIG_PCI
-void ccat_dma_free(struct ccat_dma *const dma)
-{
-	const struct ccat_dma tmp = *dma;
-
-	free_dma(dma->channel);
-	memset(dma, 0, sizeof(*dma));
-	dma_free_coherent(tmp.dev, tmp.size, tmp.virt, tmp.phys);
-}
-
-/**
- * ccat_dma_init() - Initialize CCAT and host memory for DMA transfer
- * @dma object for management data which will be initialized
- * @channel number of the DMA channel
- * @ioaddr of the pci bar2 configspace used to calculate the address of the pci dma configuration
- * @dev which should be configured for DMA
- */
-int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
-		  void __iomem * const ioaddr, struct device *const dev)
-{
-	void *frame;
-	u64 addr;
-	u32 translateAddr;
-	u32 memTranslate;
-	u32 memSize;
-	u32 data = 0xffffffff;
-	u32 offset = (sizeof(u64) * channel) + 0x1000;
-
-	dma->channel = channel;
-	dma->dev = dev;
-
-	/* calculate size and alignments */
-	iowrite32(data, ioaddr + offset);
-	wmb();
-	data = ioread32(ioaddr + offset);
-	memTranslate = data & 0xfffffffc;
-	memSize = (~memTranslate) + 1;
-	dma->size = 2 * memSize - PAGE_SIZE;
-	dma->virt = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
-	if (!dma->virt || !dma->phys) {
-		pr_info("init DMA%llu memory failed.\n", (u64) channel);
-		return -1;
-	}
-
-	if (request_dma(channel, KBUILD_MODNAME)) {
-		pr_info("request dma channel %llu failed\n", (u64) channel);
-		ccat_dma_free(dma);
-		return -1;
-	}
-
-	translateAddr = (dma->phys + memSize - PAGE_SIZE) & memTranslate;
-	addr = translateAddr;
-	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
-	frame = dma->virt + translateAddr - dma->phys;
-	pr_debug
-	    ("DMA%llu mem initialized\n virt:         0x%p\n phys:         0x%llx\n translated:   0x%llx\n pci addr:     0x%08x%x\n memTranslate: 0x%x\n size:         %llu bytes.\n",
-	     (u64) channel, dma->virt, (u64) (dma->phys), addr,
-	     ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset),
-	     memTranslate, (u64) dma->size);
-	return 0;
-}
-
 static int ccat_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct ccat_device *ccatdev;

@@ -112,6 +112,33 @@ struct ccat_eth_register {
 };
 
 /**
+ * struct ccat_dma - CCAT DMA channel configuration
+ * @phys: device-viewed address(physical) of the associated DMA memory
+ * @virt: CPU-viewed address(virtual) of the associated DMA memory
+ * @size: number of bytes in the associated DMA memory
+ * @channel: CCAT DMA channel number
+ * @dev: valid struct device pointer
+ */
+struct ccat_dma {
+	void *virt;
+	size_t size;
+	dma_addr_t phys;
+	size_t channel;
+	struct device *dev;
+};
+
+struct ccat_iomem {
+	void __iomem *virt;
+	size_t size;
+};
+
+static void __init dummy_static_checker(void)
+{
+	BUILD_BUG_ON(offsetof(struct ccat_dma, virt) != offsetof(struct ccat_iomem, virt));
+	BUILD_BUG_ON(offsetof(struct ccat_dma, size) != offsetof(struct ccat_iomem, size));
+}
+
+/**
  * struct ccat_eth_fifo - CCAT RX or TX DMA fifo
  * @add: callback used to add a frame to this fifo
  * @reg: PCI register address of this DMA fifo
@@ -128,7 +155,10 @@ struct ccat_eth_fifo {
 		struct frame_dma *next_dma;
 		struct frame_iomem __iomem *next_iomem;
 	};
-	struct ccat_dma dma;
+	union {
+		struct ccat_dma dma;
+		struct ccat_iomem iomem;
+	};
 };
 
 /**
@@ -201,6 +231,70 @@ struct ccat_mac_register {
 	u8 mii_connected;
 };
 
+#ifdef CONFIG_PCI
+#include <asm/dma.h>
+static void ccat_dma_free(struct ccat_dma *const dma)
+{
+	const struct ccat_dma tmp = *dma;
+
+	free_dma(dma->channel);
+	memset(dma, 0, sizeof(*dma));
+	dma_free_coherent(tmp.dev, tmp.size, tmp.virt, tmp.phys);
+}
+
+/**
+ * ccat_dma_init() - Initialize CCAT and host memory for DMA transfer
+ * @dma object for management data which will be initialized
+ * @channel number of the DMA channel
+ * @ioaddr of the pci bar2 configspace used to calculate the address of the pci dma configuration
+ * @dev which should be configured for DMA
+ */
+static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
+		  void __iomem * const ioaddr, struct device *const dev)
+{
+	void *frame;
+	u64 addr;
+	u32 translateAddr;
+	u32 memTranslate;
+	u32 memSize;
+	u32 data = 0xffffffff;
+	u32 offset = (sizeof(u64) * channel) + 0x1000;
+
+	dma->channel = channel;
+	dma->dev = dev;
+
+	/* calculate size and alignments */
+	iowrite32(data, ioaddr + offset);
+	wmb();
+	data = ioread32(ioaddr + offset);
+	memTranslate = data & 0xfffffffc;
+	memSize = (~memTranslate) + 1;
+	dma->size = 2 * memSize - PAGE_SIZE;
+	dma->virt = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
+	if (!dma->virt || !dma->phys) {
+		pr_info("init DMA%llu memory failed.\n", (u64) channel);
+		return -1;
+	}
+
+	if (request_dma(channel, KBUILD_MODNAME)) {
+		pr_info("request dma channel %llu failed\n", (u64) channel);
+		ccat_dma_free(dma);
+		return -1;
+	}
+
+	translateAddr = (dma->phys + memSize - PAGE_SIZE) & memTranslate;
+	addr = translateAddr;
+	memcpy_toio(ioaddr + offset, &addr, sizeof(addr));
+	frame = dma->virt + translateAddr - dma->phys;
+	pr_debug
+	    ("DMA%llu mem initialized\n virt:         0x%p\n phys:         0x%llx\n translated:   0x%llx\n pci addr:     0x%08x%x\n memTranslate: 0x%x\n size:         %llu bytes.\n",
+	     (u64) channel, dma->virt, (u64) (dma->phys), addr,
+	     ioread32(ioaddr + offset + 4), ioread32(ioaddr + offset),
+	     memTranslate, (u64) dma->size);
+	return 0;
+}
+#endif /* #ifdef CONFIG_PCI */
+
 static inline bool fifo_iomem_tx_ready(const struct ccat_eth_priv *const priv)
 {
 	static const u8 TX_FIFO_LEVEL_MASK = 0x3F;
@@ -242,7 +336,7 @@ static void fifo_iomem_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, stru
 static void fifo_iomem_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
 {
 	struct frame_iomem __iomem *frame = fifo->next_iomem;
-	const u32 addr_and_length = (void __iomem*)frame - (void __iomem*)fifo->dma.virt;
+	const u32 addr_and_length = (void __iomem*)frame - (void __iomem*)fifo->iomem.virt;
 
 	const __le16 length = cpu_to_le16(skb->len);
 	memcpy_toio(&frame->hdr.length, &length, sizeof(length));
@@ -393,12 +487,8 @@ static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 	priv->tx_ready = fifo_iomem_tx_ready;
 	priv->free = ccat_eth_priv_free_nodma;
 
-	priv->rx_fifo.dma.phys = 0; /* unused */
-	priv->rx_fifo.dma.channel = 0; /* unused */
-	priv->rx_fifo.dma.dev = NULL; /* unused &priv->func->ccat->pdev->dev; */
-
-	priv->rx_fifo.dma.virt = priv->reg.rx_mem;
-	priv->rx_fifo.dma.size = priv->func->info.rx_size;
+	priv->rx_fifo.iomem.virt = priv->reg.rx_mem;
+	priv->rx_fifo.iomem.size = priv->func->info.rx_size;
 
 	priv->rx_fifo.add = fifo_iomem_rx_add;
 	priv->rx_fifo.copy_to_skb = fifo_iomem_copy_to_linear_skb;
@@ -407,12 +497,8 @@ static int ccat_eth_priv_init_nodma(struct ccat_eth_priv *priv)
 	priv->rx_fifo.reg = NULL;
 	ccat_eth_fifo_reset(&priv->rx_fifo);
 
-	priv->tx_fifo.dma.phys = 0; /* unused */
-	priv->tx_fifo.dma.channel = 0; /* unused */
-	priv->tx_fifo.dma.dev = NULL; /* unused &priv->func->ccat->pdev->dev; */
-
-	priv->tx_fifo.dma.virt = priv->reg.tx_mem;
-	priv->tx_fifo.dma.size = priv->func->info.tx_size;
+	priv->tx_fifo.iomem.virt = priv->reg.tx_mem;
+	priv->tx_fifo.iomem.size = priv->func->info.tx_size;
 
 	priv->tx_fifo.add = fifo_iomem_tx_add;
 	priv->tx_fifo.copy_to_skb = NULL;
@@ -693,6 +779,7 @@ static struct ccat_eth_priv* ccat_eth_alloc_netdev(struct ccat_function *func)
 
 	if (netdev) {
 		priv = netdev_priv(netdev);
+		memset(priv, 0, sizeof(*priv));
 		priv->netdev = netdev;
 		priv->func = func;
 		/* ccat register mappings */

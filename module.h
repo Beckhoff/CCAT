@@ -77,26 +77,6 @@ extern int ccat_cdev_open(struct inode *const i, struct file *const f);
 extern int ccat_cdev_release(struct inode *const i, struct file *const f);
 
 /**
- * struct ccat_dma - CCAT DMA channel configuration
- * @phys: device-viewed address(physical) of the associated DMA memory
- * @virt: CPU-viewed address(virtual) of the associated DMA memory
- * @size: number of bytes in the associated DMA memory
- * @channel: CCAT DMA channel number
- * @dev: valid struct device pointer
- */
-struct ccat_dma {
-	void *virt;
-	size_t size;
-	dma_addr_t phys;
-	size_t channel;
-	struct device *dev;
-};
-
-extern void ccat_dma_free(struct ccat_dma *const dma);
-extern int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
-			 void __iomem * const ioaddr, struct device *const dev);
-
-/**
  * struct ccat_device - CCAT device representation
  * @pdev: pointer to the pci object allocated by the kernel
  * @bar_0: holding information about PCI BAR 0
