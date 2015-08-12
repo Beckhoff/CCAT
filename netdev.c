@@ -75,11 +75,9 @@ struct frame_dma {
 };
 
 struct frame_header_nodma {
-#define CCAT_FRAME_RECEIVED 0x1
 	__le16 length;
 	__le16 reserved3;
 	__le32 tx_flags;
-#define CCAT_FRAME_SENT 0x1
 	__le64 timestamp;
 };
 
@@ -303,9 +301,11 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 
 static inline bool fifo_iomem_tx_ready(const struct ccat_eth_priv *const priv)
 {
+	static const size_t TX_FIFO_LEVEL_OFFSET = 0x20;
 	static const u8 TX_FIFO_LEVEL_MASK = 0x3F;
+	void __iomem *addr = priv->reg.mac + TX_FIFO_LEVEL_OFFSET;
 
-	return !(ioread8(priv->reg.mac + 0x20) & TX_FIFO_LEVEL_MASK);
+	return !(ioread8(addr) & TX_FIFO_LEVEL_MASK);
 }
 
 static inline size_t fifo_iomem_rx_ready(struct ccat_eth_fifo *const fifo)
@@ -318,8 +318,7 @@ static inline size_t fifo_iomem_rx_ready(struct ccat_eth_fifo *const fifo)
 
 static void ccat_eth_fifo_inc(struct ccat_eth_fifo *fifo)
 {
-	fifo->mem.next += sizeof(struct ccat_eth_frame);
-	if (fifo->mem.next > fifo->end)
+	if (++fifo->mem.next > fifo->end)
 		fifo->mem.next = fifo->mem.virt;
 }
 
