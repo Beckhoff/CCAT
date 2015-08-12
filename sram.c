@@ -30,7 +30,9 @@ static ssize_t __sram_read(struct cdev_buffer *buffer, char __user * buf,
 			   size_t len, loff_t * off)
 {
 	memcpy_fromio(buffer->data, buffer->ccdev->ioaddr + *off, len);
-	copy_to_user(buf, buffer->data, len);
+	if (copy_to_user(buf, buffer->data, len))
+		return -EFAULT;
+
 	*off += len;
 	return len;
 }
