@@ -85,9 +85,9 @@ extern int ccat_cdev_release(struct inode *const i, struct file *const f);
  * @dev: valid struct device pointer
  */
 struct ccat_dma {
-	dma_addr_t phys;
 	void *virt;
 	size_t size;
+	dma_addr_t phys;
 	size_t channel;
 	struct device *dev;
 };

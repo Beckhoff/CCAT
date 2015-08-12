@@ -160,9 +160,9 @@ struct ccat_mac_infoblock {
  * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
  */
 struct ccat_eth_priv {
-	void (*free)(struct ccat_eth_priv *priv);
+	void (*free)(struct ccat_eth_priv *);
 	bool (*tx_ready)(const struct ccat_eth_priv *);
-	size_t (*rx_ready)(void *);
+	size_t (*rx_ready)(struct ccat_eth_fifo *);
 	struct ccat_function *func;
 	struct net_device *netdev;
 	struct ccat_eth_register reg;
@@ -208,11 +208,10 @@ static inline bool fifo_iomem_tx_ready(const struct ccat_eth_priv *const priv)
 	return !(ioread8(priv->reg.mac + 0x20) & TX_FIFO_LEVEL_MASK);
 }
 
-static inline size_t fifo_iomem_rx_ready(void *const __frame)
+static inline size_t fifo_iomem_rx_ready(struct ccat_eth_fifo *const fifo)
 {
-	struct frame_iomem __iomem *frame = (struct frame_iomem __iomem *)__frame;
-	static const size_t OVERHEAD = sizeof(frame->hdr);
-	const size_t len = ioread16(frame);
+	static const size_t OVERHEAD = sizeof(struct frame_header_nodma);
+	const size_t len = ioread16(&fifo->next_iomem->hdr.length);
 
 	return (len < OVERHEAD) ? 0 : len - OVERHEAD;
 }
@@ -282,13 +281,13 @@ static inline bool fifo_dma_tx_ready(const struct ccat_eth_priv *const priv)
 	return le32_to_cpu(frame->hdr.tx_flags) & CCAT_FRAME_SENT;
 }
 
-static inline size_t fifo_dma_rx_ready(void *const __frame)
+static inline size_t fifo_dma_rx_ready(struct ccat_eth_fifo *const fifo)
 {
 	static const size_t OVERHEAD = offsetof(struct frame_header_dma, rx_flags);
-	const struct frame_header_dma *const frame = __frame;
+	const struct frame_dma *const frame = fifo->next_dma;
 
-	if (le32_to_cpu(frame->rx_flags) & CCAT_FRAME_RECEIVED) {
-		const size_t len = le16_to_cpu(frame->length);
+	if (le32_to_cpu(frame->hdr.rx_flags) & CCAT_FRAME_RECEIVED) {
+		const size_t len = le16_to_cpu(frame->hdr.length);
 		return (len < OVERHEAD) ? 0 : len - OVERHEAD;
 	}
 	return 0;
@@ -587,12 +586,12 @@ static void poll_rx(struct ccat_eth_priv *const priv)
 {
 	struct ccat_eth_fifo *const fifo = &priv->rx_fifo;
 	/* TODO omit possible deadlock in situations with heavy traffic */
-	size_t len = priv->rx_ready(fifo->next_xxx);
+	size_t len = priv->rx_ready(fifo);
 	while (len) {
 		ccat_eth_receive(priv->netdev, len);
 		fifo->add(fifo);
 		ccat_eth_fifo_inc(fifo);
-		len = priv->rx_ready(fifo->next_xxx);
+		len = priv->rx_ready(fifo);
 	}
 }
 
