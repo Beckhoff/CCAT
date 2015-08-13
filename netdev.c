@@ -43,7 +43,7 @@ static const u8 frameForwardEthernetFrames[] = {
 };
 
 #define FIFO_LENGTH 64
-#define POLL_TIME ktime_set(0, 100 * NSEC_PER_USEC)
+#define POLL_TIME ktime_set(0, 50 * NSEC_PER_USEC)
 
 struct ccat_dma_frame_hdr {
 	__le32 reserved1;
@@ -314,9 +314,11 @@ static void fifo_iomem_tx_add(struct ccat_eth_fifo *const fifo)
 {
 }
 
+#define memcpy_from_ccat(DEST, SRC, LEN) memcpy(DEST,(__force void*)(SRC), LEN)
+#define memcpy_to_ccat(DEST, SRC, LEN) memcpy((__force void*)(DEST),SRC, LEN)
 static void fifo_iomem_copy_to_linear_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb, const size_t len)
 {
-	memcpy_fromio(skb->data, fifo->iomem.next->data, len);
+	memcpy_from_ccat(skb->data, fifo->iomem.next->data, len);
 }
 
 static void fifo_iomem_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buff *skb)
@@ -325,8 +327,8 @@ static void fifo_iomem_queue_skb(struct ccat_eth_fifo *const fifo, struct sk_buf
 	const u32 addr_and_length = (void __iomem*)frame - (void __iomem*)fifo->iomem.start;
 
 	const __le16 length = cpu_to_le16(skb->len);
-	memcpy_toio(&frame->hdr.length, &length, sizeof(length));
-	memcpy_toio(frame->data, skb->data, skb->len);
+	memcpy_to_ccat(&frame->hdr.length, &length, sizeof(length));
+	memcpy_to_ccat(frame->data, skb->data, skb->len);
 	iowrite32(addr_and_length, fifo->reg);
 }
 
