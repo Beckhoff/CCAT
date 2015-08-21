@@ -617,10 +617,10 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
 	ccat_eth_start_xmit(skb, dev);
 }
 
-static void ccat_eth_receive(struct net_device *const dev, const size_t len)
+static void ccat_eth_receive(struct ccat_eth_priv *const priv, const size_t len)
 {
 	struct sk_buff *const skb = dev_alloc_skb(len + NET_IP_ALIGN);
-	struct ccat_eth_priv *const priv = netdev_priv(dev);
+	struct net_device *const dev = priv->netdev;
 
 	if (!skb) {
 		pr_info("%s() out of memory :-(\n", __FUNCTION__);
@@ -699,7 +699,7 @@ static void poll_rx(struct ccat_eth_priv *const priv)
 	size_t len = priv->rx_ready(fifo);
 
 	while (len && --rx_per_poll) {
-		ccat_eth_receive(priv->netdev, len);
+		ccat_eth_receive(priv, len);
 		fifo->add(fifo);
 		ccat_eth_fifo_inc(fifo);
 		len = priv->rx_ready(fifo);
