@@ -45,14 +45,17 @@ static const struct ccat_driver *const drivers[] = {
 static int __init ccat_class_init(struct ccat_class *base)
 {
 	if (1 == atomic_inc_return(&base->instances)) {
-		if (alloc_chrdev_region(&base->dev, 0, base->count, KBUILD_MODNAME)) {
-			pr_warn("alloc_chrdev_region() for '%s' failed\n", base->name);
+		if (alloc_chrdev_region
+		    (&base->dev, 0, base->count, KBUILD_MODNAME)) {
+			pr_warn("alloc_chrdev_region() for '%s' failed\n",
+				base->name);
 			return -1;
 		}
 
 		base->class = class_create(THIS_MODULE, base->name);
 		if (!base->class) {
-			pr_warn("Create device class '%s' failed\n", base->name);
+			pr_warn("Create device class '%s' failed\n",
+				base->name);
 			unregister_chrdev_region(base->dev, base->count);
 			return -1;
 		}
@@ -62,7 +65,7 @@ static int __init ccat_class_init(struct ccat_class *base)
 
 static void ccat_class_exit(struct ccat_class *base)
 {
-	if ( !atomic_dec_return(&base->instances) ) {
+	if (!atomic_dec_return(&base->instances)) {
 		class_destroy(base->class);
 		unregister_chrdev_region(base->dev, base->count);
 	}
@@ -325,6 +328,7 @@ static struct pci_driver ccat_pci_driver = {
 	.probe = ccat_pci_probe,
 	.remove = ccat_pci_remove,
 };
+
 module_pci_driver(ccat_pci_driver);
 
 #else /* #ifdef CONFIG_PCI */
@@ -372,18 +376,20 @@ static int ccat_eim_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id bhf_eim_ccat_ids[] = {
-	{ .compatible = "bhf,emi-ccat", },
+	{.compatible = "bhf,emi-ccat",},
 	{}
 };
+
 MODULE_DEVICE_TABLE(of, bhf_eim_ccat_ids);
 
 static struct platform_driver ccat_eim_driver = {
 	.driver = {
-		.name = "cx9020-ccat",
-		.of_match_table = bhf_eim_ccat_ids,
-	},
+		   .name = "cx9020-ccat",
+		   .of_match_table = bhf_eim_ccat_ids,
+		   },
 	.probe = ccat_eim_probe,
 	.remove = ccat_eim_remove,
 };
+
 module_platform_driver(ccat_eim_driver);
 #endif /* #ifdef CONFIG_PCI */
