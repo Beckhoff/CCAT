@@ -43,7 +43,7 @@ static const u8 frameForwardEthernetFrames[] = {
 };
 
 #define FIFO_LENGTH 64
-#define POLL_TIME ktime_set(0, 100 * NSEC_PER_USEC)
+#define POLL_TIME ktime_set(0, 50 * NSEC_PER_USEC)
 
 struct ccat_dma_frame_hdr {
 	__le32 reserved1;
@@ -815,6 +815,7 @@ static struct ccat_eth_priv *ccat_eth_alloc_netdev(struct ccat_function *func)
 static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 {
 	int status;
+
 	/* init netdev with MAC and stack callbacks */
 	memcpy_fromio(priv->netdev->dev_addr, priv->reg.mii + 8,
 		      priv->netdev->addr_len);
