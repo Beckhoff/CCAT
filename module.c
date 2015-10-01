@@ -384,7 +384,7 @@ MODULE_DEVICE_TABLE(of, bhf_eim_ccat_ids);
 
 static struct platform_driver ccat_eim_driver = {
 	.driver = {
-		   .name = "cx9020-ccat",
+		   .name = KBUILD_MODNAME,
 		   .of_match_table = bhf_eim_ccat_ids,
 		   },
 	.probe = ccat_eim_probe,

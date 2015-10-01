@@ -119,7 +119,7 @@ struct ccat_dma {
 	struct device *dev;
 };
 
-struct ccat_iomem {
+struct ccat_eim {
 	struct ccat_eim_frame __iomem *next;
 	void __iomem *start;
 	size_t size;
@@ -145,7 +145,7 @@ struct ccat_eth_fifo {
 	union {
 		struct ccat_mem mem;
 		struct ccat_dma dma;
-		struct ccat_iomem iomem;
+		struct ccat_eim eim;
 	};
 };
 
@@ -295,7 +295,7 @@ static inline bool fifo_eim_tx_ready(const struct ccat_eth_priv *const priv)
 static inline size_t fifo_eim_rx_ready(struct ccat_eth_fifo *const fifo)
 {
 	static const size_t OVERHEAD = sizeof(struct ccat_eim_frame_hdr);
-	const size_t len = ioread16(&fifo->iomem.next->hdr.length);
+	const size_t len = ioread16(&fifo->eim.next->hdr.length);
 
 	return (len < OVERHEAD) ? 0 : len - OVERHEAD;
 }
@@ -308,7 +308,7 @@ static void ccat_eth_fifo_inc(struct ccat_eth_fifo *fifo)
 
 static void fifo_eim_rx_add(struct ccat_eth_fifo *const fifo)
 {
-	struct ccat_eim_frame __iomem *frame = fifo->iomem.next;
+	struct ccat_eim_frame __iomem *frame = fifo->eim.next;
 	iowrite16(0, frame);
 	wmb();
 }
@@ -322,15 +322,15 @@ static void fifo_eim_tx_add(struct ccat_eth_fifo *const fifo)
 static void fifo_eim_copy_to_linear_skb(struct ccat_eth_fifo *const fifo,
 					  struct sk_buff *skb, const size_t len)
 {
-	memcpy_from_ccat(skb->data, fifo->iomem.next->data, len);
+	memcpy_from_ccat(skb->data, fifo->eim.next->data, len);
 }
 
 static void fifo_eim_queue_skb(struct ccat_eth_fifo *const fifo,
 				 struct sk_buff *skb)
 {
-	struct ccat_eim_frame __iomem *frame = fifo->iomem.next;
+	struct ccat_eim_frame __iomem *frame = fifo->eim.next;
 	const u32 addr_and_length =
-	    (void __iomem *)frame - (void __iomem *)fifo->iomem.start;
+	    (void __iomem *)frame - (void __iomem *)fifo->eim.start;
 
 	const __le16 length = cpu_to_le16(skb->len);
 	memcpy_to_ccat(&frame->hdr.length, &length, sizeof(length));
@@ -338,7 +338,7 @@ static void fifo_eim_queue_skb(struct ccat_eth_fifo *const fifo,
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_priv_free_iomem(struct ccat_eth_priv *priv)
+static void ccat_eth_priv_free_eim(struct ccat_eth_priv *priv)
 {
 	/* reset hw fifo's */
 	iowrite32(0, priv->tx_fifo.reg + 0x8);
@@ -489,14 +489,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 }
 #endif /* #ifdef CONFIG_PCI */
 
-static int ccat_eth_priv_init_iomem(struct ccat_eth_priv *priv)
+static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 {
 	priv->rx_ready = fifo_eim_rx_ready;
 	priv->tx_ready = fifo_eim_tx_ready;
-	priv->free = ccat_eth_priv_free_iomem;
+	priv->free = ccat_eth_priv_free_eim;
 
-	priv->rx_fifo.iomem.start = priv->reg.rx_mem;
-	priv->rx_fifo.iomem.size = priv->func->info.rx_size;
+	priv->rx_fifo.eim.start = priv->reg.rx_mem;
+	priv->rx_fifo.eim.size = priv->func->info.rx_size;
 
 	priv->rx_fifo.add = fifo_eim_rx_add;
 	priv->rx_fifo.copy_to_skb = fifo_eim_copy_to_linear_skb;
@@ -505,8 +505,8 @@ static int ccat_eth_priv_init_iomem(struct ccat_eth_priv *priv)
 	priv->rx_fifo.reg = NULL;
 	ccat_eth_fifo_reset(&priv->rx_fifo);
 
-	priv->tx_fifo.iomem.start = priv->reg.tx_mem;
-	priv->tx_fifo.iomem.size = priv->func->info.tx_size;
+	priv->tx_fifo.eim.start = priv->reg.tx_mem;
+	priv->tx_fifo.eim.size = priv->func->info.tx_size;
 
 	priv->tx_fifo.add = fifo_eim_tx_add;
 	priv->tx_fifo.copy_to_skb = NULL;
@@ -533,7 +533,7 @@ static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
 	struct ccat_mac_infoblock offsets;
 	void __iomem *const func_base = func->ccat->bar_0 + func->info.addr;
 
-	/* struct ccat_eth_fifo contains a union of ccat_dma, ccat_iomem and ccat_mem
+	/* struct ccat_eth_fifo contains a union of ccat_dma, ccat_eim and ccat_mem
 	 * the members next, start and size have to overlay the exact same memory,
 	 * to support 'polymorphic' usage of them */
 	BUILD_BUG_ON(offsetof(struct ccat_dma, next) !=
@@ -541,11 +541,11 @@ static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
 	BUILD_BUG_ON(offsetof(struct ccat_dma, start) !=
 		     offsetof(struct ccat_mem, start));
 	BUILD_BUG_ON(offsetof(struct ccat_dma, next) !=
-		     offsetof(struct ccat_iomem, next));
+		     offsetof(struct ccat_eim, next));
 	BUILD_BUG_ON(offsetof(struct ccat_dma, start) !=
-		     offsetof(struct ccat_iomem, start));
+		     offsetof(struct ccat_eim, start));
 	BUILD_BUG_ON(offsetof(struct ccat_dma, size) !=
-		     offsetof(struct ccat_iomem, size));
+		     offsetof(struct ccat_eim, size));
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	reg->mii = func_base + offsets.mii;
@@ -875,7 +875,7 @@ static int ccat_eth_eim_probe(struct ccat_function *func)
 	if (!priv)
 		return -ENOMEM;
 
-	status = ccat_eth_priv_init_iomem(priv);
+	status = ccat_eth_priv_init_eim(priv);
 	if (status) {
 		pr_warn("%s(): memory initialization failed.\n", __FUNCTION__);
 		free_netdev(priv->netdev);
