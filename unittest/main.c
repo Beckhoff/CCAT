@@ -67,26 +67,47 @@ static unsigned int user_alarms = 0;
 // process data
 static uint8_t *domain1_pd = NULL;
 
-#define BusCouplerPos  0, 3
+#define BusCouplerPos  0, 4
 #define DigOutSlavePos 0, 0
 
 //#define Beckhoff_EK1100 0x00000002, 0x044c2c52
 #define Beckhoff_EK1100 0x00000002, 0x04562c52
-#define Beckhoff_EL1008 0x00000002, 0x03f03052
-#define Beckhoff_EL2004 0x00000002, 0x07d43052
-#define Beckhoff_EL2008 0x00000002, 0x07d83052
+#define Beckhoff_EL1004 0x6000, 0x00000002, 0x03ec3052
+#define Beckhoff_EL1008 0x6000, 0x00000002, 0x03f03052
+#define Beckhoff_EL2004 0x7000, 0x00000002, 0x07d43052
+#define Beckhoff_EL2008 0x7000, 0x00000002, 0x07d83052
 #define Beckhoff_EL2032 0x00000002, 0x07f03052
 #define Beckhoff_EL3152 0x00000002, 0x0c503052
 #define Beckhoff_EL3102 0x00000002, 0x0c1e3052
 #define Beckhoff_EL4102 0x00000002, 0x10063052
 
 // offsets for PDO entries
-static unsigned int off_dig_in[1];
+static unsigned int off_dig_in[2];
 static unsigned int off_dig_out[2];
 
 
 /*****************************************************************************/
 // Digital in ------------------------
+static ec_pdo_entry_info_t el1004_channels[] = {
+    {0x6000, 1, 1},
+    {0x6010, 1, 1},
+    {0x6020, 1, 1},
+    {0x6030, 1, 1},
+};
+
+static ec_pdo_info_t el1004_pdos[] = {
+    {0x1a00, 1, &el1004_channels[0]},
+    {0x1a01, 1, &el1004_channels[1]},
+    {0x1a02, 1, &el1004_channels[2]},
+    {0x1a03, 1, &el1004_channels[3]},
+};
+
+static ec_sync_info_t el1004_syncs[] = {
+    {2, EC_DIR_OUTPUT},
+    {3, EC_DIR_INPUT, 4, el1004_pdos},
+    {0xff}
+};
+
 static ec_pdo_entry_info_t el1008_channels[] = {
     {0x6000, 1, 1},
     {0x6010, 1, 1},
@@ -106,7 +127,7 @@ static ec_pdo_info_t el1008_pdos[] = {
     {0x1a04, 1, &el1008_channels[4]},
     {0x1a05, 1, &el1008_channels[5]},
     {0x1a06, 1, &el1008_channels[6]},
-    {0x1a07, 1, &el1008_channels[7]}
+    {0x1a07, 1, &el1008_channels[7]},
 };
 
 static ec_sync_info_t el1008_syncs[] = {
@@ -116,6 +137,26 @@ static ec_sync_info_t el1008_syncs[] = {
 };
 
 // Digital out ------------------------
+static ec_pdo_entry_info_t el2004_channels[] = {
+    {0x7000, 1, 1},
+    {0x7010, 1, 1},
+    {0x7020, 1, 1},
+    {0x7030, 1, 1},
+};
+
+static ec_pdo_info_t el2004_pdos[] = {
+    {0x1600, 1, &el2004_channels[0]},
+    {0x1601, 1, &el2004_channels[1]},
+    {0x1602, 1, &el2004_channels[2]},
+    {0x1603, 1, &el2004_channels[3]},
+};
+
+static ec_sync_info_t el2004_syncs[] = {
+    {0, EC_DIR_OUTPUT, 4, el2004_pdos},
+    {1, EC_DIR_INPUT},
+    {0xff}
+};
+
 static ec_pdo_entry_info_t el2008_channels[] = {
     {0x7000, 1, 1},
     {0x7010, 1, 1},
@@ -215,7 +256,7 @@ void cyclic_task()
     check_domain1_state();
     
 
-	inputValue = EC_READ_U8(domain1_pd + off_dig_in[0]);
+	inputValue = EC_READ_U8(domain1_pd + off_dig_in[1]) & 0x0F;
 	
 	if(inputValue != outputValue) {
 		numAsyncCycles++;
@@ -238,18 +279,18 @@ void cyclic_task()
         
 
         // calculate new process data
-        outputValue++;
+        outputValue = (outputValue + 1) & 0x0F;
 
         // check for master state (optional)
         check_master_state();
 
         // check for islave configuration state(s) (optional)
-        check_slave_config_states();
+//        check_slave_config_states();
     }
 
     // write process data
-    EC_WRITE_U8(domain1_pd + off_dig_out[1], outputValue);
-    EC_WRITE_U8(domain1_pd + off_dig_out[0], error);
+    EC_WRITE_U8(domain1_pd + off_dig_out[0], outputValue);
+    EC_WRITE_U8(domain1_pd + off_dig_out[1], error);
 
     // send process data
     ecrt_domain_queue(domain1);
@@ -268,22 +309,22 @@ void signal_handler(int signum) {
 
 /****************************************************************************/
 
-int Init_EL2008(uint16_t position)
+static int Init_EL100x(int* off, const uint16_t position, const uint16_t index, const uint32_t vendor_id, const uint32_t product_code, const ec_sync_info_t syncs[])
 {
-    ec_slave_config_t *sc;
-    if (!(sc = ecrt_master_slave_config(master, 0, position, Beckhoff_EL2008))) {
-        fprintf(stderr, "Failed to get EL2008 configuration #%u.\n", position);
+	ec_slave_config_t *sc;
+    if (!(sc = ecrt_master_slave_config(master, 0, position, vendor_id, product_code))) {
+        fprintf(stderr, "Failed to get slave configuration.\n");
         return -1;
     }
-    if (ecrt_slave_config_pdos(sc, EC_END, el2008_syncs)) {
-        fprintf(stderr, "Failed to configure PDOs #%u.\n", position);
+    if (ecrt_slave_config_pdos(sc, EC_END, syncs)) {
+        fprintf(stderr, "Failed to configure PDOs.\n");
         return -1;
     }
-    if (0 > (off_dig_out[position] = ecrt_slave_config_reg_pdo_entry(sc, 0x7000, 1, domain1, NULL))) {
-		fprintf(stderr, "Failed to configure reg PDOs #%u.\n", position);
+    if (0 > (*off = ecrt_slave_config_reg_pdo_entry(sc, index, 1, domain1, NULL))) {
+		fprintf(stderr, "Failed to configure reg PDOs.\n");
 		return -1;
 	}
-    fprintf(stderr, "EL2008 #%u configured offset: %d.\n", position, off_dig_out[position]);
+    printf("Slave configured @ pos %d.\n", position);
     return 0;
 }
 
@@ -303,26 +344,10 @@ int main(int argc, char **argv)
         return -1;
 
     printf("Configuring PDOs...\n");
-    if (!(sc_ana_in = ecrt_master_slave_config(master, 0, 2, Beckhoff_EL1008))) {
-        fprintf(stderr, "Failed to get digital in configuration.\n");
-        return -1;
-    }
-    if (ecrt_slave_config_pdos(sc_ana_in, EC_END, el1008_syncs)) {
-        fprintf(stderr, "Failed to configure PDOs.\n");
-        return -1;
-    }
-    if (0 > (off_dig_in[0] = ecrt_slave_config_reg_pdo_entry(sc_ana_in, 0x6000, 1, domain1, NULL))) {
-		fprintf(stderr, "Failed to configure reg PDOs.\n");
-		return -1;
-	}
-    printf("EL1008 configured.\n");
-
-    for(i = 0; i < 2; ++i) {
-        if(Init_EL2008(i)) {
-            fprintf(stderr, "Failed to initialize EL2008 #%u.\n", i);
-            return -1;
-        }
-    }
+    Init_EL100x(&off_dig_in[0], 0, Beckhoff_EL1004, el1004_syncs);
+    Init_EL100x(&off_dig_in[1], 1, Beckhoff_EL1004, el1004_syncs);
+    Init_EL100x(&off_dig_out[0], 2, Beckhoff_EL2004, el2004_syncs);
+    Init_EL100x(&off_dig_out[1], 3, Beckhoff_EL2004, el2004_syncs);
 
     // Create configuration for bus coupler
     sc = ecrt_master_slave_config(master, BusCouplerPos, Beckhoff_EK1100);
