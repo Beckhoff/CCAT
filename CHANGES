@@ -7,6 +7,7 @@ Test log:
 --------------|      | generic/|        |       | fping, netio, etherlab,
     Kernel    | arch | ec_ccat | device |  os   | gpio, sram, update_r
 ==============|======|=========|================================================
+3.12.47-rt65  |x86_64| ec_ccat | CX2030 | 14.04 | no errors
 3.4.108-rt136 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
 
 
