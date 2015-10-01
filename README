@@ -12,8 +12,7 @@ Supported devices:
 
 
 How to build and install the kernel modules:
-============================================
-Install 'ccat'
+===========================================
 1. cd into ccat <src_dir>
 2. make && make install
 
