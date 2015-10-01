@@ -23,6 +23,13 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 
+#ifdef CONFIG_PCI
+#include <asm/dma.h>
+#else
+#define free_dma(X)
+#define request_dma(X, Y) ((int)(-EINVAL))
+#endif
+
 #include "module.h"
 
 /**
@@ -218,8 +225,6 @@ struct ccat_mac_register {
 	u8 mii_connected;
 };
 
-#ifdef CONFIG_PCI
-#include <asm/dma.h>
 static void ccat_dma_free(struct ccat_dma *const dma)
 {
 	const struct ccat_dma tmp = *dma;
@@ -281,7 +286,6 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	     memTranslate, (u64) dma->size);
 	return 0;
 }
-#endif /* #ifdef CONFIG_PCI */
 
 static inline bool fifo_eim_tx_ready(const struct ccat_eth_priv *const priv)
 {
@@ -362,7 +366,6 @@ static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
 	}
 }
 
-#ifdef CONFIG_PCI
 static inline bool fifo_dma_tx_ready(const struct ccat_eth_priv *const priv)
 {
 	const struct ccat_dma_frame *frame = priv->tx_fifo.dma.next;
@@ -487,7 +490,6 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	wmb();
 	return 0;
 }
-#endif /* #ifdef CONFIG_PCI */
 
 static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 {
@@ -834,7 +836,6 @@ static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 	return 0;
 }
 
-#ifdef CONFIG_PCI
 static int ccat_eth_dma_probe(struct ccat_function *func)
 {
 	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
@@ -865,7 +866,6 @@ struct ccat_driver eth_dma_driver = {
 	.probe = ccat_eth_dma_probe,
 	.remove = ccat_eth_dma_remove,
 };
-#endif /* #ifdef CONFIG_PCI */
 
 static int ccat_eth_eim_probe(struct ccat_function *func)
 {
