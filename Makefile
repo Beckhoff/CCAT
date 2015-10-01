@@ -14,7 +14,7 @@ install:
 	sudo cp ./$(TARGET).ko $(EXTRA_DIR)
 	sudo depmod -a
 	sudo modprobe $(TARGET)
-	sudo ifconfig eth2 192.168.100.164
+	sudo ifconfig eth2 192.168.100.164 up
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean

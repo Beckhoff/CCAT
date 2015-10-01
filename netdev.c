@@ -56,7 +56,7 @@ struct ccat_dma_frame_hdr {
 	__le64 timestamp;
 };
 
-struct ccat_iomem_frame_hdr {
+struct ccat_eim_frame_hdr {
 	__le16 length;
 	__le16 reserved3;
 	__le32 tx_flags;
@@ -73,14 +73,14 @@ struct ccat_dma_frame {
 		sizeof(struct ccat_dma_frame_hdr)];
 };
 
-struct ccat_iomem_frame {
-	struct ccat_iomem_frame_hdr hdr;
+struct ccat_eim_frame {
+	struct ccat_eim_frame_hdr hdr;
 	u8 data[sizeof(struct ccat_eth_frame) -
-		sizeof(struct ccat_iomem_frame_hdr)];
+		sizeof(struct ccat_eim_frame_hdr)];
 };
 
 #define MAX_PAYLOAD_SIZE \
-	(sizeof(struct ccat_eth_frame) - max(sizeof(struct ccat_dma_frame_hdr), sizeof(struct ccat_iomem_frame_hdr)))
+	(sizeof(struct ccat_eth_frame) - max(sizeof(struct ccat_dma_frame_hdr), sizeof(struct ccat_eim_frame_hdr)))
 
 /**
  * struct ccat_eth_register - CCAT register addresses in the PCI BAR
@@ -120,7 +120,7 @@ struct ccat_dma {
 };
 
 struct ccat_iomem {
-	struct ccat_iomem_frame __iomem *next;
+	struct ccat_eim_frame __iomem *next;
 	void __iomem *start;
 	size_t size;
 };
@@ -283,7 +283,7 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 }
 #endif /* #ifdef CONFIG_PCI */
 
-static inline bool fifo_iomem_tx_ready(const struct ccat_eth_priv *const priv)
+static inline bool fifo_eim_tx_ready(const struct ccat_eth_priv *const priv)
 {
 	static const size_t TX_FIFO_LEVEL_OFFSET = 0x20;
 	static const u8 TX_FIFO_LEVEL_MASK = 0x3F;
@@ -292,9 +292,9 @@ static inline bool fifo_iomem_tx_ready(const struct ccat_eth_priv *const priv)
 	return !(ioread8(addr) & TX_FIFO_LEVEL_MASK);
 }
 
-static inline size_t fifo_iomem_rx_ready(struct ccat_eth_fifo *const fifo)
+static inline size_t fifo_eim_rx_ready(struct ccat_eth_fifo *const fifo)
 {
-	static const size_t OVERHEAD = sizeof(struct ccat_iomem_frame_hdr);
+	static const size_t OVERHEAD = sizeof(struct ccat_eim_frame_hdr);
 	const size_t len = ioread16(&fifo->iomem.next->hdr.length);
 
 	return (len < OVERHEAD) ? 0 : len - OVERHEAD;
@@ -306,29 +306,29 @@ static void ccat_eth_fifo_inc(struct ccat_eth_fifo *fifo)
 		fifo->mem.next = fifo->mem.start;
 }
 
-static void fifo_iomem_rx_add(struct ccat_eth_fifo *const fifo)
+static void fifo_eim_rx_add(struct ccat_eth_fifo *const fifo)
 {
-	struct ccat_iomem_frame __iomem *frame = fifo->iomem.next;
+	struct ccat_eim_frame __iomem *frame = fifo->iomem.next;
 	iowrite16(0, frame);
 	wmb();
 }
 
-static void fifo_iomem_tx_add(struct ccat_eth_fifo *const fifo)
+static void fifo_eim_tx_add(struct ccat_eth_fifo *const fifo)
 {
 }
 
 #define memcpy_from_ccat(DEST, SRC, LEN) memcpy(DEST,(__force void*)(SRC), LEN)
 #define memcpy_to_ccat(DEST, SRC, LEN) memcpy((__force void*)(DEST),SRC, LEN)
-static void fifo_iomem_copy_to_linear_skb(struct ccat_eth_fifo *const fifo,
+static void fifo_eim_copy_to_linear_skb(struct ccat_eth_fifo *const fifo,
 					  struct sk_buff *skb, const size_t len)
 {
 	memcpy_from_ccat(skb->data, fifo->iomem.next->data, len);
 }
 
-static void fifo_iomem_queue_skb(struct ccat_eth_fifo *const fifo,
+static void fifo_eim_queue_skb(struct ccat_eth_fifo *const fifo,
 				 struct sk_buff *skb)
 {
-	struct ccat_iomem_frame __iomem *frame = fifo->iomem.next;
+	struct ccat_eim_frame __iomem *frame = fifo->iomem.next;
 	const u32 addr_and_length =
 	    (void __iomem *)frame - (void __iomem *)fifo->iomem.start;
 
@@ -491,15 +491,15 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 
 static int ccat_eth_priv_init_iomem(struct ccat_eth_priv *priv)
 {
-	priv->rx_ready = fifo_iomem_rx_ready;
-	priv->tx_ready = fifo_iomem_tx_ready;
+	priv->rx_ready = fifo_eim_rx_ready;
+	priv->tx_ready = fifo_eim_tx_ready;
 	priv->free = ccat_eth_priv_free_iomem;
 
 	priv->rx_fifo.iomem.start = priv->reg.rx_mem;
 	priv->rx_fifo.iomem.size = priv->func->info.rx_size;
 
-	priv->rx_fifo.add = fifo_iomem_rx_add;
-	priv->rx_fifo.copy_to_skb = fifo_iomem_copy_to_linear_skb;
+	priv->rx_fifo.add = fifo_eim_rx_add;
+	priv->rx_fifo.copy_to_skb = fifo_eim_copy_to_linear_skb;
 	priv->rx_fifo.queue_skb = NULL;
 	priv->rx_fifo.end = priv->rx_fifo.dma.start;
 	priv->rx_fifo.reg = NULL;
@@ -508,9 +508,9 @@ static int ccat_eth_priv_init_iomem(struct ccat_eth_priv *priv)
 	priv->tx_fifo.iomem.start = priv->reg.tx_mem;
 	priv->tx_fifo.iomem.size = priv->func->info.tx_size;
 
-	priv->tx_fifo.add = fifo_iomem_tx_add;
+	priv->tx_fifo.add = fifo_eim_tx_add;
 	priv->tx_fifo.copy_to_skb = NULL;
-	priv->tx_fifo.queue_skb = fifo_iomem_queue_skb;
+	priv->tx_fifo.queue_skb = fifo_eim_queue_skb;
 	priv->tx_fifo.end =
 	    priv->tx_fifo.dma.start + priv->tx_fifo.dma.size -
 	    sizeof(struct ccat_eth_frame);
@@ -867,7 +867,7 @@ struct ccat_driver eth_dma_driver = {
 };
 #endif /* #ifdef CONFIG_PCI */
 
-static int ccat_eth_iomem_probe(struct ccat_function *func)
+static int ccat_eth_eim_probe(struct ccat_function *func)
 {
 	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
 	int status;
@@ -884,7 +884,7 @@ static int ccat_eth_iomem_probe(struct ccat_function *func)
 	return ccat_eth_init_netdev(priv);
 }
 
-static void ccat_eth_iomem_remove(struct ccat_function *func)
+static void ccat_eth_eim_remove(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
@@ -892,8 +892,8 @@ static void ccat_eth_iomem_remove(struct ccat_function *func)
 	free_netdev(eth->netdev);
 }
 
-struct ccat_driver eth_iomem_driver = {
+struct ccat_driver eth_eim_driver = {
 	.type = CCATINFO_ETHERCAT_NODMA,
-	.probe = ccat_eth_iomem_probe,
-	.remove = ccat_eth_iomem_remove,
+	.probe = ccat_eth_eim_probe,
+	.remove = ccat_eth_eim_remove,
 };
