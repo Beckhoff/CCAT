@@ -1,4 +1,20 @@
 
+0.13:
+=====
+- prepare support for devices without pci (CX9020)
+
+Test log:
+--------------|      | generic/|        |       | fping, netio, etherlab,
+    Kernel    | arch | ec_ccat | device |  os   | gpio, sram, update_r
+==============|======|=========|================================================
+3.4.108-rt136 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
+
+
+* os/14.04 means Ubuntu 14.04 LTS
+
+
+
+
 0.12:
 =====
 - fix crash on systems with multiple CCATs
