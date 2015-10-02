@@ -4,15 +4,16 @@
 - prepare support for devices without pci (CX9020)
 
 Test log:
---------------|      | generic/|        |       | fping, netio, etherlab,
-    Kernel    | arch | ec_ccat | device |  os   | gpio, sram, update_r
-==============|======|=========|================================================
-3.12.47-rt65  |x86_64| ec_ccat | CX2030 | 14.04 | no errors
-3.4.108-rt136 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
-
+-------------|      | generic/|        |       | fping, netio, etherlab,
+    Kernel   | arch | ec_ccat | device |  os   | gpio, sram, update_r
+=============|======|=========|================================================
+4.1.7-rt8    |x86_64| ec_ccat | CX2030 | 14.04 | no errors
+3.18.21-rt19 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
+3.14.51-rt52 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
+3.12.47-rt65 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
+3.4.108-rt136|x86_64| ec_ccat | CX2030 | 14.04 | no errors
 
 * os/14.04 means Ubuntu 14.04 LTS
-
 
 
 
