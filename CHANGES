@@ -7,6 +7,7 @@ Test log:
 -------------|      | generic/|        |       | fping, netio, etherlab,
     Kernel   | arch | ec_ccat | device |  os   | gpio, sram, update_r
 =============|======|=========|================================================
+4.1.7-rt8    |armv7l| ec_ccat | CX9020 |debian8| fping, netio, gpio, sram
 4.1.7-rt8    | i386 | ec_ccat | CX5000 | 14.04 | no errors
 4.1.7-rt8    |x86_64| ec_ccat | CX5130 | 14.04 | no errors
 4.1.7-rt8    |x86_64| ec_ccat | CX2030 | 14.04 | no errors
@@ -15,7 +16,8 @@ Test log:
 3.12.47-rt65 |x86_64| ec_ccat | CX2030 | 14.04 | no errors
 3.4.108-rt136|x86_64| ec_ccat | CX2030 | 14.04 | no errors
 
-* os/14.04 means Ubuntu 14.04 LTS
+*  os/14.04 means Ubuntu 14.04 LTS
+** os/debian8 means Debian 8 "Jessie"
 
 
 
