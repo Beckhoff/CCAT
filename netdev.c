@@ -324,13 +324,13 @@ static void fifo_eim_tx_add(struct ccat_eth_fifo *const fifo)
 #define memcpy_from_ccat(DEST, SRC, LEN) memcpy(DEST,(__force void*)(SRC), LEN)
 #define memcpy_to_ccat(DEST, SRC, LEN) memcpy((__force void*)(DEST),SRC, LEN)
 static void fifo_eim_copy_to_linear_skb(struct ccat_eth_fifo *const fifo,
-					  struct sk_buff *skb, const size_t len)
+					struct sk_buff *skb, const size_t len)
 {
 	memcpy_from_ccat(skb->data, fifo->eim.next->data, len);
 }
 
 static void fifo_eim_queue_skb(struct ccat_eth_fifo *const fifo,
-				 struct sk_buff *skb)
+			       struct sk_buff *skb)
 {
 	struct ccat_eim_frame __iomem *frame = fifo->eim.next;
 	const u32 addr_and_length =
