@@ -273,9 +273,11 @@ static int ccat_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	status = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
 	if (status) {
-		status = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+		status =
+		    dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 		if (status) {
-			pr_err("No suitable DMA available, pci rev: %u\n", revision);
+			pr_err("No suitable DMA available, pci rev: %u\n",
+			       revision);
 			goto release_regions;
 		}
 		pr_debug("32 bit DMA supported, pci rev: %u\n", revision);

@@ -257,8 +257,7 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 
 	/* calculate size and alignments */
 	dma->size = alignment * 2;
-	dma->base =
-	    dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
+	dma->base = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
 
 	if (!dma->base || !dma->phys) {
 		pr_info("init DMA%llu memory failed.\n", (u64) channel);
@@ -271,11 +270,11 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 		return -EINVAL;
 	}
 
-	dma->start = (void*)ALIGN((size_t)dma->base, alignment);
+	dma->start = (void *)ALIGN((size_t) dma->base, alignment);
 	ccat_start = ALIGN(dma->phys, alignment);
 
 	/** bit 0 enables 64 bit mode on ccat */
-	iowrite32((u32)ccat_start | ((ccat_start >> 32) > 0), ioaddr);
+	iowrite32((u32) ccat_start | ((ccat_start >> 32) > 0), ioaddr);
 	iowrite32(ccat_start >> 32, ioaddr + 4);
 
 	pr_info
@@ -467,6 +466,15 @@ static const struct ccat_eth_fifo_operations eim_tx_fifo_ops = {
 	.ready = fifo_eim_tx_ready,
 };
 
+static void fifo_init(struct ccat_eth_fifo *const fifo, void __iomem * reg,
+		      const struct ccat_eth_fifo_operations *ops, size_t size)
+{
+	fifo->ops = ops;
+	fifo->reg = reg;
+	fifo->end = fifo->mem.start + size - sizeof(struct ccat_eth_frame);
+	ccat_eth_fifo_reset(fifo);
+}
+
 /**
  * Initalizes both (Rx/Tx) DMA fifo's and related management structures
  */
@@ -475,8 +483,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	struct ccat_function *const func = priv->func;
 	struct pci_dev *pdev = func->ccat->pdev;
 	int status = 0;
-	priv->rx_fifo.ops = &dma_rx_fifo_ops;
-	priv->tx_fifo.ops = &dma_tx_fifo_ops;
+
 	priv->free = ccat_eth_priv_free_dma;
 
 	status =
@@ -496,17 +503,10 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		return status;
 	}
 
-	priv->rx_fifo.end =
-	    ((struct ccat_eth_frame *)priv->rx_fifo.dma.start) + FIFO_LENGTH -
-	    1;
-	priv->rx_fifo.reg = priv->reg.rx_fifo;
-	ccat_eth_fifo_reset(&priv->rx_fifo);
-
-	priv->tx_fifo.end =
-	    ((struct ccat_eth_frame *)priv->tx_fifo.dma.start) + FIFO_LENGTH -
-	    1;
-	priv->tx_fifo.reg = priv->reg.tx_fifo;
-	ccat_eth_fifo_reset(&priv->tx_fifo);
+	fifo_init(&priv->rx_fifo, priv->reg.rx_fifo, &dma_rx_fifo_ops,
+		  128 * 1024);
+	fifo_init(&priv->tx_fifo, priv->reg.tx_fifo, &dma_tx_fifo_ops,
+		  128 * 1024);
 
 	/* disable MAC filter */
 	iowrite8(0, priv->reg.mii + 0x8 + 6);
@@ -516,25 +516,15 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 
 static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 {
-	priv->rx_fifo.ops = &eim_rx_fifo_ops;
-	priv->tx_fifo.ops = &eim_tx_fifo_ops;
 	priv->free = ccat_eth_priv_free_eim;
 
 	priv->rx_fifo.eim.start = priv->reg.rx_mem;
-	priv->rx_fifo.eim.size = priv->func->info.rx_size;
-
-	priv->rx_fifo.end = priv->rx_fifo.dma.start;
-	priv->rx_fifo.reg = NULL;
-	ccat_eth_fifo_reset(&priv->rx_fifo);
+	fifo_init(&priv->rx_fifo, priv->reg.rx_fifo, &eim_rx_fifo_ops,
+		  sizeof(struct ccat_eth_frame));
 
 	priv->tx_fifo.eim.start = priv->reg.tx_mem;
-	priv->tx_fifo.eim.size = priv->func->info.tx_size;
-
-	priv->tx_fifo.end =
-	    priv->tx_fifo.dma.start + priv->tx_fifo.dma.size -
-	    sizeof(struct ccat_eth_frame);
-	priv->tx_fifo.reg = priv->reg.tx_fifo;
-	ccat_eth_fifo_reset(&priv->tx_fifo);
+	fifo_init(&priv->tx_fifo, priv->reg.tx_fifo, &eim_tx_fifo_ops,
+		  priv->func->info.tx_size);
 
 	/* disable MAC filter */
 	iowrite8(0, priv->reg.mii + 0x8 + 6);
