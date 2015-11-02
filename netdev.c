@@ -145,9 +145,7 @@ struct ccat_mem {
  * @dma: information about the associated DMA memory
  */
 struct ccat_eth_fifo {
-	void (*add) (struct ccat_eth_fifo *);
-	void (*copy_to_skb) (struct ccat_eth_fifo *, struct sk_buff *, size_t);
-	void (*queue_skb) (struct ccat_eth_fifo * const, struct sk_buff *);
+	const struct ccat_eth_fifo_operations *ops;
 	void __iomem *reg;
 	const struct ccat_eth_frame *end;
 	union {
@@ -155,6 +153,12 @@ struct ccat_eth_fifo {
 		struct ccat_dma dma;
 		struct ccat_eim eim;
 	};
+};
+
+struct ccat_eth_fifo_operations {
+	void (*add) (struct ccat_eth_fifo *);
+	void (*copy_to_skb) (struct ccat_eth_fifo *, struct sk_buff *, size_t);
+	void (*queue_skb) (struct ccat_eth_fifo * const, struct sk_buff *);
 };
 
 /**
@@ -353,10 +357,10 @@ static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
 		wmb();
 	}
 
-	if (fifo->add) {
+	if (fifo->ops->add) {
 		fifo->mem.next = fifo->mem.start;
 		do {
-			fifo->add(fifo);
+			fifo->ops->add(fifo);
 			ccat_eth_fifo_inc(fifo);
 		} while (fifo->mem.next != fifo->mem.start);
 	}
@@ -434,6 +438,30 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 	ccat_dma_free(&priv->tx_fifo.dma);
 }
 
+static const struct ccat_eth_fifo_operations dma_rx_fifo_ops = {
+	.add = ccat_eth_rx_fifo_dma_add,
+	.copy_to_skb = fifo_dma_copy_to_linear_skb,
+	.queue_skb = NULL,
+};
+
+static const struct ccat_eth_fifo_operations dma_tx_fifo_ops = {
+	.add = ccat_eth_tx_fifo_dma_add_free,
+	.copy_to_skb = NULL,
+	.queue_skb = fifo_dma_queue_skb,
+};
+
+static const struct ccat_eth_fifo_operations eim_rx_fifo_ops = {
+	.add = fifo_eim_rx_add,
+	.copy_to_skb = fifo_eim_copy_to_linear_skb,
+	.queue_skb = NULL,
+};
+
+static const struct ccat_eth_fifo_operations eim_tx_fifo_ops = {
+	.add = fifo_eim_tx_add,
+	.copy_to_skb = NULL,
+	.queue_skb = fifo_eim_queue_skb,
+};
+
 /**
  * Initalizes both (Rx/Tx) DMA fifo's and related management structures
  */
@@ -463,18 +491,14 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		return status;
 	}
 
-	priv->rx_fifo.add = ccat_eth_rx_fifo_dma_add;
-	priv->rx_fifo.copy_to_skb = fifo_dma_copy_to_linear_skb;
-	priv->rx_fifo.queue_skb = NULL;
+	priv->rx_fifo.ops = &dma_rx_fifo_ops;
 	priv->rx_fifo.end =
 	    ((struct ccat_eth_frame *)priv->rx_fifo.dma.start) + FIFO_LENGTH -
 	    1;
 	priv->rx_fifo.reg = priv->reg.rx_fifo;
 	ccat_eth_fifo_reset(&priv->rx_fifo);
 
-	priv->tx_fifo.add = ccat_eth_tx_fifo_dma_add_free;
-	priv->tx_fifo.copy_to_skb = NULL;
-	priv->tx_fifo.queue_skb = fifo_dma_queue_skb;
+	priv->tx_fifo.ops = &dma_tx_fifo_ops;
 	priv->tx_fifo.end =
 	    ((struct ccat_eth_frame *)priv->tx_fifo.dma.start) + FIFO_LENGTH -
 	    1;
@@ -496,9 +520,7 @@ static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 	priv->rx_fifo.eim.start = priv->reg.rx_mem;
 	priv->rx_fifo.eim.size = priv->func->info.rx_size;
 
-	priv->rx_fifo.add = fifo_eim_rx_add;
-	priv->rx_fifo.copy_to_skb = fifo_eim_copy_to_linear_skb;
-	priv->rx_fifo.queue_skb = NULL;
+	priv->rx_fifo.ops = &eim_rx_fifo_ops;
 	priv->rx_fifo.end = priv->rx_fifo.dma.start;
 	priv->rx_fifo.reg = NULL;
 	ccat_eth_fifo_reset(&priv->rx_fifo);
@@ -506,9 +528,7 @@ static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 	priv->tx_fifo.eim.start = priv->reg.tx_mem;
 	priv->tx_fifo.eim.size = priv->func->info.tx_size;
 
-	priv->tx_fifo.add = fifo_eim_tx_add;
-	priv->tx_fifo.copy_to_skb = NULL;
-	priv->tx_fifo.queue_skb = fifo_eim_queue_skb;
+	priv->tx_fifo.ops = &eim_tx_fifo_ops;
 	priv->tx_fifo.end =
 	    priv->tx_fifo.dma.start + priv->tx_fifo.dma.size -
 	    sizeof(struct ccat_eth_frame);
@@ -583,7 +603,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	}
 
 	/* prepare frame in DMA memory */
-	fifo->queue_skb(fifo, skb);
+	fifo->ops->queue_skb(fifo, skb);
 
 	/* update stats */
 	atomic64_add(skb->len, &priv->tx_bytes);
@@ -627,7 +647,7 @@ static void ccat_eth_receive(struct ccat_eth_priv *const priv, const size_t len)
 	}
 	skb->dev = dev;
 	skb_reserve(skb, NET_IP_ALIGN);
-	priv->rx_fifo.copy_to_skb(&priv->rx_fifo, skb, len);
+	priv->rx_fifo.ops->copy_to_skb(&priv->rx_fifo, skb, len);
 	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
@@ -698,7 +718,7 @@ static void poll_rx(struct ccat_eth_priv *const priv)
 
 	while (len && --rx_per_poll) {
 		ccat_eth_receive(priv, len);
-		fifo->add(fifo);
+		fifo->ops->add(fifo);
 		ccat_eth_fifo_inc(fifo);
 		len = priv->rx_ready(fifo);
 	}
