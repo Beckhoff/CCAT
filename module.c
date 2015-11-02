@@ -271,13 +271,17 @@ static int ccat_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto disable_device;
 	}
 
-	/* CCAT is unable to access memory above 4 GB */
-	status = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+	status = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
 	if (status) {
-		pr_err("No suitable DMA available, pci rev: %u\n", revision);
-		goto release_regions;
+		status = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+		if (status) {
+			pr_err("No suitable DMA available, pci rev: %u\n", revision);
+			goto release_regions;
+		}
+		pr_debug("32 bit DMA supported, pci rev: %u\n", revision);
+	} else {
+		pr_debug("64 bit DMA supported, pci rev: %u\n", revision);
 	}
-	pr_debug("32 bit DMA supported, pci rev: %u\n", revision);
 
 	ccatdev->bar_0 = pci_iomap(pdev, 0, 0);
 	if (!ccatdev->bar_0) {
