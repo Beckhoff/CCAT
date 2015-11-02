@@ -156,6 +156,7 @@ struct ccat_eth_fifo {
 };
 
 struct ccat_eth_fifo_operations {
+	size_t(*ready) (struct ccat_eth_fifo *);
 	void (*add) (struct ccat_eth_fifo *);
 	void (*copy_to_skb) (struct ccat_eth_fifo *, struct sk_buff *, size_t);
 	void (*queue_skb) (struct ccat_eth_fifo * const, struct sk_buff *);
@@ -190,8 +191,6 @@ struct ccat_mac_infoblock {
  */
 struct ccat_eth_priv {
 	void (*free) (struct ccat_eth_priv *);
-	 bool(*tx_ready) (const struct ccat_eth_priv *);
-	 size_t(*rx_ready) (struct ccat_eth_fifo *);
 	struct ccat_function *func;
 	struct net_device *netdev;
 	struct ccat_eth_register reg;
@@ -287,8 +286,10 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	return 0;
 }
 
-static inline bool fifo_eim_tx_ready(const struct ccat_eth_priv *const priv)
+static inline size_t fifo_eim_tx_ready(struct ccat_eth_fifo *const fifo)
 {
+	struct ccat_eth_priv *const priv =
+	    container_of(fifo, struct ccat_eth_priv, tx_fifo);
 	static const size_t TX_FIFO_LEVEL_OFFSET = 0x20;
 	static const u8 TX_FIFO_LEVEL_MASK = 0x3F;
 	void __iomem *addr = priv->reg.mac + TX_FIFO_LEVEL_OFFSET;
@@ -366,9 +367,9 @@ static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
 	}
 }
 
-static inline bool fifo_dma_tx_ready(const struct ccat_eth_priv *const priv)
+static inline size_t fifo_dma_tx_ready(struct ccat_eth_fifo *const fifo)
 {
-	const struct ccat_dma_frame *frame = priv->tx_fifo.dma.next;
+	const struct ccat_dma_frame *frame = fifo->dma.next;
 	return le32_to_cpu(frame->hdr.tx_flags) & CCAT_FRAME_SENT;
 }
 
@@ -442,24 +443,28 @@ static const struct ccat_eth_fifo_operations dma_rx_fifo_ops = {
 	.add = ccat_eth_rx_fifo_dma_add,
 	.copy_to_skb = fifo_dma_copy_to_linear_skb,
 	.queue_skb = NULL,
+	.ready = fifo_dma_rx_ready,
 };
 
 static const struct ccat_eth_fifo_operations dma_tx_fifo_ops = {
 	.add = ccat_eth_tx_fifo_dma_add_free,
 	.copy_to_skb = NULL,
 	.queue_skb = fifo_dma_queue_skb,
+	.ready = fifo_dma_tx_ready,
 };
 
 static const struct ccat_eth_fifo_operations eim_rx_fifo_ops = {
 	.add = fifo_eim_rx_add,
 	.copy_to_skb = fifo_eim_copy_to_linear_skb,
 	.queue_skb = NULL,
+	.ready = fifo_eim_rx_ready,
 };
 
 static const struct ccat_eth_fifo_operations eim_tx_fifo_ops = {
 	.add = fifo_eim_tx_add,
 	.copy_to_skb = NULL,
 	.queue_skb = fifo_eim_queue_skb,
+	.ready = fifo_eim_tx_ready,
 };
 
 /**
@@ -470,8 +475,8 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	struct ccat_function *const func = priv->func;
 	struct pci_dev *pdev = func->ccat->pdev;
 	int status = 0;
-	priv->rx_ready = fifo_dma_rx_ready;
-	priv->tx_ready = fifo_dma_tx_ready;
+	priv->rx_fifo.ops = &dma_rx_fifo_ops;
+	priv->tx_fifo.ops = &dma_tx_fifo_ops;
 	priv->free = ccat_eth_priv_free_dma;
 
 	status =
@@ -491,14 +496,12 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		return status;
 	}
 
-	priv->rx_fifo.ops = &dma_rx_fifo_ops;
 	priv->rx_fifo.end =
 	    ((struct ccat_eth_frame *)priv->rx_fifo.dma.start) + FIFO_LENGTH -
 	    1;
 	priv->rx_fifo.reg = priv->reg.rx_fifo;
 	ccat_eth_fifo_reset(&priv->rx_fifo);
 
-	priv->tx_fifo.ops = &dma_tx_fifo_ops;
 	priv->tx_fifo.end =
 	    ((struct ccat_eth_frame *)priv->tx_fifo.dma.start) + FIFO_LENGTH -
 	    1;
@@ -513,14 +516,13 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 
 static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 {
-	priv->rx_ready = fifo_eim_rx_ready;
-	priv->tx_ready = fifo_eim_tx_ready;
+	priv->rx_fifo.ops = &eim_rx_fifo_ops;
+	priv->tx_fifo.ops = &eim_tx_fifo_ops;
 	priv->free = ccat_eth_priv_free_eim;
 
 	priv->rx_fifo.eim.start = priv->reg.rx_mem;
 	priv->rx_fifo.eim.size = priv->func->info.rx_size;
 
-	priv->rx_fifo.ops = &eim_rx_fifo_ops;
 	priv->rx_fifo.end = priv->rx_fifo.dma.start;
 	priv->rx_fifo.reg = NULL;
 	ccat_eth_fifo_reset(&priv->rx_fifo);
@@ -528,7 +530,6 @@ static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 	priv->tx_fifo.eim.start = priv->reg.tx_mem;
 	priv->tx_fifo.eim.size = priv->func->info.tx_size;
 
-	priv->tx_fifo.ops = &eim_tx_fifo_ops;
 	priv->tx_fifo.end =
 	    priv->tx_fifo.dma.start + priv->tx_fifo.dma.size -
 	    sizeof(struct ccat_eth_frame);
@@ -596,7 +597,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	if (!priv->tx_ready(priv)) {
+	if (!fifo->ops->ready(fifo)) {
 		netdev_err(dev, "BUG! Tx Ring full when queue awake!\n");
 		netif_stop_queue(priv->netdev);
 		return NETDEV_TX_BUSY;
@@ -612,7 +613,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	ccat_eth_fifo_inc(fifo);
 	/* stop queue if tx ring is full */
-	if (!priv->tx_ready(priv)) {
+	if (!fifo->ops->ready(fifo)) {
 		netif_stop_queue(priv->netdev);
 	}
 	return NETDEV_TX_OK;
@@ -714,13 +715,13 @@ static void poll_rx(struct ccat_eth_priv *const priv)
 {
 	struct ccat_eth_fifo *const fifo = &priv->rx_fifo;
 	size_t rx_per_poll = FIFO_LENGTH / 2;
-	size_t len = priv->rx_ready(fifo);
+	size_t len = fifo->ops->ready(fifo);
 
 	while (len && --rx_per_poll) {
 		ccat_eth_receive(priv, len);
 		fifo->ops->add(fifo);
 		ccat_eth_fifo_inc(fifo);
-		len = priv->rx_ready(fifo);
+		len = fifo->ops->ready(fifo);
 	}
 }
 
@@ -729,7 +730,7 @@ static void poll_rx(struct ccat_eth_priv *const priv)
  */
 static void poll_tx(struct ccat_eth_priv *const priv)
 {
-	if (priv->tx_ready(priv)) {
+	if (priv->tx_fifo.ops->ready(&priv->tx_fifo)) {
 		netif_wake_queue(priv->netdev);
 	}
 }
