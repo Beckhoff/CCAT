@@ -147,12 +147,16 @@ struct ccat_mem {
  * struct ccat_eth_fifo - CCAT RX or TX fifo
  * @ops: function pointer table for dma/eim and rx/tx specific fifo functions
  * @reg: PCI register address of this fifo
+ * @rx_bytes: number of bytes processed -> reported with ndo_get_stats64()
+ * @rx_dropped: number of dropped frames -> reported with ndo_get_stats64()
  * @mem/dma/eim: information about the associated memory
  */
 struct ccat_eth_fifo {
 	const struct ccat_eth_fifo_operations *ops;
-	void __iomem *reg;
 	const struct ccat_eth_frame *end;
+	void __iomem *reg;
+	atomic64_t bytes;
+	atomic64_t dropped;
 	union {
 		struct ccat_mem mem;
 		struct ccat_dma dma;
@@ -198,10 +202,6 @@ struct ccat_mac_infoblock {
  * @rx_fifo: fifo used for RX descriptors
  * @tx_fifo: fifo used for TX descriptors
  * @poll_timer: interval timer used to poll CCAT for events like link changed, rx done, tx done
- * @rx_bytes: number of bytes received -> reported with ndo_get_stats64()
- * @rx_dropped: number of received frames, which were dropped -> reported with ndo_get_stats64()
- * @tx_bytes: number of bytes send -> reported with ndo_get_stats64()
- * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
  */
 struct ccat_eth_priv {
 	struct ccat_function *func;
@@ -211,10 +211,6 @@ struct ccat_eth_priv {
 	struct ccat_eth_fifo tx_fifo;
 	struct hrtimer poll_timer;
 	struct ccat_dma_mem dma_mem;
-	atomic64_t rx_bytes;
-	atomic64_t rx_dropped;
-	atomic64_t tx_bytes;
-	atomic64_t tx_dropped;
 };
 
 struct ccat_mac_register {
@@ -543,7 +539,7 @@ static void ccat_eth_priv_init_reg(struct ccat_eth_priv *const priv)
 	void __iomem *const func_base = func->ccat->bar_0 + func->info.addr;
 
 	/* struct ccat_eth_fifo contains a union of ccat_dma, ccat_eim and ccat_mem
-	 * the members next, start and size have to overlay the exact same memory,
+	 * the members next and start have to overlay the exact same memory,
 	 * to support 'polymorphic' usage of them */
 	BUILD_BUG_ON(offsetof(struct ccat_dma, next) !=
 		     offsetof(struct ccat_mem, next));
@@ -572,7 +568,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 
 	if (skb_is_nonlinear(skb)) {
 		pr_warn("Non linear skb not supported -> drop frame.\n");
-		atomic64_inc(&priv->tx_dropped);
+		atomic64_inc(&fifo->dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
@@ -580,7 +576,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	if (skb->len > MAX_PAYLOAD_SIZE) {
 		pr_warn("skb.len %llu exceeds dma buffer %llu -> drop frame.\n",
 			(u64) skb->len, (u64) MAX_PAYLOAD_SIZE);
-		atomic64_inc(&priv->tx_dropped);
+		atomic64_inc(&fifo->dropped);
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
@@ -595,7 +591,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	fifo->ops->queue.skb(fifo, skb);
 
 	/* update stats */
-	atomic64_add(skb->len, &priv->tx_bytes);
+	atomic64_add(skb->len, &fifo->bytes);
 
 	dev_kfree_skb_any(skb);
 
@@ -627,20 +623,21 @@ static void ccat_eth_xmit_raw(struct net_device *dev, const char *const data,
 static void ccat_eth_receive(struct ccat_eth_priv *const priv, const size_t len)
 {
 	struct sk_buff *const skb = dev_alloc_skb(len + NET_IP_ALIGN);
+	struct ccat_eth_fifo *const fifo = &priv->rx_fifo;
 	struct net_device *const dev = priv->netdev;
 
 	if (!skb) {
 		pr_info("%s() out of memory :-(\n", __FUNCTION__);
-		atomic64_inc(&priv->rx_dropped);
+		atomic64_inc(&fifo->dropped);
 		return;
 	}
 	skb->dev = dev;
 	skb_reserve(skb, NET_IP_ALIGN);
-	priv->rx_fifo.ops->queue.copy_to_skb(&priv->rx_fifo, skb, len);
+	fifo->ops->queue.copy_to_skb(fifo, skb, len);
 	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
-	atomic64_add(len, &priv->rx_bytes);
+	atomic64_add(len, &fifo->bytes);
 	netif_rx(skb);
 }
 
@@ -748,12 +745,12 @@ static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, st
 	memcpy_fromio(&mac, priv->reg.mac, sizeof(mac));
 	storage->rx_packets = mac.rx_frames;	/* total packets received       */
 	storage->tx_packets = mac.tx_frames;	/* total packets transmitted    */
-	storage->rx_bytes = atomic64_read(&priv->rx_bytes);	/* total bytes received         */
-	storage->tx_bytes = atomic64_read(&priv->tx_bytes);	/* total bytes transmitted      */
+	storage->rx_bytes = atomic64_read(&priv->rx_fifo.bytes);	/* total bytes received         */
+	storage->tx_bytes = atomic64_read(&priv->tx_fifo.bytes);	/* total bytes transmitted      */
 	storage->rx_errors = mac.frame_len_err + mac.rx_mem_full + mac.crc_err + mac.rx_err;	/* bad packets received         */
 	storage->tx_errors = mac.tx_mem_full;	/* packet transmit problems     */
-	storage->rx_dropped = atomic64_read(&priv->rx_dropped);	/* no space in linux buffers    */
-	storage->tx_dropped = atomic64_read(&priv->tx_dropped);	/* no space available in linux  */
+	storage->rx_dropped = atomic64_read(&priv->rx_fifo.dropped);	/* no space in linux buffers    */
+	storage->tx_dropped = atomic64_read(&priv->tx_fifo.dropped);	/* no space available in linux  */
 	//TODO __u64    multicast;              /* multicast packets received   */
 	//TODO __u64    collisions;
 
