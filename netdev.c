@@ -51,6 +51,8 @@ static const u8 frameForwardEthernetFrames[] = {
 
 #define FIFO_LENGTH 64
 #define POLL_TIME ktime_set(0, 50 * NSEC_PER_USEC)
+#define CCAT_ALIGNMENT ((size_t)(128 * 1024))
+#define CCAT_ALIGN(x) ((typeof(x))(ALIGN((size_t)(x), CCAT_ALIGNMENT)))
 
 struct ccat_dma_frame_hdr {
 	__le32 reserved1;
@@ -111,11 +113,13 @@ struct ccat_eth_register {
 
 /**
  * struct ccat_dma - CCAT DMA channel configuration
- * @phys: device-viewed address(physical) of the associated DMA memory
- * @start: CPU-viewed address(virtual) of the associated DMA memory
+ * @next: pointer to the next frame in fifo ring buffer
+ * @start: aligned CPU-viewed address(virtual) of the associated DMA memory
  * @size: number of bytes in the associated DMA memory
+ * @phys: device-viewed address(physical) of the associated DMA memory
  * @channel: CCAT DMA channel number
  * @dev: valid struct device pointer
+ * @base: CPU-viewed address(virtual) of the associated DMA memory
  */
 struct ccat_dma {
 	struct ccat_dma_frame *next;
@@ -139,10 +143,10 @@ struct ccat_mem {
 };
 
 /**
- * struct ccat_eth_fifo - CCAT RX or TX DMA fifo
- * @add: callback used to add a frame to this fifo
- * @reg: PCI register address of this DMA fifo
- * @dma: information about the associated DMA memory
+ * struct ccat_eth_fifo - CCAT RX or TX fifo
+ * @ops: function pointer table for dma/eim and rx/tx specific fifo functions
+ * @reg: PCI register address of this fifo
+ * @mem/dma/eim: information about the associated memory
  */
 struct ccat_eth_fifo {
 	const struct ccat_eth_fifo_operations *ops;
@@ -155,6 +159,13 @@ struct ccat_eth_fifo {
 	};
 };
 
+/**
+ * struct ccat_eth_fifo_operations
+ * @ready: callback used to test the next frames ready bit
+ * @add: callback used to add a frame to this fifo
+ * @copy_to_skb: callback used to copy from rx fifos to skbs
+ * @skb: callback used to queue skbs into tx fifos
+ */
 struct ccat_eth_fifo_operations {
 	size_t(*ready) (struct ccat_eth_fifo *);
 	void (*add) (struct ccat_eth_fifo *);
@@ -180,12 +191,12 @@ struct ccat_mac_infoblock {
 
 /**
  * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
+ * @free: dma/eim specific cleanup function
  * @func: pointer to the parent struct ccat_function
  * @netdev: the net_device structure used by the kernel networking stack
- * @info: holds a copy of the CCAT Ethernet/EtherCAT Master function information block (read from PCI config space)
  * @reg: register addresses in PCI config space of the Ethernet/EtherCAT Master function
- * @rx_fifo: DMA fifo used for RX DMA descriptors
- * @tx_fifo: DMA fifo used for TX DMA descriptors
+ * @rx_fifo: fifo used for RX descriptors
+ * @tx_fifo: fifo used for TX descriptors
  * @poll_timer: interval timer used to poll CCAT for events like link changed, rx done, tx done
  * @rx_bytes: number of bytes received -> reported with ndo_get_stats64()
  * @rx_dropped: number of received frames, which were dropped -> reported with ndo_get_stats64()
@@ -252,12 +263,11 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 			 void __iomem * const bar2, struct device *const dev)
 {
 	void __iomem *const ioaddr = bar2 + 0x1000 + (sizeof(u64) * channel);
-	static const size_t alignment = 128 * 1024;
 	dma_addr_t ccat_start;
 
 	dma->dev = dev;
 	dma->channel = channel;
-	dma->size = alignment * 2;
+	dma->size = CCAT_ALIGNMENT * 2;
 	dma->base = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
 
 	if (!dma->base || !dma->phys) {
@@ -270,9 +280,8 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 		ccat_dma_free(dma);
 		return -EINVAL;
 	}
-
-	dma->start = (void *)ALIGN((size_t) dma->base, alignment);
-	ccat_start = ALIGN(dma->phys, alignment);
+	dma->start = CCAT_ALIGN(dma->base);
+	ccat_start = CCAT_ALIGN(dma->phys);
 
 	/** bit 0 enables 64 bit mode on ccat */
 	iowrite32((u32) ccat_start | ((ccat_start >> 32) > 0), ioaddr);
@@ -501,9 +510,9 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	}
 
 	fifo_init(&priv->rx_fifo, priv->reg.rx_fifo, &dma_rx_fifo_ops,
-		  128 * 1024);
+		  CCAT_ALIGNMENT);
 	fifo_init(&priv->tx_fifo, priv->reg.tx_fifo, &dma_tx_fifo_ops,
-		  128 * 1024);
+		  CCAT_ALIGNMENT);
 
 	/* disable MAC filter */
 	iowrite8(0, priv->reg.mii + 0x8 + 6);
