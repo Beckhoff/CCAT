@@ -255,10 +255,8 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 	static const size_t alignment = 128 * 1024;
 	dma_addr_t ccat_start;
 
-	dma->channel = channel;
 	dma->dev = dev;
-
-	/* calculate size and alignments */
+	dma->channel = channel;
 	dma->size = alignment * 2;
 	dma->base = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
 
@@ -429,18 +427,6 @@ static void fifo_dma_queue_skb(struct ccat_eth_fifo *const fifo,
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
-{
-	/* reset hw fifo's */
-	iowrite32(0, priv->rx_fifo.reg + 0x8);
-	iowrite32(0, priv->tx_fifo.reg + 0x8);
-	wmb();
-
-	/* release dma */
-	ccat_dma_free(&priv->rx_fifo.dma);
-	ccat_dma_free(&priv->tx_fifo.dma);
-}
-
 static const struct ccat_eth_fifo_operations dma_rx_fifo_ops = {
 	.add = ccat_eth_rx_fifo_dma_add,
 	.ready = fifo_dma_rx_ready,
@@ -464,6 +450,18 @@ static const struct ccat_eth_fifo_operations eim_tx_fifo_ops = {
 	.queue.skb = fifo_eim_queue_skb,
 	.ready = fifo_eim_tx_ready,
 };
+
+static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
+{
+	/* reset hw fifo's */
+	iowrite32(0, priv->rx_fifo.reg + 0x8);
+	iowrite32(0, priv->tx_fifo.reg + 0x8);
+	wmb();
+
+	/* release dma */
+	ccat_dma_free(&priv->rx_fifo.dma);
+	ccat_dma_free(&priv->tx_fifo.dma);
+}
 
 static void fifo_init(struct ccat_eth_fifo *const fifo, void __iomem * reg,
 		      const struct ccat_eth_fifo_operations *ops, size_t size)
