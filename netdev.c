@@ -158,8 +158,11 @@ struct ccat_eth_fifo {
 struct ccat_eth_fifo_operations {
 	size_t(*ready) (struct ccat_eth_fifo *);
 	void (*add) (struct ccat_eth_fifo *);
-	void (*copy_to_skb) (struct ccat_eth_fifo *, struct sk_buff *, size_t);
-	void (*queue_skb) (struct ccat_eth_fifo * const, struct sk_buff *);
+	union {
+		void (*copy_to_skb) (struct ccat_eth_fifo *, struct sk_buff *,
+				     size_t);
+		void (*skb) (struct ccat_eth_fifo *, struct sk_buff *);
+	} queue;
 };
 
 /**
@@ -440,29 +443,25 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 
 static const struct ccat_eth_fifo_operations dma_rx_fifo_ops = {
 	.add = ccat_eth_rx_fifo_dma_add,
-	.copy_to_skb = fifo_dma_copy_to_linear_skb,
-	.queue_skb = NULL,
 	.ready = fifo_dma_rx_ready,
+	.queue.copy_to_skb = fifo_dma_copy_to_linear_skb,
 };
 
 static const struct ccat_eth_fifo_operations dma_tx_fifo_ops = {
 	.add = ccat_eth_tx_fifo_dma_add_free,
-	.copy_to_skb = NULL,
-	.queue_skb = fifo_dma_queue_skb,
 	.ready = fifo_dma_tx_ready,
+	.queue.skb = fifo_dma_queue_skb,
 };
 
 static const struct ccat_eth_fifo_operations eim_rx_fifo_ops = {
 	.add = fifo_eim_rx_add,
-	.copy_to_skb = fifo_eim_copy_to_linear_skb,
-	.queue_skb = NULL,
+	.queue.copy_to_skb = fifo_eim_copy_to_linear_skb,
 	.ready = fifo_eim_rx_ready,
 };
 
 static const struct ccat_eth_fifo_operations eim_tx_fifo_ops = {
 	.add = fifo_eim_tx_add,
-	.copy_to_skb = NULL,
-	.queue_skb = fifo_eim_queue_skb,
+	.queue.skb = fifo_eim_queue_skb,
 	.ready = fifo_eim_tx_ready,
 };
 
@@ -594,7 +593,7 @@ static netdev_tx_t ccat_eth_start_xmit(struct sk_buff *skb,
 	}
 
 	/* prepare frame in DMA memory */
-	fifo->ops->queue_skb(fifo, skb);
+	fifo->ops->queue.skb(fifo, skb);
 
 	/* update stats */
 	atomic64_add(skb->len, &priv->tx_bytes);
@@ -638,7 +637,7 @@ static void ccat_eth_receive(struct ccat_eth_priv *const priv, const size_t len)
 	}
 	skb->dev = dev;
 	skb_reserve(skb, NET_IP_ALIGN);
-	priv->rx_fifo.ops->copy_to_skb(&priv->rx_fifo, skb, len);
+	priv->rx_fifo.ops->queue.copy_to_skb(&priv->rx_fifo, skb, len);
 	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
