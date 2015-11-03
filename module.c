@@ -242,7 +242,7 @@ static void ccat_functions_remove(struct ccat_device *const dev)
 static int ccat_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct ccat_device *ccatdev;
-	u8 revision;
+	u8 rev;
 	int status;
 
 	ccatdev = devm_kzalloc(&pdev->dev, sizeof(*ccatdev), GFP_KERNEL);
@@ -259,7 +259,7 @@ static int ccat_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return status;
 	}
 
-	status = pci_read_config_byte(pdev, PCI_REVISION_ID, &revision);
+	status = pci_read_config_byte(pdev, PCI_REVISION_ID, &rev);
 	if (status) {
 		pr_err("read CCAT pci revision failed with %d\n", status);
 		goto disable_device;
@@ -276,13 +276,12 @@ static int ccat_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		status =
 		    dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 		if (status) {
-			pr_err("No suitable DMA available, pci rev: %u\n",
-			       revision);
+			pr_err("No suitable DMA available, pci rev: %u\n", rev);
 			goto release_regions;
 		}
-		pr_debug("32 bit DMA supported, pci rev: %u\n", revision);
+		pr_debug("32 bit DMA supported, pci rev: %u\n", rev);
 	} else {
-		pr_debug("64 bit DMA supported, pci rev: %u\n", revision);
+		pr_debug("64 bit DMA supported, pci rev: %u\n", rev);
 	}
 
 	ccatdev->bar_0 = pci_iomap(pdev, 0, 0);
