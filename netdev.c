@@ -112,7 +112,7 @@ struct ccat_eth_register {
 };
 
 /**
- * struct ccat_dma - CCAT DMA channel configuration
+ * struct ccat_dma_mem - CCAT DMA channel configuration
  * @next: pointer to the next frame in fifo ring buffer
  * @start: aligned CPU-viewed address(virtual) of the associated DMA memory
  * @size: number of bytes in the associated DMA memory
@@ -121,14 +121,18 @@ struct ccat_eth_register {
  * @dev: valid struct device pointer
  * @base: CPU-viewed address(virtual) of the associated DMA memory
  */
-struct ccat_dma {
-	struct ccat_dma_frame *next;
-	void *start;
+struct ccat_dma_mem {
 	size_t size;
 	dma_addr_t phys;
 	size_t channel;
 	struct device *dev;
 	void *base;
+};
+
+struct ccat_dma {
+	struct ccat_dma_frame *next;
+	void *start;
+	size_t size;
 };
 
 struct ccat_eim {
@@ -211,6 +215,7 @@ struct ccat_eth_priv {
 	struct ccat_eth_fifo rx_fifo;
 	struct ccat_eth_fifo tx_fifo;
 	struct hrtimer poll_timer;
+	struct ccat_dma_mem dma_mem;
 	atomic64_t rx_bytes;
 	atomic64_t rx_dropped;
 	atomic64_t tx_bytes;
@@ -243,13 +248,21 @@ struct ccat_mac_register {
 	u8 mii_connected;
 };
 
-static void ccat_dma_free(struct ccat_dma *const dma)
+static void ccat_dma_free(struct ccat_eth_priv *const priv)
 {
-	const struct ccat_dma tmp = *dma;
+	const struct ccat_dma_mem tmp = priv->dma_mem;
 
-	free_dma(dma->channel);
-	memset(dma, 0, sizeof(*dma));
+	memset(&priv->dma_mem, 0, sizeof(priv->dma_mem));
 	dma_free_coherent(tmp.dev, tmp.size, tmp.base, tmp.phys);
+	free_dma(priv->func->info.tx_dma_chan);
+	free_dma(priv->func->info.rx_dma_chan);
+}
+
+static void ccat_dma_alloc(struct ccat_dma_mem *dma, struct device *dev)
+{
+	dma->dev = dev;
+	dma->size = CCAT_ALIGNMENT * 3;
+	dma->base = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
 }
 
 /**
@@ -259,29 +272,17 @@ static void ccat_dma_free(struct ccat_dma *const dma)
  * @ioaddr of the pci bar2 configspace used to calculate the address of the pci dma configuration
  * @dev which should be configured for DMA
  */
-static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
-			 void __iomem * const bar2, struct device *const dev)
+static int ccat_dma_init(struct ccat_dma_mem *const dma, size_t channel,
+			 void __iomem * const bar2,
+			 struct ccat_eth_fifo *const fifo)
 {
 	void __iomem *const ioaddr = bar2 + 0x1000 + (sizeof(u64) * channel);
-	dma_addr_t ccat_start;
-
-	dma->dev = dev;
-	dma->channel = channel;
-	dma->size = CCAT_ALIGNMENT * 2;
-	dma->base = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
-
-	if (!dma->base || !dma->phys) {
-		pr_info("init DMA%llu memory failed.\n", (u64) channel);
-		return -ENOMEM;
-	}
+	dma_addr_t ccat_start = dma->phys + (fifo->dma.start - dma->base);
 
 	if (request_dma(channel, KBUILD_MODNAME)) {
 		pr_info("request dma channel %llu failed\n", (u64) channel);
-		ccat_dma_free(dma);
 		return -EINVAL;
 	}
-	dma->start = CCAT_ALIGN(dma->base);
-	ccat_start = CCAT_ALIGN(dma->phys);
 
 	/** bit 0 enables 64 bit mode on ccat */
 	iowrite32((u32) ccat_start | ((ccat_start >> 32) > 0), ioaddr);
@@ -289,7 +290,7 @@ static int ccat_dma_init(struct ccat_dma *const dma, size_t channel,
 
 	pr_info
 	    ("DMA%llu mem initialized\n base:         0x%p\n start:        0x%p\n phys:         0x%09llx\n pci addr:     0x%01x%08x\n size:         %llu |%llx bytes.\n",
-	     (u64) channel, dma->base, dma->start, (u64) dma->phys,
+	     (u64) channel, dma->base, fifo->dma.start, (u64) dma->phys,
 	     ioread32(ioaddr + 4), ioread32(ioaddr),
 	     (u64) dma->size, (u64) dma->size);
 	return 0;
@@ -352,20 +353,22 @@ static void fifo_eim_queue_skb(struct ccat_eth_fifo *const fifo,
 	iowrite32(addr_and_length, fifo->reg);
 }
 
-static void ccat_eth_priv_free_eim(struct ccat_eth_priv *priv)
+static void ccat_eth_fifo_hw_reset(struct ccat_eth_fifo *const fifo)
 {
-	/* reset hw fifo's */
-	iowrite32(0, priv->tx_fifo.reg + 0x8);
-	wmb();
-}
-
-static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
-{
-	/* reset hw fifo */
 	if (fifo->reg) {
 		iowrite32(0, fifo->reg + 0x8);
 		wmb();
 	}
+}
+
+static void ccat_eth_priv_free_eim(struct ccat_eth_priv *priv)
+{
+	ccat_eth_fifo_hw_reset(&priv->tx_fifo);
+}
+
+static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
+{
+	ccat_eth_fifo_hw_reset(fifo);
 
 	if (fifo->ops->add) {
 		fifo->mem.next = fifo->mem.start;
@@ -463,13 +466,11 @@ static const struct ccat_eth_fifo_operations eim_tx_fifo_ops = {
 static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 {
 	/* reset hw fifo's */
-	iowrite32(0, priv->rx_fifo.reg + 0x8);
-	iowrite32(0, priv->tx_fifo.reg + 0x8);
-	wmb();
+	ccat_eth_fifo_hw_reset(&priv->rx_fifo);
+	ccat_eth_fifo_hw_reset(&priv->tx_fifo);
 
 	/* release dma */
-	ccat_dma_free(&priv->rx_fifo.dma);
-	ccat_dma_free(&priv->tx_fifo.dma);
+	ccat_dma_free(priv);
 }
 
 static void fifo_init(struct ccat_eth_fifo *const fifo, void __iomem * reg,
@@ -478,7 +479,6 @@ static void fifo_init(struct ccat_eth_fifo *const fifo, void __iomem * reg,
 	fifo->ops = ops;
 	fifo->reg = reg;
 	fifo->end = fifo->mem.start + size - sizeof(struct ccat_eth_frame);
-	ccat_eth_fifo_reset(fifo);
 }
 
 /**
@@ -491,21 +491,29 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	int status = 0;
 
 	priv->free = ccat_eth_priv_free_dma;
+	ccat_dma_alloc(&priv->dma_mem, &pdev->dev);
+	if (!priv->dma_mem.base || !priv->dma_mem.phys) {
+		pr_err("init DMA memory failed.\n");
+		return -ENOMEM;
+	}
 
+	priv->rx_fifo.dma.start = CCAT_ALIGN(priv->dma_mem.base);
 	status =
-	    ccat_dma_init(&priv->rx_fifo.dma, func->info.rx_dma_chan,
-			  func->ccat->bar_2, &pdev->dev);
+	    ccat_dma_init(&priv->dma_mem, func->info.rx_dma_chan,
+			  func->ccat->bar_2, &priv->rx_fifo);
 	if (status) {
 		pr_info("init RX DMA memory failed.\n");
+		ccat_dma_free(priv);
 		return status;
 	}
 
+	priv->tx_fifo.dma.start = priv->rx_fifo.dma.start + CCAT_ALIGNMENT;
 	status =
-	    ccat_dma_init(&priv->tx_fifo.dma, func->info.tx_dma_chan,
-			  func->ccat->bar_2, &pdev->dev);
+	    ccat_dma_init(&priv->dma_mem, func->info.tx_dma_chan,
+			  func->ccat->bar_2, &priv->tx_fifo);
 	if (status) {
 		pr_info("init TX DMA memory failed.\n");
-		ccat_dma_free(&priv->rx_fifo.dma);
+		ccat_dma_free(priv);
 		return status;
 	}
 
