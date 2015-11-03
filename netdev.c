@@ -132,13 +132,11 @@ struct ccat_dma_mem {
 struct ccat_dma {
 	struct ccat_dma_frame *next;
 	void *start;
-	size_t size;
 };
 
 struct ccat_eim {
 	struct ccat_eim_frame __iomem *next;
 	void __iomem *start;
-	size_t size;
 };
 
 struct ccat_mem {
@@ -559,8 +557,6 @@ static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
 		     offsetof(struct ccat_eim, next));
 	BUILD_BUG_ON(offsetof(struct ccat_dma, start) !=
 		     offsetof(struct ccat_eim, start));
-	BUILD_BUG_ON(offsetof(struct ccat_dma, size) !=
-		     offsetof(struct ccat_eim, size));
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	reg->mii = func_base + offsets.mii;
