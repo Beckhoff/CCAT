@@ -473,12 +473,16 @@ static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
 	ccat_dma_free(priv);
 }
 
-static void fifo_init(struct ccat_eth_fifo *const fifo, void __iomem * reg,
-		      const struct ccat_eth_fifo_operations *ops, size_t size)
+static void fifo_set_end(struct ccat_eth_fifo *const fifo, size_t size)
 {
-	fifo->ops = ops;
-	fifo->reg = reg;
 	fifo->end = fifo->mem.start + size - sizeof(struct ccat_eth_frame);
+}
+
+static int ccat_hw_disable_mac_filter(struct ccat_eth_priv *priv)
+{
+	iowrite8(0, priv->reg.mii + 0x8 + 6);
+	wmb();
+	return 0;
 }
 
 /**
@@ -498,6 +502,9 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	}
 
 	priv->rx_fifo.dma.start = CCAT_ALIGN(priv->dma_mem.base);
+	priv->rx_fifo.ops = &dma_rx_fifo_ops;
+	priv->rx_fifo.reg = priv->reg.rx_fifo;
+	fifo_set_end(&priv->rx_fifo, CCAT_ALIGNMENT);
 	status =
 	    ccat_dma_init(&priv->dma_mem, func->info.rx_dma_chan,
 			  func->ccat->bar_2, &priv->rx_fifo);
@@ -508,6 +515,9 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	}
 
 	priv->tx_fifo.dma.start = priv->rx_fifo.dma.start + CCAT_ALIGNMENT;
+	priv->tx_fifo.ops = &dma_tx_fifo_ops;
+	priv->tx_fifo.reg = priv->reg.tx_fifo;
+	fifo_set_end(&priv->tx_fifo, CCAT_ALIGNMENT);
 	status =
 	    ccat_dma_init(&priv->dma_mem, func->info.tx_dma_chan,
 			  func->ccat->bar_2, &priv->tx_fifo);
@@ -516,16 +526,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 		ccat_dma_free(priv);
 		return status;
 	}
-
-	fifo_init(&priv->rx_fifo, priv->reg.rx_fifo, &dma_rx_fifo_ops,
-		  CCAT_ALIGNMENT);
-	fifo_init(&priv->tx_fifo, priv->reg.tx_fifo, &dma_tx_fifo_ops,
-		  CCAT_ALIGNMENT);
-
-	/* disable MAC filter */
-	iowrite8(0, priv->reg.mii + 0x8 + 6);
-	wmb();
-	return 0;
+	return ccat_hw_disable_mac_filter(priv);
 }
 
 static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
@@ -533,17 +534,16 @@ static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 	priv->free = ccat_eth_priv_free_eim;
 
 	priv->rx_fifo.eim.start = priv->reg.rx_mem;
-	fifo_init(&priv->rx_fifo, priv->reg.rx_fifo, &eim_rx_fifo_ops,
-		  sizeof(struct ccat_eth_frame));
+	priv->rx_fifo.ops = &eim_rx_fifo_ops;
+	priv->rx_fifo.reg = priv->reg.rx_fifo;
+	fifo_set_end(&priv->rx_fifo, sizeof(struct ccat_eth_frame));
 
 	priv->tx_fifo.eim.start = priv->reg.tx_mem;
-	fifo_init(&priv->tx_fifo, priv->reg.tx_fifo, &eim_tx_fifo_ops,
-		  priv->func->info.tx_size);
+	priv->rx_fifo.ops = &eim_tx_fifo_ops;
+	priv->tx_fifo.reg = priv->reg.tx_fifo;
+	fifo_set_end(&priv->tx_fifo, priv->func->info.tx_size);
 
-	/* disable MAC filter */
-	iowrite8(0, priv->reg.mii + 0x8 + 6);
-	wmb();
-	return 0;
+	return ccat_hw_disable_mac_filter(priv);
 }
 
 /**
