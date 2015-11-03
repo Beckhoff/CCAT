@@ -195,7 +195,6 @@ struct ccat_mac_infoblock {
 
 /**
  * struct ccat_eth_priv - CCAT Ethernet/EtherCAT Master function (netdev)
- * @free: dma/eim specific cleanup function
  * @func: pointer to the parent struct ccat_function
  * @netdev: the net_device structure used by the kernel networking stack
  * @reg: register addresses in PCI config space of the Ethernet/EtherCAT Master function
@@ -208,7 +207,6 @@ struct ccat_mac_infoblock {
  * @tx_dropped: number of frames requested to send, which were dropped -> reported with ndo_get_stats64()
  */
 struct ccat_eth_priv {
-	void (*free) (struct ccat_eth_priv *);
 	struct ccat_function *func;
 	struct net_device *netdev;
 	struct ccat_eth_register reg;
@@ -250,12 +248,14 @@ struct ccat_mac_register {
 
 static void ccat_dma_free(struct ccat_eth_priv *const priv)
 {
-	const struct ccat_dma_mem tmp = priv->dma_mem;
+	if (priv->dma_mem.base) {
+		const struct ccat_dma_mem tmp = priv->dma_mem;
 
-	memset(&priv->dma_mem, 0, sizeof(priv->dma_mem));
-	dma_free_coherent(tmp.dev, tmp.size, tmp.base, tmp.phys);
-	free_dma(priv->func->info.tx_dma_chan);
-	free_dma(priv->func->info.rx_dma_chan);
+		memset(&priv->dma_mem, 0, sizeof(priv->dma_mem));
+		dma_free_coherent(tmp.dev, tmp.size, tmp.base, tmp.phys);
+		free_dma(priv->func->info.tx_dma_chan);
+		free_dma(priv->func->info.rx_dma_chan);
+	}
 }
 
 static void ccat_dma_alloc(struct ccat_dma_mem *dma, struct device *dev)
@@ -361,11 +361,6 @@ static void ccat_eth_fifo_hw_reset(struct ccat_eth_fifo *const fifo)
 	}
 }
 
-static void ccat_eth_priv_free_eim(struct ccat_eth_priv *priv)
-{
-	ccat_eth_fifo_hw_reset(&priv->tx_fifo);
-}
-
 static void ccat_eth_fifo_reset(struct ccat_eth_fifo *const fifo)
 {
 	ccat_eth_fifo_hw_reset(fifo);
@@ -463,7 +458,7 @@ static const struct ccat_eth_fifo_operations eim_tx_fifo_ops = {
 	.ready = fifo_eim_tx_ready,
 };
 
-static void ccat_eth_priv_free_dma(struct ccat_eth_priv *priv)
+static void ccat_eth_priv_free(struct ccat_eth_priv *priv)
 {
 	/* reset hw fifo's */
 	ccat_eth_fifo_hw_reset(&priv->rx_fifo);
@@ -494,7 +489,6 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	struct pci_dev *pdev = func->ccat->pdev;
 	int status = 0;
 
-	priv->free = ccat_eth_priv_free_dma;
 	ccat_dma_alloc(&priv->dma_mem, &pdev->dev);
 	if (!priv->dma_mem.base || !priv->dma_mem.phys) {
 		pr_err("init DMA memory failed.\n");
@@ -531,8 +525,6 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 
 static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 {
-	priv->free = ccat_eth_priv_free_eim;
-
 	priv->rx_fifo.eim.start = priv->reg.rx_mem;
 	priv->rx_fifo.ops = &eim_rx_fifo_ops;
 	priv->rx_fifo.reg = priv->reg.rx_fifo;
@@ -848,7 +840,7 @@ static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 	status = register_netdev(priv->netdev);
 	if (status) {
 		pr_info("unable to register network device.\n");
-		priv->free(priv);
+		ccat_eth_priv_free(priv);
 		free_netdev(priv->netdev);
 		return status;
 	}
@@ -878,7 +870,7 @@ static void ccat_eth_dma_remove(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
-	eth->free(eth);
+	ccat_eth_priv_free(eth);
 	free_netdev(eth->netdev);
 }
 
@@ -909,7 +901,7 @@ static void ccat_eth_eim_remove(struct ccat_function *func)
 {
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
-	eth->free(eth);
+	ccat_eth_priv_free(eth);
 	free_netdev(eth->netdev);
 }
 
