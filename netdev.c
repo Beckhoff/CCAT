@@ -94,8 +94,6 @@ struct ccat_eim_frame {
 /**
  * struct ccat_eth_register - CCAT register addresses in the PCI BAR
  * @mii: address of the CCAT management interface register
- * @tx_fifo: address of the CCAT TX DMA fifo register
- * @rx_fifo: address of the CCAT RX DMA fifo register
  * @mac: address of the CCAT media access control register
  * @rx_mem: address of the CCAT register holding the RX DMA address
  * @tx_mem: address of the CCAT register holding the TX DMA address
@@ -103,8 +101,6 @@ struct ccat_eim_frame {
  */
 struct ccat_eth_register {
 	void __iomem *mii;
-	void __iomem *tx_fifo;
-	void __iomem *rx_fifo;
 	void __iomem *mac;
 	void __iomem *rx_mem;
 	void __iomem *tx_mem;
@@ -113,8 +109,6 @@ struct ccat_eth_register {
 
 /**
  * struct ccat_dma_mem - CCAT DMA channel configuration
- * @next: pointer to the next frame in fifo ring buffer
- * @start: aligned CPU-viewed address(virtual) of the associated DMA memory
  * @size: number of bytes in the associated DMA memory
  * @phys: device-viewed address(physical) of the associated DMA memory
  * @channel: CCAT DMA channel number
@@ -129,6 +123,11 @@ struct ccat_dma_mem {
 	void *base;
 };
 
+/**
+ * struct ccat_dma/eim/mem
+ * @next: pointer to the next frame in fifo ring buffer
+ * @start: aligned CPU-viewed address(virtual) of the associated memory
+ */
 struct ccat_dma {
 	struct ccat_dma_frame *next;
 	void *start;
@@ -495,7 +494,6 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 
 	priv->rx_fifo.dma.start = CCAT_ALIGN(priv->dma_mem.base);
 	priv->rx_fifo.ops = &dma_rx_fifo_ops;
-	priv->rx_fifo.reg = priv->reg.rx_fifo;
 	fifo_set_end(&priv->rx_fifo, CCAT_ALIGNMENT);
 	status =
 	    ccat_dma_init(&priv->dma_mem, func->info.rx_dma_chan,
@@ -508,7 +506,6 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 
 	priv->tx_fifo.dma.start = priv->rx_fifo.dma.start + CCAT_ALIGNMENT;
 	priv->tx_fifo.ops = &dma_tx_fifo_ops;
-	priv->tx_fifo.reg = priv->reg.tx_fifo;
 	fifo_set_end(&priv->tx_fifo, CCAT_ALIGNMENT);
 	status =
 	    ccat_dma_init(&priv->dma_mem, func->info.tx_dma_chan,
@@ -525,12 +522,10 @@ static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 {
 	priv->rx_fifo.eim.start = priv->reg.rx_mem;
 	priv->rx_fifo.ops = &eim_rx_fifo_ops;
-	priv->rx_fifo.reg = priv->reg.rx_fifo;
 	fifo_set_end(&priv->rx_fifo, sizeof(struct ccat_eth_frame));
 
 	priv->tx_fifo.eim.start = priv->reg.tx_mem;
 	priv->rx_fifo.ops = &eim_tx_fifo_ops;
-	priv->tx_fifo.reg = priv->reg.tx_fifo;
 	fifo_set_end(&priv->tx_fifo, priv->func->info.tx_size);
 
 	return ccat_hw_disable_mac_filter(priv);
@@ -540,10 +535,11 @@ static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
  * Initializes a struct ccat_eth_register with data from a corresponding
  * CCAT function.
  */
-static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
-				   const struct ccat_function *const func)
+static void ccat_eth_priv_init_reg(struct ccat_eth_priv *const priv)
 {
 	struct ccat_mac_infoblock offsets;
+	struct ccat_eth_register *const reg = &priv->reg;
+	const struct ccat_function *const func = priv->func;
 	void __iomem *const func_base = func->ccat->bar_0 + func->info.addr;
 
 	/* struct ccat_eth_fifo contains a union of ccat_dma, ccat_eim and ccat_mem
@@ -560,8 +556,8 @@ static void ccat_eth_priv_init_reg(struct ccat_eth_register *const reg,
 
 	memcpy_fromio(&offsets, func_base, sizeof(offsets));
 	reg->mii = func_base + offsets.mii;
-	reg->tx_fifo = func_base + offsets.tx_fifo;
-	reg->rx_fifo = func_base + offsets.tx_fifo + 0x10;
+	priv->tx_fifo.reg = func_base + offsets.tx_fifo;
+	priv->rx_fifo.reg = func_base + offsets.tx_fifo + 0x10;
 	reg->mac = func_base + offsets.mac;
 	reg->rx_mem = func_base + offsets.rx_mem;
 	reg->tx_mem = func_base + offsets.tx_mem;
@@ -682,7 +678,7 @@ static void ccat_eth_link_up(struct net_device *const dev)
 inline static size_t ccat_eth_priv_read_link_state(const struct ccat_eth_priv
 						   *const priv)
 {
-	return (1 << 24) == (ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
+	return !!(ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
 }
 
 /**
@@ -818,7 +814,7 @@ static struct ccat_eth_priv *ccat_eth_alloc_netdev(struct ccat_function *func)
 		memset(priv, 0, sizeof(*priv));
 		priv->netdev = netdev;
 		priv->func = func;
-		ccat_eth_priv_init_reg(&priv->reg, func);
+		ccat_eth_priv_init_reg(priv);
 	}
 	return priv;
 }
