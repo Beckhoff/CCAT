@@ -867,7 +867,7 @@ static void ccat_eth_dma_remove(struct ccat_function *func)
 	free_netdev(eth->netdev);
 }
 
-struct ccat_driver eth_dma_driver = {
+const struct ccat_driver eth_dma_driver = {
 	.type = CCATINFO_ETHERCAT_MASTER_DMA,
 	.probe = ccat_eth_dma_probe,
 	.remove = ccat_eth_dma_remove,
@@ -898,7 +898,7 @@ static void ccat_eth_eim_remove(struct ccat_function *func)
 	free_netdev(eth->netdev);
 }
 
-struct ccat_driver eth_eim_driver = {
+const struct ccat_driver eth_eim_driver = {
 	.type = CCATINFO_ETHERCAT_NODMA,
 	.probe = ccat_eth_eim_probe,
 	.remove = ccat_eth_eim_remove,

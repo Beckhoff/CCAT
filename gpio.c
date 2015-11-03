@@ -154,7 +154,7 @@ static void ccat_gpio_remove(struct ccat_function *func)
 	gpiochip_remove(&gpio->chip);
 };
 
-struct ccat_driver gpio_driver = {
+const struct ccat_driver gpio_driver = {
 	.type = CCATINFO_GPIO,
 	.probe = ccat_gpio_probe,
 	.remove = ccat_gpio_remove,
