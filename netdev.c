@@ -239,6 +239,11 @@ struct ccat_mac_register {
 	u8 mii_connected;
 };
 
+static void fifo_set_end(struct ccat_eth_fifo *const fifo, size_t size)
+{
+	fifo->end = fifo->mem.start + size - sizeof(struct ccat_eth_frame);
+}
+
 static void ccat_dma_free(struct ccat_eth_priv *const priv)
 {
 	if (priv->dma_mem.base) {
@@ -249,13 +254,6 @@ static void ccat_dma_free(struct ccat_eth_priv *const priv)
 		free_dma(priv->func->info.tx_dma_chan);
 		free_dma(priv->func->info.rx_dma_chan);
 	}
-}
-
-static void ccat_dma_alloc(struct ccat_dma_mem *dma, struct device *dev)
-{
-	dma->dev = dev;
-	dma->size = CCAT_ALIGNMENT * 3;
-	dma->base = dma_zalloc_coherent(dev, dma->size, &dma->phys, GFP_KERNEL);
 }
 
 /**
@@ -270,16 +268,18 @@ static int ccat_dma_init(struct ccat_dma_mem *const dma, size_t channel,
 			 struct ccat_eth_fifo *const fifo)
 {
 	void __iomem *const ioaddr = bar2 + 0x1000 + (sizeof(u64) * channel);
-	dma_addr_t ccat_start = dma->phys + (fifo->dma.start - dma->base);
+	dma_addr_t phys = CCAT_ALIGN(dma->phys) + (channel * CCAT_ALIGNMENT);
+	fifo->dma.start = CCAT_ALIGN(dma->base) + (channel * CCAT_ALIGNMENT);
 
+	fifo_set_end(fifo, CCAT_ALIGNMENT);
 	if (request_dma(channel, KBUILD_MODNAME)) {
 		pr_info("request dma channel %llu failed\n", (u64) channel);
 		return -EINVAL;
 	}
 
 	/** bit 0 enables 64 bit mode on ccat */
-	iowrite32((u32) ccat_start | ((ccat_start >> 32) > 0), ioaddr);
-	iowrite32(ccat_start >> 32, ioaddr + 4);
+	iowrite32((u32) phys | ((phys >> 32) > 0), ioaddr);
+	iowrite32(phys >> 32, ioaddr + 4);
 
 	pr_info
 	    ("DMA%llu mem initialized\n base:         0x%p\n start:        0x%p\n phys:         0x%09llx\n pci addr:     0x%01x%08x\n size:         %llu |%llx bytes.\n",
@@ -461,11 +461,6 @@ static void ccat_eth_priv_free(struct ccat_eth_priv *priv)
 	ccat_dma_free(priv);
 }
 
-static void fifo_set_end(struct ccat_eth_fifo *const fifo, size_t size)
-{
-	fifo->end = fifo->mem.start + size - sizeof(struct ccat_eth_frame);
-}
-
 static int ccat_hw_disable_mac_filter(struct ccat_eth_priv *priv)
 {
 	iowrite8(0, priv->reg.mii + 0x8 + 6);
@@ -478,34 +473,32 @@ static int ccat_hw_disable_mac_filter(struct ccat_eth_priv *priv)
  */
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	struct ccat_function *const func = priv->func;
-	struct pci_dev *pdev = func->ccat->pdev;
+	struct ccat_dma_mem *const dma = &priv->dma_mem;
+	struct pci_dev *const pdev = priv->func->ccat->pdev;
+	void __iomem *const bar_2 = priv->func->ccat->bar_2;
+	const u8 rx_chan = priv->func->info.rx_dma_chan;
+	const u8 tx_chan = priv->func->info.tx_dma_chan;
 	int status = 0;
 
-	ccat_dma_alloc(&priv->dma_mem, &pdev->dev);
-	if (!priv->dma_mem.base || !priv->dma_mem.phys) {
+	dma->dev = &pdev->dev;
+	dma->size = CCAT_ALIGNMENT * 3;
+	dma->base =
+	    dma_zalloc_coherent(dma->dev, dma->size, &dma->phys, GFP_KERNEL);
+	if (!dma->base || !dma->phys) {
 		pr_err("init DMA memory failed.\n");
 		return -ENOMEM;
 	}
 
-	priv->rx_fifo.dma.start = CCAT_ALIGN(priv->dma_mem.base);
 	priv->rx_fifo.ops = &dma_rx_fifo_ops;
-	fifo_set_end(&priv->rx_fifo, CCAT_ALIGNMENT);
-	status =
-	    ccat_dma_init(&priv->dma_mem, func->info.rx_dma_chan,
-			  func->ccat->bar_2, &priv->rx_fifo);
+	status = ccat_dma_init(dma, rx_chan, bar_2, &priv->rx_fifo);
 	if (status) {
 		pr_info("init RX DMA memory failed.\n");
 		ccat_dma_free(priv);
 		return status;
 	}
 
-	priv->tx_fifo.dma.start = priv->rx_fifo.dma.start + CCAT_ALIGNMENT;
 	priv->tx_fifo.ops = &dma_tx_fifo_ops;
-	fifo_set_end(&priv->tx_fifo, CCAT_ALIGNMENT);
-	status =
-	    ccat_dma_init(&priv->dma_mem, func->info.tx_dma_chan,
-			  func->ccat->bar_2, &priv->tx_fifo);
+	status = ccat_dma_init(dma, tx_chan, bar_2, &priv->tx_fifo);
 	if (status) {
 		pr_info("init TX DMA memory failed.\n");
 		ccat_dma_free(priv);
@@ -675,7 +668,7 @@ static void ccat_eth_link_up(struct net_device *const dev)
 inline static size_t ccat_eth_priv_read_link_state(const struct ccat_eth_priv
 						   *const priv)
 {
-	return !!(ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
+	return ! !(ioread32(priv->reg.mii + 0x8 + 4) & (1 << 24));
 }
 
 /**
