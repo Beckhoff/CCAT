@@ -52,7 +52,7 @@ static const u8 frameForwardEthernetFrames[] = {
 #define FIFO_LENGTH 64
 #define POLL_TIME ktime_set(0, 50 * NSEC_PER_USEC)
 #define CCAT_ALIGNMENT ((size_t)(128 * 1024))
-#define CCAT_ALIGN(x) ((typeof(x))(ALIGN((size_t)(x), CCAT_ALIGNMENT)))
+#define CCAT_ALIGN_CHANNEL(x, c) ((typeof(x))(ALIGN((size_t)((x) + ((c) * CCAT_ALIGNMENT)), CCAT_ALIGNMENT)))
 
 struct ccat_dma_frame_hdr {
 	__le32 reserved1;
@@ -268,8 +268,9 @@ static int ccat_dma_init(struct ccat_dma_mem *const dma, size_t channel,
 			 struct ccat_eth_fifo *const fifo)
 {
 	void __iomem *const ioaddr = bar2 + 0x1000 + (sizeof(u64) * channel);
-	dma_addr_t phys = CCAT_ALIGN(dma->phys) + (channel * CCAT_ALIGNMENT);
-	fifo->dma.start = CCAT_ALIGN(dma->base) + (channel * CCAT_ALIGNMENT);
+	const dma_addr_t phys = CCAT_ALIGN_CHANNEL(dma->phys, channel);
+	const u32 phys_hi = (sizeof(phys) > sizeof(u32)) ? phys >> 32 : 0;
+	fifo->dma.start = CCAT_ALIGN_CHANNEL(dma->base, channel);
 
 	fifo_set_end(fifo, CCAT_ALIGNMENT);
 	if (request_dma(channel, KBUILD_MODNAME)) {
@@ -278,8 +279,8 @@ static int ccat_dma_init(struct ccat_dma_mem *const dma, size_t channel,
 	}
 
 	/** bit 0 enables 64 bit mode on ccat */
-	iowrite32((u32) phys | ((phys >> 32) > 0), ioaddr);
-	iowrite32(phys >> 32, ioaddr + 4);
+	iowrite32((u32) phys | ((phys_hi) > 0), ioaddr);
+	iowrite32(phys_hi, ioaddr + 4);
 
 	pr_info
 	    ("DMA%llu mem initialized\n base:         0x%p\n start:        0x%p\n phys:         0x%09llx\n pci addr:     0x%01x%08x\n size:         %llu |%llx bytes.\n",
