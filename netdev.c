@@ -514,7 +514,7 @@ static int ccat_eth_priv_init_eim(struct ccat_eth_priv *priv)
 	fifo_set_end(&priv->rx_fifo, sizeof(struct ccat_eth_frame));
 
 	priv->tx_fifo.eim.start = priv->reg.tx_mem;
-	priv->rx_fifo.ops = &eim_tx_fifo_ops;
+	priv->tx_fifo.ops = &eim_tx_fifo_ops;
 	fifo_set_end(&priv->tx_fifo, priv->func->info.tx_size);
 
 	return ccat_hw_disable_mac_filter(priv);
