@@ -693,12 +693,14 @@ static void poll_link(struct ccat_eth_priv *const priv)
 static void poll_rx(struct ccat_eth_priv *const priv)
 {
 	struct ccat_eth_fifo *const fifo = &priv->rx_fifo;
-	const size_t len = fifo->ops->ready(fifo);
+	size_t rx_per_poll = FIFO_LENGTH / 2;
+	size_t len = fifo->ops->ready(fifo);
 
-	if (len) {
+	while (len && --rx_per_poll) {
 		ccat_eth_receive(priv, len);
 		fifo->ops->add(fifo);
 		ccat_eth_fifo_inc(fifo);
+		len = fifo->ops->ready(fifo);
 	}
 }
 
