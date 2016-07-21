@@ -50,7 +50,11 @@ static struct ccat_cell ccat_cells[] = {
 	{
 	 .type = CCATINFO_SRAM,
 	 .cell = {.name = "ccat_sram"},
-	 }
+	 },
+	{
+	 .type = CCATINFO_SYSTEMTIME,
+	 .cell = {.name = "ccat_systemtime"},
+	 },
 };
 
 static int __init ccat_class_init(struct ccat_class *base)

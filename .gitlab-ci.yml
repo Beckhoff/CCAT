@@ -17,6 +17,7 @@ stages:
       - ccat_netdev.ko
       - ccat_gpio.ko
       - ccat_sram.ko
+      - ccat_systemtime.ko
       - ccat_update.ko
 
 build-i386-module:
@@ -47,7 +48,7 @@ build-x86_64-module:
     - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
     - scp ./rootfs.cpio.xz test_runner@lbs1:/tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz
     - scp vmlinuz test_runner@lbs1:/tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID}
-    - tar -czf tests.tar.gz ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_update.ko
+    - tar -czf tests.tar.gz ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
     - scp ./tests.tar.gz test_runner@lbs1:/tmp/tests-ccat-${CI_BUILD_ID}.tar.gz
     - ssh test_runner@lbs1 "cd ~/workspace/beckhoff-linux-ci/pxe-server/ && ./62_run_test.sh ${DEVICE_ID}-${DEVICE} /tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID} /tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz /tmp/tests-ccat-${CI_BUILD_ID}.tar.gz 'tar xf ./tests-ccat-${CI_BUILD_ID}.tar.gz' 'apk add --update iperf3 iproute2' ./unittest/load-module.sh './unittest/test-network.sh ${LOCAL_IP} ${SERVER_IP}'"
 
