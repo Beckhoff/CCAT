@@ -1,12 +1,13 @@
 TARGET = ccat
 EXTRA_DIR = /lib/modules/$(shell uname -r)/extra/
+KDIR = /lib/modules/$(shell uname -r)/build
 obj-m += $(TARGET).o
 $(TARGET)-objs := gpio.o module.o netdev.o sram.o update.o
 #ccflags-y := -DDEBUG
 ccflags-y += -D__CHECK_ENDIAN__
 
 all:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	make -C $(KDIR) $(MAKEFLAGS) M=$(CURDIR) modules
 
 install:
 	- sudo rmmod $(TARGET)
@@ -17,9 +18,9 @@ install:
 	sudo ifconfig eth2 192.168.100.164 up
 
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	make -C $(KDIR) M=$(CURDIR) clean
 	rm -f *.c~ *.h~ *.bin
 
 # indent the source files with the kernels Lindent script
-indent: gpio.c module.c module.h netdev.c sram.c update.c
-	./Lindent $?
+indent: *.h *.c
+	$(KDIR)/scripts/Lindent $?
