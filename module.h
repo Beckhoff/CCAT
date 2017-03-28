@@ -26,6 +26,7 @@
 #include <linux/hrtimer.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
+#include <linux/mfd/core.h>
 
 #define DRV_EXTRAVERSION ""
 #define DRV_VERSION      "0.15" DRV_EXTRAVERSION
@@ -33,12 +34,6 @@
 
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
-extern const struct ccat_driver eth_eim_driver;
-extern const struct ccat_driver eth_dma_driver;
-extern const struct ccat_driver gpio_driver;
-extern const struct ccat_driver sram_driver;
-extern const struct ccat_driver update_driver;
 
 /**
  * CCAT function type identifiers (u16)
@@ -50,6 +45,16 @@ enum ccat_info_t {
 	CCATINFO_EPCS_PROM = 0xf,
 	CCATINFO_ETHERCAT_MASTER_DMA = 0x14,
 	CCATINFO_SRAM = 0x16,
+};
+
+/**
+ * struct ccat_cell
+ *  @type: ccat function type
+ *  @cell: mfd cell for function
+ */
+struct ccat_cell {
+	enum ccat_info_t type;
+	struct mfd_cell cell;
 };
 
 struct ccat_cdev {
@@ -79,18 +84,18 @@ extern int ccat_cdev_release(struct inode *const i, struct file *const f);
 /**
  * struct ccat_device - CCAT device representation
  * @pdev: pointer to the pci object allocated by the kernel
+ * @dev: pointer to the device object allocated by the kernel
  * @bar_0: holding information about PCI BAR 0
  * @bar_2: holding information about PCI BAR 2 (optional)
- * @functions: list of available (driver loaded) FPGA functions
  *
  * One instance of a ccat_device should represent a physical CCAT. Since
  * a CCAT is implemented as FPGA the available functions can vary.
  */
 struct ccat_device {
 	void *pdev;
+	void *dev;
 	void __iomem *bar_0;
 	void __iomem *bar_2;
-	struct list_head functions;
 };
 
 struct ccat_info_block {
@@ -118,10 +123,8 @@ struct ccat_info_block {
 };
 
 struct ccat_function {
-	const struct ccat_driver *drv;
 	struct ccat_device *ccat;
 	struct ccat_info_block info;
-	struct list_head list;
 	void *private_data;
 };
 
@@ -135,22 +138,8 @@ struct ccat_class {
 	struct file_operations fops;
 };
 
-extern void ccat_cdev_remove(struct ccat_function *func);
+extern int ccat_cdev_remove(struct platform_device *pdev);
 extern int ccat_cdev_probe(struct ccat_function *func,
 			   struct ccat_class *cdev_class, size_t iosize);
-
-/**
- * struct ccat_driver - CCAT FPGA function
- * @probe: add device instance
- * @remove: remove device instance
- * @type: type of the FPGA function supported by this driver
- * @cdev_class: if not NULL that driver supports ccat_class_init()/_exit()
- */
-struct ccat_driver {
-	int (*probe) (struct ccat_function * func);
-	void (*remove) (struct ccat_function * drv);
-	enum ccat_info_t type;
-	struct ccat_class *cdev_class;
-};
 
 #endif /* #ifndef _CCAT_H_ */

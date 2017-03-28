@@ -23,6 +23,11 @@
 #include <linux/gpio.h>
 #include "module.h"
 
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
+
 /**
  * struct ccat_gpio - CCAT GPIO function
  * @ioaddr: PCI base address of the CCAT Update function
@@ -123,8 +128,9 @@ static const struct gpio_chip ccat_gpio_chip = {
 	.can_sleep = false
 };
 
-static int ccat_gpio_probe(struct ccat_function *func)
+static int ccat_gpio_probe(struct platform_device *pdev)
 {
+	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_gpio *const gpio = kzalloc(sizeof(*gpio), GFP_KERNEL);
 	int ret;
 
@@ -147,15 +153,19 @@ static int ccat_gpio_probe(struct ccat_function *func)
 	return 0;
 }
 
-static void ccat_gpio_remove(struct ccat_function *func)
+static int ccat_gpio_remove(struct platform_device *pdev)
 {
+	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_gpio *const gpio = func->private_data;
 
 	gpiochip_remove(&gpio->chip);
+	return 0;
 };
 
-const struct ccat_driver gpio_driver = {
-	.type = CCATINFO_GPIO,
+static struct platform_driver gpio_driver = {
+	.driver = {.name = "ccat_gpio"},
 	.probe = ccat_gpio_probe,
 	.remove = ccat_gpio_remove,
 };
+
+module_platform_driver(gpio_driver);

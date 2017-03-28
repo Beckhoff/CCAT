@@ -24,6 +24,11 @@
 #include <linux/module.h>
 #include <linux/uaccess.h>
 
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
+
 #define CCAT_SRAM_DEVICES_MAX 4
 
 static ssize_t __sram_read(struct cdev_buffer *buffer, char __user * buf,
@@ -86,8 +91,9 @@ static struct ccat_class cdev_class = {
 		 },
 };
 
-static int ccat_sram_probe(struct ccat_function *func)
+static int ccat_sram_probe(struct platform_device *pdev)
 {
+	struct ccat_function *const func = pdev->dev.platform_data;
 	static const u8 NO_SRAM_CONNECTED = 0;
 	const u8 type = func->info.sram_width & 0x3;
 	const size_t iosize = (1 << func->info.sram_size);
@@ -100,9 +106,10 @@ static int ccat_sram_probe(struct ccat_function *func)
 	return ccat_cdev_probe(func, &cdev_class, iosize);
 }
 
-const struct ccat_driver sram_driver = {
-	.type = CCATINFO_SRAM,
+static struct platform_driver sram_driver = {
+	.driver = {.name = "ccat_sram"},
 	.probe = ccat_sram_probe,
 	.remove = ccat_cdev_remove,
-	.cdev_class = &cdev_class,
 };
+
+module_platform_driver(sram_driver);

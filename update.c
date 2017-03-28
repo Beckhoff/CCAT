@@ -24,6 +24,11 @@
 #include <linux/uaccess.h>
 #include "module.h"
 
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
+
 #define CCAT_DEVICES_MAX 5
 #define CCAT_DATA_IN_4 0x038
 #define CCAT_DATA_IN_N 0x7F0
@@ -332,8 +337,9 @@ static struct ccat_class cdev_class = {
 		 },
 };
 
-static int ccat_update_probe(struct ccat_function *func)
+static int ccat_update_probe(struct platform_device *pdev)
 {
+	struct ccat_function *const func = pdev->dev.platform_data;
 	static const u16 SUPPORTED_REVISION = 0x00;
 
 	if (SUPPORTED_REVISION != func->info.rev) {
@@ -343,9 +349,10 @@ static int ccat_update_probe(struct ccat_function *func)
 	return ccat_cdev_probe(func, &cdev_class, CCAT_FLASH_SIZE);
 }
 
-const struct ccat_driver update_driver = {
-	.type = CCATINFO_EPCS_PROM,
+static struct platform_driver update_driver = {
+	.driver = {.name = "ccat_update"},
 	.probe = ccat_update_probe,
 	.remove = ccat_cdev_remove,
-	.cdev_class = &cdev_class,
 };
+
+module_platform_driver(update_driver);

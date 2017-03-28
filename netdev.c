@@ -32,6 +32,11 @@
 
 #include "module.h"
 
+MODULE_DESCRIPTION(DRV_DESCRIPTION);
+MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
+
 /**
  * EtherCAT frame to enable forwarding on EtherCAT Terminals
  */
@@ -835,9 +840,10 @@ static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 	return 0;
 }
 
-static int ccat_eth_dma_probe(struct ccat_function *func)
+static int ccat_eth_dma_probe(struct platform_device *pdev)
 {
-	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
+	struct ccat_function *const func = pdev->dev.platform_data;
+	struct ccat_eth_priv *const priv = ccat_eth_alloc_netdev(func);
 	int status;
 
 	if (!priv)
@@ -852,23 +858,26 @@ static int ccat_eth_dma_probe(struct ccat_function *func)
 	return ccat_eth_init_netdev(priv);
 }
 
-static void ccat_eth_dma_remove(struct ccat_function *func)
+static int ccat_eth_dma_remove(struct platform_device *pdev)
 {
+	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
 	ccat_eth_priv_free(eth);
 	free_netdev(eth->netdev);
+	return 0;
 }
 
-const struct ccat_driver eth_dma_driver = {
-	.type = CCATINFO_ETHERCAT_MASTER_DMA,
+static struct platform_driver ccat_eth_dma_driver = {
+	.driver = {.name = "ccat_eth_dma"},
 	.probe = ccat_eth_dma_probe,
 	.remove = ccat_eth_dma_remove,
 };
 
-static int ccat_eth_eim_probe(struct ccat_function *func)
+static int ccat_eth_eim_probe(struct platform_device *pdev)
 {
-	struct ccat_eth_priv *priv = ccat_eth_alloc_netdev(func);
+	struct ccat_function *const func = pdev->dev.platform_data;
+	struct ccat_eth_priv *const priv = ccat_eth_alloc_netdev(func);
 	int status;
 
 	if (!priv)
@@ -883,16 +892,37 @@ static int ccat_eth_eim_probe(struct ccat_function *func)
 	return ccat_eth_init_netdev(priv);
 }
 
-static void ccat_eth_eim_remove(struct ccat_function *func)
+static int ccat_eth_eim_remove(struct platform_device *pdev)
 {
+	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
 	ccat_eth_priv_free(eth);
 	free_netdev(eth->netdev);
+	return 0;
 }
 
-const struct ccat_driver eth_eim_driver = {
-	.type = CCATINFO_ETHERCAT_NODMA,
+static struct platform_driver ccat_eth_eim_driver = {
+	.driver = {.name = "ccat_eth_eim"},
 	.probe = ccat_eth_eim_probe,
 	.remove = ccat_eth_eim_remove,
 };
+
+static int __init ccat_eth_init(void)
+{
+	int result;
+	result = platform_driver_register(&ccat_eth_eim_driver);
+	if (result != 0) {
+		return result;
+	}
+	return platform_driver_register(&ccat_eth_dma_driver);
+}
+
+static void __exit ccat_eth_exit(void)
+{
+	platform_driver_unregister(&ccat_eth_eim_driver);
+	platform_driver_unregister(&ccat_eth_dma_driver);
+}
+
+module_init(ccat_eth_init);
+module_exit(ccat_eth_exit);

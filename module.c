@@ -22,6 +22,7 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/platform_device.h>
+#include <linux/mfd/core.h>
 #include "module.h"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -29,17 +30,27 @@ MODULE_AUTHOR("Patrick Bruenn <p.bruenn@beckhoff.com>");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 
-/**
- * configure the drivers capabilities here
- */
-static const struct ccat_driver *const drivers[] = {
-#ifdef CONFIG_PCI
-	&eth_dma_driver,	/* load Ethernet MAC/EtherCAT Master driver with DMA support from netdev.c */
-#endif
-	&eth_eim_driver,	/* load Ethernet MAC/EtherCAT Master driver without DMA support from */
-	&gpio_driver,		/* load GPIO driver from gpio.c */
-	&sram_driver,		/* load SRAM driver from sram.c */
-	&update_driver,		/* load Update driver from update.c */
+static struct ccat_cell ccat_cells[] = {
+	{
+	 .type = CCATINFO_ETHERCAT_NODMA,
+	 .cell = {.name = "ccat_eth_eim"},
+	 },
+	{
+	 .type = CCATINFO_ETHERCAT_MASTER_DMA,
+	 .cell = {.name = "ccat_eth_dma"},
+	 },
+	{
+	 .type = CCATINFO_GPIO,
+	 .cell = {.name = "ccat_gpio"},
+	 },
+	{
+	 .type = CCATINFO_EPCS_PROM,
+	 .cell = {.name = "ccat_update"},
+	 },
+	{
+	 .type = CCATINFO_SRAM,
+	 .cell = {.name = "ccat_sram"},
+	 }
 };
 
 static int __init ccat_class_init(struct ccat_class *base)
@@ -137,6 +148,8 @@ int ccat_cdev_open(struct inode *const i, struct file *const f)
 	return 0;
 }
 
+EXPORT_SYMBOL_GPL(ccat_cdev_open);
+
 int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class,
 		    size_t iosize)
 {
@@ -160,6 +173,8 @@ int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class,
 	return 0;
 }
 
+EXPORT_SYMBOL_GPL(ccat_cdev_probe);
+
 int ccat_cdev_release(struct inode *const i, struct file *const f)
 {
 	const struct cdev_buffer *const buf = f->private_data;
@@ -170,26 +185,36 @@ int ccat_cdev_release(struct inode *const i, struct file *const f)
 	return 0;
 }
 
-void ccat_cdev_remove(struct ccat_function *func)
+EXPORT_SYMBOL_GPL(ccat_cdev_release);
+
+int ccat_cdev_remove(struct platform_device *pdev)
 {
+	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_cdev *const ccdev = func->private_data;
 
 	cdev_del(&ccdev->cdev);
 	device_destroy(ccdev->class->class, ccdev->dev);
 	free_ccat_cdev(ccdev);
+	return 0;
 }
 
-static const struct ccat_driver *ccat_function_connect(struct ccat_function
-						       *const func)
+EXPORT_SYMBOL_GPL(ccat_cdev_remove);
+
+static int ccat_function_connect(struct ccat_function
+				 *const func, struct ccat_device *const ccatdev)
 {
 	int i;
-
-	for (i = 0; i < ARRAY_SIZE(drivers); ++i) {
-		if (func->info.type == drivers[i]->type) {
-			return drivers[i]->probe(func) ? NULL : drivers[i];
+	for (i = 0; i < ARRAY_SIZE(ccat_cells); ++i) {
+		if (func->info.type == ccat_cells[i].type) {
+			ccat_cells[i].cell.platform_data = func;
+			ccat_cells[i].cell.pdata_size = sizeof(*func);
+			return mfd_add_devices(ccatdev->dev,
+					       PLATFORM_DEVID_AUTO,
+					       &ccat_cells[i].cell, 1, NULL, 0,
+					       NULL);
 		}
 	}
-	return NULL;
+	return 0;
 }
 
 /**
@@ -204,38 +229,21 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 	void __iomem *addr = ccatdev->bar_0; /** first block is the CCAT information block entry */
 	const u8 num_func = ioread8(addr + 4); /** number of CCAT function blocks is at offset 0x4 */
 	const void __iomem *end = addr + (block_size * num_func);
+	int ret = 0;
 
-	INIT_LIST_HEAD(&ccatdev->functions);
 	for (; addr < end && next; addr += block_size) {
 		memcpy_fromio(&next->info, addr, sizeof(next->info));
 		if (CCATINFO_NOTUSED != next->info.type) {
 			next->ccat = ccatdev;
-			next->drv = ccat_function_connect(next);
-			if (next->drv) {
-				list_add(&next->list, &ccatdev->functions);
-				next = kzalloc(sizeof(*next), GFP_KERNEL);
+			ret = ccat_function_connect(next, ccatdev);
+			if (ret < 0) {
+				return ret;
 			}
+			next = kzalloc(sizeof(*next), GFP_KERNEL);
 		}
 	}
 	kfree(next);
-	return list_empty(&ccatdev->functions);
-}
-
-/**
- * Destroy all previously initialized CCAT functions
- */
-static void ccat_functions_remove(struct ccat_device *const dev)
-{
-	struct ccat_function *func;
-	struct ccat_function *tmp;
-	list_for_each_entry_safe(func, tmp, &dev->functions, list) {
-		if (func->drv) {
-			func->drv->remove(func);
-			func->drv = NULL;
-		}
-		list_del(&func->list);
-		kfree(func);
-	}
+	return 0;
 }
 
 #ifdef CONFIG_PCI
@@ -251,6 +259,7 @@ static int ccat_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return -ENOMEM;
 	}
 	ccatdev->pdev = pdev;
+	ccatdev->dev = &pdev->dev;
 	pci_set_drvdata(pdev, ccatdev);
 
 	status = pci_enable_device_mem(pdev);
@@ -314,7 +323,7 @@ static void ccat_pci_remove(struct pci_dev *pdev)
 	struct ccat_device *ccatdev = pci_get_drvdata(pdev);
 
 	if (ccatdev) {
-		ccat_functions_remove(ccatdev);
+		mfd_remove_devices(ccatdev->dev);
 		if (ccatdev->bar_2)
 			pci_iounmap(pdev, ccatdev->bar_2);
 		pci_iounmap(pdev, ccatdev->bar_0);
@@ -354,6 +363,7 @@ static int ccat_eim_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	ccatdev->pdev = pdev;
+	ccatdev->dev = pdev->dev;
 	platform_set_drvdata(pdev, ccatdev);
 
 	if (!request_mem_region(0xf0000000, 0x02000000, pdev->name)) {
