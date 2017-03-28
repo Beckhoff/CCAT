@@ -38,3 +38,6 @@ clean:
 # indent the source files with the kernels Lindent script
 indent: *.h *.c
 	$(KDIR)/scripts/Lindent $?
+	$(CURDIR)/tools/shfmt -w $(CURDIR)/scripts $(CURDIR)/unittest
+
+.PHONY: indent
