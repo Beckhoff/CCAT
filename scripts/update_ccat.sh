@@ -39,7 +39,7 @@ rbf=$2
 tmp=$rbf.~ccat_update_tmp
 backup=$rbf.~ccat_update_backup
 update=${1}
-bytes=$(echo $(wc -c $rbf)|cut -d' ' -f1)
+bytes=$(echo $(wc -c $rbf) | cut -d' ' -f1)
 
 # check if device file is available
 if ! [ -c $update ]; then
@@ -48,21 +48,21 @@ if ! [ -c $update ]; then
 fi
 
 # create a backup
-cat $update > $backup
+cat $update >$backup
 if [ $? -ne 0 ]; then
 	echo "create CCAT backup failed"
 	exit 1
 fi
 
 # write *.rbf to CCAT
-cat $rbf > $update
+cat $rbf >$update
 if [ $? -ne 0 ]; then
 	echo "write to flash failed"
 	exit 1
 fi
 
 # read CCAT flash content back into a temporary file
-cat $update > $tmp
+cat $update >$tmp
 if [ $? -ne 0 ]; then
 	echo "read from flash failed"
 	exit 1
@@ -71,24 +71,24 @@ fi
 # since we never know the exact length of a CCATs firmware we trim the
 # read file to the length of the original *.rbf and compare them
 truncate -s $bytes $tmp
-diff $rbf $tmp > /dev/null
+diff $rbf $tmp >/dev/null
 if [ $? -eq 0 ]; then
 	echo "Update complete"
 	rm -f $tmp $backup
 else
 	echo "Update failed -> trying to restore backup..."
-	cat $backup > $update
+	cat $backup >$update
 	if [ $? -ne 0 ]; then
 		echo "Restore: write failed"
 		exit 1
 	fi
 	# read CCAT flash content back into a temporary file
-	cat $update > $tmp
+	cat $update >$tmp
 	if [ $? -ne 0 ]; then
 		echo "Restore: read from flash failed"
 		exit 1
 	fi
-	diff $backup $tmp > /dev/null
+	diff $backup $tmp >/dev/null
 	if [ $? -eq 0 ]; then
 		echo "Restore: was successful"
 		rm -f $backup

@@ -9,7 +9,6 @@ BASE=$1
 #on CX2030
 NUM=11
 
-for i in $(seq ${BASE} 1 $((BASE+NUM)))
-do
-sh rw_gpio.sh ${i} &
+for i in $(seq ${BASE} 1 $((BASE + NUM))); do
+	sh rw_gpio.sh ${i} &
 done
