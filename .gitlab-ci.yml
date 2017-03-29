@@ -22,14 +22,14 @@ build-i386-module:
   <<: *build-module
   variables:
     KERNEL_JOB: 'build-i386-kernel'
-    KERNEL_REF: 'stable-4.8'
+    KERNEL_REF: 'stable-rt'
     ARCH: 'i386'
 
 build-x86_64-module:
   <<: *build-module
   variables:
     KERNEL_JOB: 'build-x86_64-kernel'
-    KERNEL_REF: 'stable-4.8'
+    KERNEL_REF: 'stable-rt'
     ARCH: 'x86_64'
 
 .test: &test
@@ -57,7 +57,7 @@ test-cx2030-x64:
     DEVICE_ID: 'CX05'
     LOCAL_IP: 'fd00:bbbb::cca5/64'
     SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-4.8'
+    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-x86_64-kernel'
     ROOTFS_JOB: 'build-x86_64'
     ROOTFS_REF: 'stable'
@@ -71,7 +71,7 @@ test-cx5140-x64:
     DEVICE_ID: 'CX03'
     LOCAL_IP: 'fd00:bbbb::cca3/64'
     SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-4.8'
+    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-x86_64-kernel'
     ROOTFS_JOB: 'build-x86_64'
     ROOTFS_REF: 'stable'
@@ -85,7 +85,7 @@ test-cx2030-i386:
     DEVICE_ID: 'CX05'
     LOCAL_IP: 'fd00:bbbb::cca5/64'
     SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-4.8'
+    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-i386-kernel'
     ROOTFS_JOB: 'build-i386'
     ROOTFS_REF: 'stable'
@@ -99,7 +99,7 @@ test-cx5140-i386:
     DEVICE_ID: 'CX03'
     LOCAL_IP: 'fd00:bbbb::cca3/64'
     SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-4.8'
+    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-i386-kernel'
     ROOTFS_JOB: 'build-i386'
     ROOTFS_REF: 'stable'
@@ -113,7 +113,7 @@ test-cx5020:
     DEVICE_ID: 'CX01'
     LOCAL_IP: 'fd00:bbbb::cca1/64'
     SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-4.8'
+    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-i386-kernel'
     ROOTFS_JOB: 'build-i386'
     ROOTFS_REF: 'stable'
