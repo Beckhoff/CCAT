@@ -160,7 +160,7 @@ static int ccat_gpio_remove(struct platform_device *pdev)
 
 	gpiochip_remove(&gpio->chip);
 	return 0;
-};
+}
 
 static struct platform_driver gpio_driver = {
 	.driver = {.name = "ccat_gpio"},
