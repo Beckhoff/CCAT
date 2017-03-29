@@ -389,7 +389,7 @@ static int ccat_eim_remove(struct platform_device *pdev)
 	struct ccat_device *ccatdev = platform_get_drvdata(pdev);
 
 	if (ccatdev) {
-		ccat_functions_remove(ccatdev);
+		mfd_remove_devices(ccatdev->dev);
 		iounmap(ccatdev->bar_0);
 		release_mem_region(0xf0000000, 0x02000000);
 	}
