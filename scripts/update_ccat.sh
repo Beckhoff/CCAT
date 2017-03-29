@@ -1,14 +1,15 @@
 #!/bin/bash
 # Use this script to update your CCAT FPGA configuration in flash.
-# You should provide the path to your *.rbf as first parameter to the
-# script. As a first step a backup of the current FPGAs flash content is
+# Provide the path to the ccat_update device as first parameter and
+# the path to your *.rbf as second parameter to the script.
+# As a first step a backup of the current FPGAs flash content is
 # read and saved as *.rbf.~ccat_update_backup. Then the contents of *.rbf
 # is written to the FPGA and read back. If the compare of the readback
 # data and the original file fails, the script tries to restore the
 # backup. If that restore fails, too, keep calm and try it manually. As
 # long as the FPGA stays powered on you have a chance to recover!
 #
-# Copyright (C) 2014-2015  Beckhoff Automation GmbH
+# Copyright (C) 2014-2017  Beckhoff Automation GmbH
 # Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining
@@ -31,7 +32,7 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 if [ $# -ne 2 ]; then
-	echo "Usage: $0 <device> <rbf>"
+	echo -e "Usage: $0 <device> <rbf>\nf.e.: $0 /dev/ccat_update0 ccat_fw_v4.9.rbf\n"
 	exit -1
 fi
 
