@@ -743,7 +743,8 @@ static enum hrtimer_restart poll_timer_callback(struct hrtimer *timer)
 static struct rtnl_link_stats64 *ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64
 						      *storage)
 #else
-static void ccat_eth_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
+static void ccat_eth_get_stats64(struct net_device *dev,
+				 struct rtnl_link_stats64 *storage)
 #endif
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
