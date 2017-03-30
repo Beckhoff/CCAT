@@ -25,6 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/time.h>
+#include <linux/version.h>
 #include "module.h"
 
 #define CCAT_SYSTEMTIME_RATING 140
@@ -38,11 +39,14 @@ struct ccat_systemtime {
 	struct clocksource clock;
 };
 
-static u64 ccat_systemtime_get(struct ccat_systemtime *systemtime)
+static u64 ccat_systemtime_get(struct clocksource *clk)
 {
+	struct ccat_systemtime *systemtime =
+	    container_of(clk, struct ccat_systemtime, clock);
 	return readq(systemtime->ioaddr);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
 /**
  * function ccat_systemtime_get_cycles - returns cycles for clocksource
  * return microseconds instead of nanoseconds to make ntp speed
@@ -50,10 +54,9 @@ static u64 ccat_systemtime_get(struct ccat_systemtime *systemtime)
  */
 static cycle_t ccat_systemtime_get_cycles(struct clocksource *clk)
 {
-	return (cycle_t)
-	    ccat_systemtime_get(container_of
-				(clk, struct ccat_systemtime, clock));
+	return (cycle_t) ccat_systemtime_get(clk);
 }
+#endif
 
 static int ccat_systemtime_probe(struct platform_device *pdev)
 {
@@ -69,7 +72,11 @@ static int ccat_systemtime_probe(struct platform_device *pdev)
 
 	systemtime->clock.name = "ccat";
 	systemtime->clock.rating = CCAT_SYSTEMTIME_RATING;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+	systemtime->clock.read = ccat_systemtime_get;
+#else
 	systemtime->clock.read = ccat_systemtime_get_cycles;
+#endif
 	systemtime->clock.mask = CLOCKSOURCE_MASK(32);
 	systemtime->clock.mult = 1;
 	systemtime->clock.shift = 0;
