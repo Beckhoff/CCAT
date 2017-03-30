@@ -2,6 +2,7 @@ image: lbs1:5500/beckhoff/docker-ubuntu-cached:latest
 stages:
   - build
   - test
+  - trigger
 
 .build-module: &build-module
   stage: build
@@ -119,3 +120,11 @@ test-cx5020:
     ROOTFS_REF: 'stable'
   dependencies:
     - build-i386-module
+
+trigger:
+  stage: trigger
+  except:
+    - triggers
+  script:
+    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=prepatch" https://lbs1/api/v3/projects/12/trigger/builds
+    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=rt-devel" https://lbs1/api/v3/projects/12/trigger/builds
