@@ -367,7 +367,7 @@ static int ccat_eim_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	ccatdev->pdev = pdev;
-	ccatdev->dev = pdev->dev;
+	ccatdev->dev = &pdev->dev;
 	platform_set_drvdata(pdev, ccatdev);
 
 	if (!request_mem_region(0xf0000000, 0x02000000, pdev->name)) {
