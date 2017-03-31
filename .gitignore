@@ -8,3 +8,4 @@ Module.symvers
 *.mod.c
 *.o
 *.order
+tools/shfmt
