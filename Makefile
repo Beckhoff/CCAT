@@ -10,6 +10,8 @@ ccat_update-y := update.o
 #ccflags-y := -DDEBUG
 ccflags-y += -D__CHECK_ENDIAN__
 
+DEV_PREFIX=/dev/ccat_
+
 all:
 	make -C $(KDIR) $(MAKEFLAGS) M=$(CURDIR) modules
 
@@ -45,6 +47,11 @@ indent: *.h *.c
 	$(CURDIR)/tools/shfmt -w $(CURDIR)/scripts $(CURDIR)/unittest
 
 unittest:
-	cd unittest/ && make
+	sudo chmod g+r ${DEV_PREFIX}*
+	sudo chmod g+w ${DEV_PREFIX}*
+	sudo chgrp ccat ${DEV_PREFIX}*
+
+	cd unittest && ./test-rw_cdev.sh sram 0 131072
+	cd unittest && ./test-update.sh
 
 .PHONY: clean indent unittest
