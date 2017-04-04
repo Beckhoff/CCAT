@@ -51,7 +51,7 @@ unittest:
 	sudo chmod g+w ${DEV_PREFIX}*
 	sudo chgrp ccat ${DEV_PREFIX}*
 
-	cd unittest && ./test-rw_cdev.sh sram 0 131072
+	cd unittest && ./test-rw_cdev.sh sram 131072
 	cd unittest && ./test-update.sh
 
 .PHONY: clean indent unittest

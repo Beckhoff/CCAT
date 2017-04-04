@@ -2,8 +2,8 @@
 
 set -e
 
-if [ $# -ne 3 ]; then
-	echo -e "Usage: $0 <dev_type> <dev_slot> <dev_size>\n f.e.: $0 sram 0 2048\n"
+if [ $# -ne 2 ]; then
+	echo -e "Usage: $0 <dev_type> <dev_size>\n f.e.: $0 sram 2048\n"
 	exit -1
 fi
 
@@ -12,8 +12,11 @@ interface=$(dmesg | tac | grep -m1 "ccat_netdev: registered .* as network device
 mac=$(cat /sys/class/net/${interface}/address | sed -r 's/:/-/g')
 
 dev_type=$1
-dev_slot=$2
-dev_size=$3
+dev_size=$2
+dev_count=$(ls /dev/ccat_${dev_type}* | wc -l)
+
+for ((dev_slot=0; dev_slot<${dev_count}; dev_slot++)) {
+
 dev_file=/dev/ccat_${dev_type}${dev_slot}
 ref_file=${script_path}/${dev_type}${dev_slot}.bin.ref-${mac}
 pattern[0]=${script_path}/${dev_type}_AA.bin
@@ -83,3 +86,4 @@ for i in 1 2 3 4 5 6 7; do
 	dd if=${use_pattern} of=${dev_file} seek=$i count=1 bs=7 status=progress
 	run_test "read" ${use_pattern} skip=$i count=1 bs=7
 done
+}
