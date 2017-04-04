@@ -42,6 +42,12 @@ backup=$rbf.~ccat_update_backup
 update=${1}
 bytes=$(echo $(wc -c $rbf) | cut -d' ' -f1)
 
+# check if update file was readable
+if [ -z $bytes ]; then
+	echo $rbf seems invalid
+	exit 1
+fi
+
 # check if device file is available
 if ! [ -c $update ]; then
 	echo $update does not exist
