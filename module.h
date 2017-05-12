@@ -29,7 +29,7 @@
 #include <linux/mfd/core.h>
 
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.15" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.16" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 #undef pr_fmt
