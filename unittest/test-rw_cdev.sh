@@ -2,8 +2,8 @@
 
 set -e
 
-if [ $# -ne 2 ]; then
-	echo -e "Usage: $0 <dev_type> <dev_size>\n f.e.: $0 sram 2048\n"
+if [ $# -lt 2 ]; then
+	echo -e "Usage: $0 <dev_type> <dev_size> [readonly]\n f.e.: $0 sram 2048\n"
 	exit -1
 fi
 
@@ -13,6 +13,7 @@ mac=$(cat /sys/class/net/${interface}/address | sed -r 's/:/-/g')
 
 dev_type=$1
 dev_size=$2
+readonly=$3
 dev_count=$(ls /dev/ccat_${dev_type}* | wc -l)
 
 for ((dev_slot = 0; dev_slot < ${dev_count}; dev_slot++)); do
@@ -53,6 +54,11 @@ for ((dev_slot = 0; dev_slot < ${dev_count}; dev_slot++)); do
 	for i in 1 2 4 8 16 32 64 128 256; do
 		run_test "read" ${ref_file} skip=$i bs=8
 	done
+
+	if [ "x${readonly}y" == "xreadonlyy" ]; then
+		echo "[readonly] -> skip write tests"
+		exit 0
+	fi
 
 	# before running write tests, install cleanup trap to try to
 	# restore device content on failure.
