@@ -86,4 +86,5 @@ for ((dev_slot = 0; dev_slot < ${dev_count}; dev_slot++)); do
 		dd if=${use_pattern} of=${dev_file} seek=$i count=1 bs=7 status=progress
 		run_test "read" ${use_pattern} skip=$i count=1 bs=7
 	done
+	cleanup
 done
