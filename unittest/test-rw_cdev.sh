@@ -71,25 +71,25 @@ for ((dev_slot = 0; dev_slot < ${dev_count}; dev_slot++)); do
 	echo "$0: test write patterns AA and 55"
 	for i in 1 2; do
 		use_pattern=${pattern[$(($i % 2))]}
-		run_test "write" ${use_pattern} status=progress
+		run_test "write" ${use_pattern}
 	done
 
 	echo "$0: test write with different blocksizes"
 	for i in 1 2 3 4 5 6 7 8 16 32 64 128 256 512 1024 2048 4096; do
 		use_pattern=${pattern[$(($i % 2))]}
-		run_test "write" ${use_pattern} bs=$i status=progress
+		run_test "write" ${use_pattern} bs=$i
 	done
 
 	echo "$0: test write with different count"
 	for i in 1 2 4 8 16; do
 		use_pattern=${pattern[$(($i % 2))]}
-		run_test "write" ${use_pattern} count=$i bs=7 status=progress
+		run_test "write" ${use_pattern} count=$i bs=7
 	done
 
 	echo "$0: test write with different seek"
 	for i in 1 2 3 4 5 6 7; do
 		use_pattern=${pattern[$(($i % 2))]}
-		dd if=${use_pattern} of=${dev_file} seek=$i count=1 bs=7 status=progress
+		dd if=${use_pattern} of=${dev_file} seek=$i count=1 bs=7
 		run_test "read" ${use_pattern} skip=$i count=1 bs=7
 	done
 	cleanup
