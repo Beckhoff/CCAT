@@ -109,7 +109,7 @@ static struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
 	return NULL;
 }
 
-loff_t ccat_cdev_llseek(struct file *f, loff_t offset, int whence)
+loff_t ccat_cdev_llseek(struct file * f, loff_t offset, int whence)
 {
 	struct cdev_buffer *buffer = f->private_data;
 	const size_t iosize = buffer->ccdev->iosize;
