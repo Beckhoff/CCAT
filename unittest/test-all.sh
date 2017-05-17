@@ -7,6 +7,7 @@ if [ $# -ne 2 ]; then
 	exit -1
 fi
 
+./unittest/test-gpio.sh
 ./unittest/test-network.sh "$1" "$2"
 ./unittest/test-systemtime.sh
 ./unittest/test-rw_cdev.sh sram 131072
