@@ -15,7 +15,12 @@ all:
 	make -C $(KDIR) $(MAKEFLAGS) M=$(CURDIR) modules
 
 install:
-	- rmmod ccat*
+	- rmmod ccat_update
+	- rmmod ccat_systemtime
+	- rmmod ccat_sram
+	- rmmod ccat_gpio
+	- rmmod ccat_netdev
+	- rmmod ccat
 	make -C $(KDIR) M=$(CURDIR) modules_install
 	modprobe ccat
 	modprobe ccat_netdev
