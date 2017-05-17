@@ -81,6 +81,7 @@ struct cdev_buffer {
 
 extern int ccat_cdev_open(struct inode *const i, struct file *const f);
 extern int ccat_cdev_release(struct inode *const i, struct file *const f);
+extern loff_t ccat_cdev_llseek(struct file *f, loff_t offset, int whence);
 
 /**
  * struct ccat_device - CCAT device representation

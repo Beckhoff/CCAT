@@ -109,6 +109,16 @@ static struct ccat_cdev *alloc_ccat_cdev(struct ccat_class *base)
 	return NULL;
 }
 
+loff_t ccat_cdev_llseek(struct file *f, loff_t offset, int whence)
+{
+	struct cdev_buffer *buffer = f->private_data;
+	const size_t iosize = buffer->ccdev->iosize;
+
+	return fixed_size_llseek(f, offset, whence, iosize);
+}
+
+EXPORT_SYMBOL_GPL(ccat_cdev_llseek);
+
 static int ccat_cdev_init(struct cdev *cdev, dev_t dev, struct class *class,
 			  struct file_operations *fops)
 {

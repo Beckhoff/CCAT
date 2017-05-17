@@ -84,6 +84,7 @@ static struct ccat_class cdev_class = {
 	.name = "ccat_sram",
 	.fops = {
 		 .owner = THIS_MODULE,
+		 .llseek = ccat_cdev_llseek,
 		 .open = ccat_cdev_open,
 		 .release = ccat_cdev_release,
 		 .read = ccat_sram_read,
