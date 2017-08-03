@@ -20,6 +20,14 @@ stages:
       - ccat_systemtime.ko
       - ccat_update.ko
 
+build-arm-module:
+  <<: *build-module
+  variables:
+    KERNEL_JOB: 'build-arm-kernel'
+    KERNEL_REF: 'stable-rt'
+    ARCH: 'arm'
+    CROSS_COMPILE: 'arm-none-eabi-'
+
 build-i386-module:
   <<: *build-module
   variables:
@@ -48,6 +56,7 @@ build-x86_64-module:
     - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
     - scp ./rootfs.cpio.xz test_runner@lbs1:/tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz
     - scp vmlinuz test_runner@lbs1:/tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID}
+    - scp dtb test_runner@lbs1:/tmp/dtb-${DEVICE}-${CI_BUILD_ID} || true
     - tar -czf tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
     - scp ./tests.tar.gz test_runner@lbs1:/tmp/tests-ccat-${CI_BUILD_ID}.tar.gz
     - ssh test_runner@lbs1 "cd ~/workspace/beckhoff-linux-ci/pxe-server/ && ./62_run_test.sh ${DEVICE_ID}-${DEVICE} /tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID} /tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz /tmp/tests-ccat-${CI_BUILD_ID}.tar.gz 'tar xf ./tests-ccat-${CI_BUILD_ID}.tar.gz' ./unittest/load-module.sh './unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}'"
@@ -121,6 +130,20 @@ test-cx5020:
     ROOTFS_REF: 'stable'
   dependencies:
     - build-i386-module
+
+test-cx9020-arm:
+  <<: *test
+  variables:
+    DEVICE: 'CX9020'
+    DEVICE_ID: 'CX09'
+    LOCAL_IP: 'fd00:bbbb::cca9/64'
+    SERVER_IP: 'fd00:bbbb::17'
+    KERNEL_REF: 'stable-rt'
+    KERNEL_JOB: 'build-arm-kernel'
+    ROOTFS_JOB: 'build-arm'
+    ROOTFS_REF: 'stable'
+  dependencies:
+    - build-arm-module
 
 trigger:
   stage: trigger
