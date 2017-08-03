@@ -50,7 +50,7 @@ build-x86_64-module:
     - scp vmlinuz test_runner@lbs1:/tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID}
     - tar -czf tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
     - scp ./tests.tar.gz test_runner@lbs1:/tmp/tests-ccat-${CI_BUILD_ID}.tar.gz
-    - ssh test_runner@lbs1 "cd ~/workspace/beckhoff-linux-ci/pxe-server/ && ./62_run_test.sh ${DEVICE_ID}-${DEVICE} /tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID} /tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz /tmp/tests-ccat-${CI_BUILD_ID}.tar.gz 'tar xf ./tests-ccat-${CI_BUILD_ID}.tar.gz' 'apk add --update iperf3 iproute2' ./unittest/load-module.sh './unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}'"
+    - ssh test_runner@lbs1 "cd ~/workspace/beckhoff-linux-ci/pxe-server/ && ./62_run_test.sh ${DEVICE_ID}-${DEVICE} /tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID} /tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz /tmp/tests-ccat-${CI_BUILD_ID}.tar.gz 'tar xf ./tests-ccat-${CI_BUILD_ID}.tar.gz' ./unittest/load-module.sh './unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}'"
 
 test-cx2030-x64:
   <<: *test
