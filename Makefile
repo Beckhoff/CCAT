@@ -12,7 +12,7 @@ ccflags-y += -D__CHECK_ENDIAN__
 DEV_PREFIX=/dev/ccat_
 
 all:
-	make -C $(KDIR) $(MAKEFLAGS) M=$(CURDIR) modules
+	make -C $(KDIR) M=$(CURDIR) modules
 
 install:
 	- rmmod ccat_update
