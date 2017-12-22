@@ -1,0 +1,39 @@
+# HG changeset patch
+# User Patrick Bruenn <p.bruenn@beckhoff.com>
+# Date 1511936476 -3600
+#      Wed Nov 29 07:21:16 2017 +0100
+# Branch stable-1.5
+# Node ID 8d326521a269f6d2c7217b7c7c1fd3aca32911ad
+# Parent  5ac7a113010964a82723795cfd231ba3a70ac438
+examples/mini: use setup_timer() for Linux >= 4.15
+
+init_timer() was replaced by setup_timer() in v4.15-rc1
+
+diff -r 5ac7a1130109 -r 8d326521a269 examples/mini/mini.c
+--- a/examples/mini/mini.c	Wed Nov 29 07:57:55 2017 +0100
++++ b/examples/mini/mini.c	Wed Nov 29 07:21:16 2017 +0100
+@@ -307,7 +307,11 @@
+ 
+ /*****************************************************************************/
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
++void cyclic_task(struct timer_list *t)
++#else
+ void cyclic_task(unsigned long data)
++#endif
+ {
+     // receive process data
+     down(&master_sem);
+@@ -492,8 +496,12 @@
+ #endif
+ 
+     printk(KERN_INFO PFX "Starting cyclic sample thread.\n");
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
++    timer_setup(&timer, cyclic_task, 0);
++#else
+     init_timer(&timer);
+     timer.function = cyclic_task;
++#endif
+     timer.expires = jiffies + 10;
+     add_timer(&timer);
+ 
