@@ -54,12 +54,12 @@ build-x86_64-module:
     - ssh-add <(echo "$SSH_PRIVATE_KEY")
     - mkdir -p ~/.ssh
     - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
-    - scp ./rootfs.cpio.xz test_runner@lbs1:/tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz
-    - scp vmlinuz test_runner@lbs1:/tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID}
-    - scp dtb test_runner@lbs1:/tmp/dtb-${DEVICE}-${CI_BUILD_ID} || true
+    - scp -P ${SSH_PORT} ./rootfs.cpio.xz ${SSH_USER}@${SSH_HOST}:/tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz
+    - scp -P ${SSH_PORT} vmlinuz ${SSH_USER}@${SSH_HOST}:/tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID}
+    - scp -P ${SSH_PORT} dtb ${SSH_USER}@${SSH_HOST}:/tmp/dtb-${DEVICE}-${CI_BUILD_ID} || true
     - tar -czf tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
-    - scp ./tests.tar.gz test_runner@lbs1:/tmp/tests-ccat-${CI_BUILD_ID}.tar.gz
-    - ssh -t -t test_runner@lbs1 "cd ~/workspace/beckhoff-linux-ci/pxe-server/ && ./62_run_test.sh ${DEVICE_ID}-${DEVICE} /tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID} /tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz /tmp/tests-ccat-${CI_BUILD_ID}.tar.gz 'tar xf ./tests-ccat-${CI_BUILD_ID}.tar.gz' ./unittest/load-module.sh './unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}'"
+    - scp -P ${SSH_PORT} ./tests.tar.gz ${SSH_USER}@${SSH_HOST}:/tmp/tests-ccat-${CI_BUILD_ID}.tar.gz
+    - ssh -p ${SSH_PORT} -t -t ${SSH_USER}@${SSH_HOST} "./60_run_test.sh ${DEVICE_ID}-${DEVICE} /tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID} /tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz /tmp/tests-ccat-${CI_BUILD_ID}.tar.gz 'tar xf ./tests-ccat-${CI_BUILD_ID}.tar.gz' ./unittest/load-module.sh './unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}'"
 
 test-cx2030-x64:
   <<: *test
