@@ -1,4 +1,4 @@
-image: lbs1:5500/beckhoff/docker-ubuntu-cached:latest
+image: ${REGISTRY_HOST}/beckhoff/docker-ubuntu-cached:latest
 stages:
   - build
   - test
@@ -8,7 +8,7 @@ stages:
   stage: build
   script:
     - apt-get update > /dev/null && apt-get install -y build-essential wget git unzip bc > /dev/null
-    - wget -nv --no-check-certificate -O artifacts.zip https://lbs1/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
+    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
     - unzip -q artifacts.zip
     - make KDIR=kernel-modules/lib/modules/*/build
   artifacts:
@@ -46,9 +46,9 @@ build-x86_64-module:
   stage: test
   script:
     - apt-get update > /dev/null && apt-get install -y openssh-client wget unzip > /dev/null
-    - wget -nv --no-check-certificate -O artifacts.zip https://lbs1/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
+    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
     - unzip -q artifacts.zip && rm artifacts.zip
-    - wget -nv --no-check-certificate -O artifacts.zip https://lbs1/beckhoff/build-alpine/builds/artifacts/${ROOTFS_REF}/download?job=${ROOTFS_JOB}
+    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-alpine/builds/artifacts/${ROOTFS_REF}/download?job=${ROOTFS_JOB}
     - unzip -q artifacts.zip
     - eval $(ssh-agent -s)
     - ssh-add <(echo "$SSH_PRIVATE_KEY")
@@ -150,5 +150,5 @@ trigger:
   except:
     - triggers
   script:
-    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=prepatch" https://lbs1/api/v3/projects/12/trigger/builds
-    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=rt-devel" https://lbs1/api/v3/projects/12/trigger/builds
+    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=prepatch" https://${GITLAB_HOST}/api/v3/projects/12/trigger/builds
+    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=rt-devel" https://${GITLAB_HOST}/api/v3/projects/12/trigger/builds
