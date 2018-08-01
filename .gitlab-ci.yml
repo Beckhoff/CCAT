@@ -43,23 +43,26 @@ build-x86_64-module:
     ARCH: 'x86_64'
 
 .test: &test
+  image: ${REGISTRY_HOST}/beckhoff/test_runner:latest
   stage: test
   script:
-    - apt-get update > /dev/null && apt-get install -y openssh-client wget unzip > /dev/null
+    - tar -czf /root/tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
+    - cd /root
+    - ./50_power.sh ${DEVICE_ID}-${DEVICE} 0
+    - source ./09_init.sh
     - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
     - unzip -q artifacts.zip && rm artifacts.zip
     - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-alpine/builds/artifacts/${ROOTFS_REF}/download?job=${ROOTFS_JOB}
     - unzip -q artifacts.zip
-    - eval $(ssh-agent -s)
-    - ssh-add <(echo "$SSH_PRIVATE_KEY")
-    - mkdir -p ~/.ssh
-    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
-    - scp -P ${SSH_PORT} ./rootfs.cpio.xz ${SSH_USER}@${SSH_HOST}:/tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz
-    - scp -P ${SSH_PORT} vmlinuz ${SSH_USER}@${SSH_HOST}:/tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID}
-    - scp -P ${SSH_PORT} dtb ${SSH_USER}@${SSH_HOST}:/tmp/dtb-${DEVICE}-${CI_BUILD_ID} || true
-    - tar -czf tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
-    - scp -P ${SSH_PORT} ./tests.tar.gz ${SSH_USER}@${SSH_HOST}:/tmp/tests-ccat-${CI_BUILD_ID}.tar.gz
-    - ssh -p ${SSH_PORT} -t -t ${SSH_USER}@${SSH_HOST} "./60_run_test.sh ${DEVICE_ID}-${DEVICE} /tmp/vmlinuz-${DEVICE}-${CI_BUILD_ID} /tmp/rootfs-${DEVICE}-${CI_BUILD_ID}.cpio.xz /tmp/tests-ccat-${CI_BUILD_ID}.tar.gz 'tar xf ./tests-ccat-${CI_BUILD_ID}.tar.gz' ./unittest/load-module.sh './unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}'"
+    - ./30_prepare_test.sh ${DEVICE_ID}-${DEVICE} vmlinuz rootfs.cpio.xz nfs
+    - ./50_power.sh ${DEVICE_ID}-${DEVICE} 1
+    - ./51_wait.sh ${DEVICE_ID}-${DEVICE}
+    - scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ./tests.tar.gz root@${TEST_DEVICE_IP}:~/
+    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} tar -xf ./tests.tar.gz
+    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/load-module.sh
+    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}
+  after_script:
+    - cd /root && ./50_power.sh ${DEVICE_ID}-${DEVICE} 0
 
 test-cx2030-x64:
   <<: *test
@@ -74,6 +77,8 @@ test-cx2030-x64:
     ROOTFS_REF: 'stable'
   dependencies:
     - build-x86_64-module
+  tags:
+    - CX05-CX2030
 
 test-cx5140-x64:
   <<: *test
@@ -88,6 +93,8 @@ test-cx5140-x64:
     ROOTFS_REF: 'stable'
   dependencies:
     - build-x86_64-module
+  tags:
+    - CX03-CX5140
 
 test-cx2030-i386:
   <<: *test
@@ -102,6 +109,8 @@ test-cx2030-i386:
     ROOTFS_REF: 'stable'
   dependencies:
     - build-i386-module
+  tags:
+    - CX05-CX2030
 
 test-cx5140-i386:
   <<: *test
@@ -116,6 +125,8 @@ test-cx5140-i386:
     ROOTFS_REF: 'stable'
   dependencies:
     - build-i386-module
+  tags:
+    - CX03-CX5140
 
 test-cx5020:
   <<: *test
@@ -130,6 +141,8 @@ test-cx5020:
     ROOTFS_REF: 'stable'
   dependencies:
     - build-i386-module
+  tags:
+    - CX01-CX5020
 
 test-cx9020-arm:
   <<: *test
@@ -144,6 +157,8 @@ test-cx9020-arm:
     ROOTFS_REF: 'stable'
   dependencies:
     - build-arm-module
+  tags:
+    - CX09-CX9020
 
 trigger:
   stage: trigger
