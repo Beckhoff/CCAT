@@ -96,38 +96,6 @@ test-cx5140-x64:
   tags:
     - CX03-CX5140
 
-test-cx2030-i386:
-  <<: *test
-  variables:
-    DEVICE: 'CX2030'
-    DEVICE_ID: 'CX05'
-    LOCAL_IP: 'fd00:bbbb::cca5/64'
-    SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-rt'
-    KERNEL_JOB: 'build-i386-kernel'
-    ROOTFS_JOB: 'build-i386'
-    ROOTFS_REF: 'stable'
-  dependencies:
-    - build-i386-module
-  tags:
-    - CX05-CX2030
-
-test-cx5140-i386:
-  <<: *test
-  variables:
-    DEVICE: 'CX5140'
-    DEVICE_ID: 'CX03'
-    LOCAL_IP: 'fd00:bbbb::cca3/64'
-    SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-rt'
-    KERNEL_JOB: 'build-i386-kernel'
-    ROOTFS_JOB: 'build-i386'
-    ROOTFS_REF: 'stable'
-  dependencies:
-    - build-i386-module
-  tags:
-    - CX03-CX5140
-
 test-cx5020:
   <<: *test
   variables:
