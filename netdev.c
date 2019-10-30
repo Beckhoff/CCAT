@@ -479,7 +479,7 @@ static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 	dma->dev = &pdev->dev;
 	dma->size = CCAT_ALIGNMENT * 3;
 	dma->base =
-	    dma_zalloc_coherent(dma->dev, dma->size, &dma->phys, GFP_KERNEL);
+	    dma_alloc_coherent(dma->dev, dma->size, &dma->phys, GFP_KERNEL);
 	if (!dma->base || !dma->phys) {
 		pr_err("init DMA memory failed.\n");
 		return -ENOMEM;
