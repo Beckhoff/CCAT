@@ -43,26 +43,23 @@ build-x86_64-module:
     ARCH: 'x86_64'
 
 .test: &test
-  image: ${REGISTRY_HOST}/beckhoff/test_runner:latest
+  image: ${REGISTRY_HOST}/beckhoff/test_runner:2.3-cx9020-ccat
   stage: test
   script:
-    - tar -czf /root/tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
-    - cd /root
-    - ./50_power.sh ${DEVICE_ID}-${DEVICE} 0
-    - source ./09_init.sh
+    - tar -czf tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
+    - 50_power.sh ${DEVICE_ID}-${DEVICE} 0
+    - source 09_init.sh
     - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
     - unzip -q artifacts.zip && rm artifacts.zip
     - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-alpine/builds/artifacts/${ROOTFS_REF}/download?job=${ROOTFS_JOB}
     - unzip -q artifacts.zip
-    - ./30_prepare_test.sh ${DEVICE_ID}-${DEVICE} vmlinuz rootfs.cpio.xz nfs
-    - ./50_power.sh ${DEVICE_ID}-${DEVICE} 1
-    - ./51_wait.sh ${DEVICE_ID}-${DEVICE} root
+    - 30_prepare_test.sh ${DEVICE_ID}-${DEVICE} vmlinuz rootfs.cpio.xz nfs
+    - 50_power.sh ${DEVICE_ID}-${DEVICE} 1
+    - 51_wait.sh ${DEVICE_ID}-${DEVICE} root
     - scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ./tests.tar.gz root@${TEST_DEVICE_IP}:~/
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} tar -xf ./tests.tar.gz
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/load-module.sh
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}
-  after_script:
-    - cd /root && ./50_power.sh ${DEVICE_ID}-${DEVICE} 0
 
 test-cx2030-x64:
   <<: *test
