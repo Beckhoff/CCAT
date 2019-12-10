@@ -1,0 +1,21 @@
+# HG changeset patch
+# User Steffen Dirkwinkel <s.dirkwinkel@beckhoff.com>
+# Date 1575964003 -3600
+#      Tue Dec 10 08:46:43 2019 +0100
+# Branch stable-1.5
+# Node ID 56e2fdfbc25110721679ea1d5261fbfd61e37f8a
+# Parent  8fee823f98eaf72d114446672ead21fe3aafdfa3
+ccat: dma_zalloc -> dma_alloc
+
+diff -r 8fee823f98ea -r 56e2fdfbc251 devices/ccat/netdev.c
+--- a/devices/ccat/netdev.c	Wed Nov 29 08:17:53 2017 +0100
++++ b/devices/ccat/netdev.c	Tue Dec 10 08:46:43 2019 +0100
+@@ -546,7 +546,7 @@
+ 	dma->dev = &pdev->dev;
+ 	dma->size = CCAT_ALIGNMENT * 3;
+ 	dma->base =
+-	    dma_zalloc_coherent(dma->dev, dma->size, &dma->phys, GFP_KERNEL);
++	    dma_alloc_coherent(dma->dev, dma->size, &dma->phys, GFP_KERNEL);
+ 	if (!dma->base || !dma->phys) {
+ 		pr_err("init DMA memory failed.\n");
+ 		return -ENOMEM;
