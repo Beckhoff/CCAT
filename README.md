@@ -6,8 +6,8 @@ Because the device is not yet supported by the linux kernel and therefore not re
 Ethernet interface you need this driver to run an EtherCAT® master over this interface.
 For further information about EtherCAT® please see links below:
 
-http://www.ethercat.org/ <br>
-http://infosys.beckhoff.com/english.php?content=../content/1033/ethercatsystem/html/bt_ethercatsystem_title.htm&id=7474
+https://www.ethercat.org/ <br>
+https://infosys.beckhoff.com/english.php?content=../content/1033/ethercatsystem/index.html
 
 ### Supported CCAT functions
 
@@ -18,9 +18,9 @@ http://infosys.beckhoff.com/english.php?content=../content/1033/ethercatsystem/h
 
 ### Supported devices
 
-- [CX50xx](http://infosys.beckhoff.com/english.php?content=../content/1033/cx5000_hw/1853842315.html&id=502)
-- [CX51xx](http://infosys.beckhoff.com/english.php?content=../content/1033/cx51x0_hw/1853856523.html&id=574)
-- [CX20xx](http://infosys.beckhoff.com/english.php?content=../content/1033/cx2000_hw/399078795.html&id=830)
+- [CX50xx](https://www.beckhoff.com/CX5000/)
+- [CX51xx](https://www.beckhoff.com/CX5100/)
+- [CX20xx](https://www.beckhoff.com/CX2000/)
 
 ### How to build and install the kernel modules:
 
