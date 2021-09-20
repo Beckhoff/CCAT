@@ -54,7 +54,7 @@ build-x86_64-module:
     - unzip -q artifacts.zip
     - 30_prepare_test.sh ${DEVICE_ID}-${DEVICE} vmlinuz rootfs.cpio.xz nfs
     - 50_power.sh ${DEVICE_ID}-${DEVICE} 1
-    - 51_wait.sh ${DEVICE_ID}-${DEVICE} root
+    - wait_ssh --timeout=2400 root@${TEST_DEVICE_IP}
     - scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ./tests.tar.gz root@${TEST_DEVICE_IP}:~/
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} tar -xf ./tests.tar.gz
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/load-module.sh
