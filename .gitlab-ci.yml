@@ -7,7 +7,6 @@ stages:
 .build-module: &build-module
   stage: build
   script:
-    - apt-get update > /dev/null && apt-get install -y build-essential wget git unzip bc > /dev/null
     - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
     - unzip -q artifacts.zip
     - make KDIR=kernel-modules/lib/modules/*/build
