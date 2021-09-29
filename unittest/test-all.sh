@@ -2,11 +2,6 @@
 
 set -e
 
-if [ $# -ne 2 ]; then
-	echo "Usage: $0 <local_ip> <server_ip>"
-	exit -1
-fi
-
 ./unittest/test-gpio.sh
 ./unittest/test-systemtime.sh
 ./unittest/test-rw_cdev.sh sram 131072
