@@ -10,7 +10,8 @@ stages:
 .build-module: &build-module
   stage: build
   script:
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
+    - export ARCH=${CI_JOB_NAME##*-}
+    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=build-${ARCH}-kernel
     - unzip -q artifacts.zip
     - make KDIR=kernel-modules/lib/modules/*/build
   artifacts:
@@ -22,35 +23,28 @@ stages:
       - ccat_systemtime.ko
       - ccat_update.ko
 
-build-arm-module:
+build-module-arm:
   <<: *build-module
   variables:
-    KERNEL_JOB: 'build-arm-kernel'
-    ARCH: 'arm'
     CROSS_COMPILE: 'arm-none-eabi-'
 
-build-i386-module:
+build-module-i386:
   <<: *build-module
-  variables:
-    KERNEL_JOB: 'build-i386-kernel'
-    ARCH: 'i386'
 
-build-x86_64-module:
+build-module-x86_64:
   <<: *build-module
-  variables:
-    KERNEL_JOB: 'build-x86_64-kernel'
-    ARCH: 'x86_64'
 
 .test: &test
   image: ${REGISTRY_HOST}/beckhoff/test_stage/test_runner:3.9
   stage: test
   script:
+    - export ARCH=${CI_JOB_NAME##*-}
     - tar -czf tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
     - 50_power.sh ${DEVICE_ID}-${DEVICE} 0
     - source 09_init.sh
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
+    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=build-${ARCH}-kernel
     - unzip -q artifacts.zip && rm artifacts.zip
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-alpine/builds/artifacts/${ROOTFS_REF}/download?job=${ROOTFS_JOB}
+    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-alpine/builds/artifacts/${ROOTFS_REF}/download?job=build-${ARCH}
     - unzip -q artifacts.zip
     - 30_prepare_test.sh ${DEVICE_ID}-${DEVICE} vmlinuz rootfs.cpio.xz nfs
     - 50_power.sh ${DEVICE_ID}-${DEVICE} 1
@@ -60,39 +54,33 @@ build-x86_64-module:
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/load-module.sh
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/test-all.sh
 
-test-cx2030-x64:
+test-cx2030-x86_64:
   <<: *test
   variables:
     DEVICE: 'CX2030'
     DEVICE_ID: 'CX05'
-    KERNEL_JOB: 'build-x86_64-kernel'
-    ROOTFS_JOB: 'build-x86_64'
   dependencies:
-    - build-x86_64-module
+    - build-module-x86_64
   tags:
     - CX05-CX2030
 
-test-cx5140-x64:
+test-cx5140-x86_64:
   <<: *test
   variables:
     DEVICE: 'CX5140'
     DEVICE_ID: 'CX03'
-    KERNEL_JOB: 'build-x86_64-kernel'
-    ROOTFS_JOB: 'build-x86_64'
   dependencies:
-    - build-x86_64-module
+    - build-module-x86_64
   tags:
     - CX03-CX5140
 
-test-cx5020:
+test-cx5020-i386:
   <<: *test
   variables:
     DEVICE: 'CX5020'
     DEVICE_ID: 'CX01'
-    KERNEL_JOB: 'build-i386-kernel'
-    ROOTFS_JOB: 'build-i386'
   dependencies:
-    - build-i386-module
+    - build-module-i386
   tags:
     - CX01-CX5020
 
@@ -101,10 +89,8 @@ test-cx9020-arm:
   variables:
     DEVICE: 'CX9020'
     DEVICE_ID: 'CX09'
-    KERNEL_JOB: 'build-arm-kernel'
-    ROOTFS_JOB: 'build-arm'
   dependencies:
-    - build-arm-module
+    - build-module-arm
   tags:
     - CX09-CX9020
 
