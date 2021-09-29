@@ -1,3 +1,6 @@
+variables:
+  KERNEL_REF: 'stable-rt'
+  ROOTFS_REF: 'stable'
 image: ${REGISTRY_HOST}/beckhoff/docker-ubuntu-cached:latest
 stages:
   - build
@@ -23,7 +26,6 @@ build-arm-module:
   <<: *build-module
   variables:
     KERNEL_JOB: 'build-arm-kernel'
-    KERNEL_REF: 'stable-rt'
     ARCH: 'arm'
     CROSS_COMPILE: 'arm-none-eabi-'
 
@@ -31,14 +33,12 @@ build-i386-module:
   <<: *build-module
   variables:
     KERNEL_JOB: 'build-i386-kernel'
-    KERNEL_REF: 'stable-rt'
     ARCH: 'i386'
 
 build-x86_64-module:
   <<: *build-module
   variables:
     KERNEL_JOB: 'build-x86_64-kernel'
-    KERNEL_REF: 'stable-rt'
     ARCH: 'x86_64'
 
 .test: &test
@@ -65,10 +65,8 @@ test-cx2030-x64:
   variables:
     DEVICE: 'CX2030'
     DEVICE_ID: 'CX05'
-    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-x86_64-kernel'
     ROOTFS_JOB: 'build-x86_64'
-    ROOTFS_REF: 'stable'
   dependencies:
     - build-x86_64-module
   tags:
@@ -79,10 +77,8 @@ test-cx5140-x64:
   variables:
     DEVICE: 'CX5140'
     DEVICE_ID: 'CX03'
-    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-x86_64-kernel'
     ROOTFS_JOB: 'build-x86_64'
-    ROOTFS_REF: 'stable'
   dependencies:
     - build-x86_64-module
   tags:
@@ -93,10 +89,8 @@ test-cx5020:
   variables:
     DEVICE: 'CX5020'
     DEVICE_ID: 'CX01'
-    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-i386-kernel'
     ROOTFS_JOB: 'build-i386'
-    ROOTFS_REF: 'stable'
   dependencies:
     - build-i386-module
   tags:
@@ -107,10 +101,8 @@ test-cx9020-arm:
   variables:
     DEVICE: 'CX9020'
     DEVICE_ID: 'CX09'
-    KERNEL_REF: 'stable-rt'
     KERNEL_JOB: 'build-arm-kernel'
     ROOTFS_JOB: 'build-arm'
-    ROOTFS_REF: 'stable'
   dependencies:
     - build-arm-module
   tags:
