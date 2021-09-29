@@ -60,15 +60,25 @@ build-module-x86_64:
     paths:
       - ./update=.bin.ref-*
 
-test-cx2030-x86_64:
+R01-BF2-CX2030-x86_64:
   <<: *test
   variables:
-    DEVICE: 'CX2030'
-    DEVICE_ID: 'CX05'
+    DEVICE: 'does_not_matter'
+    DEVICE_ID: 'does_not_matter'
   dependencies:
     - build-module-x86_64
   tags:
-    - CX05-CX2030
+    - R01-BF2-CX2030
+
+R01-BF5-CX2030-x86_64:
+  <<: *test
+  variables:
+    DEVICE: 'does_not_matter'
+    DEVICE_ID: 'does_not_matter'
+  dependencies:
+    - build-module-x86_64
+  tags:
+    - R01-BF5-CX2030
 
 test-cx5140-x86_64:
   <<: *test
