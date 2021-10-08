@@ -100,16 +100,6 @@ test-cx5020-i386:
   tags:
     - CX01-CX5020
 
-test-cx9020-arm:
-  <<: *test
-  variables:
-    DEVICE: 'CX9020'
-    DEVICE_ID: 'CX09'
-  dependencies:
-    - build-module-arm
-  tags:
-    - CX09-CX9020
-
 trigger:
   stage: trigger
   except:
