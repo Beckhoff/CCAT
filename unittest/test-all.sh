@@ -5,5 +5,5 @@ set -e
 ./unittest/test-gpio.sh
 ./unittest/test-systemtime.sh
 ./unittest/test-rw_cdev.sh sram 131072
-./unittest/test-update.sh
+./unittest/test-update.sh --dry-run
 echo "All tests completed"
