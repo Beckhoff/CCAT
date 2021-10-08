@@ -53,6 +53,12 @@ build-module-x86_64:
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} tar -xf ./tests.tar.gz
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/load-module.sh
     - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/test-all.sh
+  after_script:
+    - scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP}:/tmp/update?.bin.ref-* ./
+  artifacts:
+    when: always
+    paths:
+      - ./update=.bin.ref-*
 
 test-cx2030-x86_64:
   <<: *test

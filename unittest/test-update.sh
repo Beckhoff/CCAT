@@ -19,6 +19,12 @@ for ((dev_slot = 0; dev_slot < ${dev_count}; dev_slot++)); do
 	dev_file=/dev/ccat_${dev_type}${dev_slot}
 	ref_file=${script_path}/${dev_type}${dev_slot}.bin.ref-${mac}
 
+	if ! test -r "${ref_file}"; then
+		printf 'reference "%s" unreadable\n-> dumping current CCAT firmware...\n' "${ref_file}" >&2
+		cat "${dev_file}" > "/tmp/${dev_type}${dev_slot}.bin.ref-${mac}"
+		exit 1
+	fi
+
 	if "${dry_run}"; then
 		diff --brief "${dev_file}" "${ref_file}"
 	else
