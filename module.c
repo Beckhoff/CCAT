@@ -19,6 +19,14 @@ MODULE_VERSION(DRV_VERSION);
 
 static struct ccat_cell ccat_cells[] = {
 	{
+	 .type = CCATINFO_INFO,
+	 .cell = {.name = "ccat_info"},
+	 },
+	{
+	 .type = CCATINFO_ETHERCAT_SLAVE,
+	 .cell = {.name = "ccat_esc"},
+	 },
+	{
 	 .type = CCATINFO_ETHERCAT_NODMA,
 	 .cell = {.name = "ccat_eth_eim"},
 	 },
@@ -41,6 +49,14 @@ static struct ccat_cell ccat_cells[] = {
 	{
 	 .type = CCATINFO_SYSTEMTIME,
 	 .cell = {.name = "ccat_systemtime"},
+	 },
+	{
+	 .type = CCATINFO_IRQ,
+	 .cell = {.name = "ccat_irq"},
+	 },
+	{
+	 .type = CCATINFO_EEPROM,
+	 .cell = {.name = "ccat_eeprom"},
 	 },
 };
 

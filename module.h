@@ -17,6 +17,8 @@
     with this program; if not, write to the Free Software Foundation, Inc.,
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
+ 
+// vim: noexpandtab
 
 #ifndef _CCAT_H_
 #define _CCAT_H_
@@ -40,10 +42,14 @@
  */
 enum ccat_info_t {
 	CCATINFO_NOTUSED = 0,
+	CCATINFO_INFO = 0x1,
+	CCATINFO_ETHERCAT_SLAVE = 0x2,
 	CCATINFO_ETHERCAT_NODMA = 0x3,
 	CCATINFO_GPIO = 0xd,
 	CCATINFO_EPCS_PROM = 0xf,
 	CCATINFO_SYSTEMTIME = 0x10,
+	CCATINFO_IRQ = 0x11,
+	CCATINFO_EEPROM = 0x12,
 	CCATINFO_ETHERCAT_MASTER_DMA = 0x14,
 	CCATINFO_SRAM = 0x16,
 };
