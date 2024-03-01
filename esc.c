@@ -62,7 +62,7 @@ static ssize_t ccat_esc_write(struct file *const f, const char __user * buf,
 static int ccat_esc_mmap(struct file *f, struct vm_area_struct *vma) 
 {
 	struct cdev_buffer *const buffer = f->private_data;
-    struct pci_dev *pdev = (struct pci_dev *)(buffer->ccdev->func->ccat->pdev);
+	struct pci_dev *pdev = (struct pci_dev *)(buffer->ccdev->func->ccat->pdev);
 
 	if (vma->vm_pgoff == 0) {
 		vma->vm_pgoff = (pci_resource_start(pdev, 0) + buffer->ccdev->func->info.addr) >> PAGE_SHIFT;
@@ -102,7 +102,7 @@ static int ccat_esc_probe(struct platform_device *pdev)
 	pr_info("%s: 0x%04x rev: 0x%04x, addr: 0x%X, size: 0x%X\n", __FUNCTION__, 
 			func->info.type, func->info.rev, func->info.addr, func->info.size);
 	
-    return ccat_cdev_probe(func, &cdev_class, func->info.size, NULL);
+	return ccat_cdev_probe(func, &cdev_class, func->info.size, NULL);
 }
 
 static struct platform_driver esc_driver = {
