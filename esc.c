@@ -91,7 +91,7 @@ static struct ccat_class cdev_class = {
 		 .release = ccat_cdev_release,
 		 .read = ccat_esc_read,
 		 .write = ccat_esc_write,
-         .mmap = ccat_esc_mmap,
+		 .mmap = ccat_esc_mmap,
 		 },
 };
 
