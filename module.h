@@ -71,6 +71,8 @@ struct ccat_cdev {
 	dev_t dev;
 	struct cdev cdev;
 	struct ccat_class *class;
+	struct ccat_function *func;
+	void *user;
 };
 
 /**
@@ -125,6 +127,10 @@ struct ccat_info_block {
 			u8 sram_size;
 			u16 reserved;
 		};
+		struct {
+			u16 revision;
+			u16 parameter;
+		};
 	};
 	u32 addr;
 	u32 size;
@@ -148,6 +154,6 @@ struct ccat_class {
 
 extern int ccat_cdev_remove(struct platform_device *pdev);
 extern int ccat_cdev_probe(struct ccat_function *func,
-			   struct ccat_class *cdev_class, size_t iosize);
+			   struct ccat_class *cdev_class, size_t iosize, void *user);
 
 #endif /* #ifndef _CCAT_H_ */

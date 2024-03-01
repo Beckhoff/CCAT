@@ -91,7 +91,7 @@ static int ccat_sram_probe(struct platform_device *pdev)
 	if (type == NO_SRAM_CONNECTED) {
 		return -ENODEV;
 	}
-	return ccat_cdev_probe(func, &cdev_class, iosize);
+	return ccat_cdev_probe(func, &cdev_class, iosize, NULL);
 }
 
 static struct platform_driver sram_driver = {

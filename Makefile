@@ -1,11 +1,13 @@
 KDIR ?= /lib/modules/$(shell uname -r)/build
-obj-m += ccat.o ccat_netdev.o ccat_gpio.o ccat_sram.o ccat_systemtime.o ccat_update.o
+obj-m += ccat.o ccat_netdev.o ccat_gpio.o ccat_sram.o ccat_systemtime.o ccat_update.o ccat_esc.o ccat_irq.o
 ccat-y := module.o
 ccat_netdev-y := netdev.o
 ccat_gpio-y := gpio.o
 ccat_sram-y := sram.o
 ccat_systemtime-y := systemtime.o
 ccat_update-y := update.o
+ccat_esc-y := esc.o
+ccat_irq-y := irq.o
 #ccflags-y := -DDEBUG
 ccflags-y += -D__CHECK_ENDIAN__
 
@@ -23,6 +25,7 @@ install:
 	- rmmod ccat
 	make -C $(KDIR) M=$(CURDIR) modules_install
 	modprobe ccat
+	modprobe ccat_esc
 	modprobe ccat_netdev
 	modprobe ccat_gpio
 	modprobe ccat_sram

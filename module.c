@@ -5,6 +5,8 @@
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 */
 
+// vim: noexpandtab
+
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -168,7 +170,7 @@ int ccat_cdev_open(struct inode *const i, struct file *const f)
 EXPORT_SYMBOL(ccat_cdev_open);
 
 int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class,
-		    size_t iosize)
+		    size_t iosize, void *user)
 {
 	struct ccat_cdev *const ccdev = alloc_ccat_cdev(cdev_class);
 	if (!ccdev) {
@@ -177,6 +179,8 @@ int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class,
 
 	ccdev->ioaddr = func->ccat->bar_0 + func->info.addr;
 	ccdev->iosize = iosize;
+	ccdev->func = func;
+	ccdev->user = user;
 	atomic_set(&ccdev->in_use, 1);
 
 	if (ccat_cdev_init
