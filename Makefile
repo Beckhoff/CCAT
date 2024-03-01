@@ -26,6 +26,7 @@ install:
 	make -C $(KDIR) M=$(CURDIR) modules_install
 	modprobe ccat
 	modprobe ccat_esc
+	modprobe ccat_irq
 	modprobe ccat_netdev
 	modprobe ccat_gpio
 	modprobe ccat_sram
