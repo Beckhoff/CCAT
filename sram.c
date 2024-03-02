@@ -5,7 +5,10 @@
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 */
 
+// vi: set noexpandtab:
+
 #include "module.h"
+#include "sram.h"
 #include <asm/io.h>
 #include <linux/fs.h>
 #include <linux/module.h>
@@ -29,7 +32,7 @@ static ssize_t __sram_read(struct cdev_buffer *buffer, char __user * buf,
 	return len;
 }
 
-static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
+ssize_t ccat_sram_read(struct file *const f, char __user * buf,
 			      size_t len, loff_t * off)
 {
 	struct cdev_buffer *buffer = f->private_data;
@@ -42,9 +45,11 @@ static ssize_t ccat_sram_read(struct file *const f, char __user * buf,
 	len = min(len, (size_t) (iosize - *off));
 
 	return __sram_read(buffer, buf, len, off);
-}
+}   
 
-static ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
+EXPORT_SYMBOL(ccat_sram_read);
+
+ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
 			       size_t len, loff_t * off)
 {
 	struct cdev_buffer *const buffer = f->private_data;
@@ -62,6 +67,8 @@ static ssize_t ccat_sram_write(struct file *const f, const char __user * buf,
 	*off += len;
 	return len;
 }
+
+EXPORT_SYMBOL(ccat_sram_write);
 
 static struct ccat_cdev dev_table[CCAT_SRAM_DEVICES_MAX];
 static struct ccat_class cdev_class = {

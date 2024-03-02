@@ -8,6 +8,7 @@
 // vi: set noexpandtab:
 
 #include "module.h"
+#include "sram.h"
 #include <asm/io.h>
 #include <linux/fs.h>
 #include <linux/module.h>
@@ -19,45 +20,6 @@ MODULE_LICENSE("GPL and additional rights");
 MODULE_VERSION(DRV_VERSION);
 
 #define CCAT_ESC_DEVICES_MAX 4
-
-static ssize_t ccat_esc_read(struct file *const f, char __user * buf,
-			      size_t len, loff_t * off)
-{
-	struct cdev_buffer *buffer = f->private_data;
-	const size_t iosize = buffer->ccdev->iosize;
-
-	if (*off >= iosize) {
-		return 0;
-	}
-
-	len = min(len, (size_t) (iosize - *off));
-
-	memcpy_fromio(buffer->data, buffer->ccdev->ioaddr + *off, len);
-	if (copy_to_user(buf, buffer->data, len))
-		return -EFAULT;
-
-	*off += len;
-	return len;
-}
-
-static ssize_t ccat_esc_write(struct file *const f, const char __user * buf,
-			       size_t len, loff_t * off)
-{
-	struct cdev_buffer *const buffer = f->private_data;
-
-	if (*off + len > buffer->ccdev->iosize) {
-		return 0;
-	}
-
-	if (copy_from_user(buffer->data, buf, len)) {
-		return -EFAULT;
-	}
-
-	memcpy_toio(buffer->ccdev->ioaddr + *off, buffer->data, len);
-
-	*off += len;
-	return len;
-}
 
 static int ccat_esc_mmap(struct file *f, struct vm_area_struct *vma) 
 {
@@ -88,8 +50,8 @@ static struct ccat_class cdev_class = {
 		 .llseek = ccat_cdev_llseek,
 		 .open = ccat_cdev_open,
 		 .release = ccat_cdev_release,
-		 .read = ccat_esc_read,
-		 .write = ccat_esc_write,
+		 .read = ccat_sram_read,
+		 .write = ccat_sram_write,
 		 .mmap = ccat_esc_mmap,
 		 },
 };

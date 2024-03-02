@@ -24,6 +24,7 @@ install:
 	- rmmod ccat_netdev
 	- rmmod ccat
 	make -C $(KDIR) M=$(CURDIR) modules_install
+	depmod -a
 	modprobe ccat
 	modprobe ccat_esc
 	modprobe ccat_irq
