@@ -24,6 +24,8 @@ install:
 	- rmmod ccat_netdev
 	- rmmod ccat
 	make -C $(KDIR) M=$(CURDIR) modules_install
+	cp etc/modprobe.d/ccat.conf /etc/modprobe.d/
+	cp etc/udev/rules.d/991-ccat.rules /etc/udev/rules.d/
 	depmod -a
 	modprobe ccat
 	modprobe ccat_esc
