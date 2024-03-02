@@ -5,7 +5,7 @@
 	Author: Robert Burger <robert.burger@dlr.de>
 */
 
-// vim: set noexpandtab
+// vi: set noexpandtab:
 
 #include "module.h"
 #include <asm/io.h>
@@ -25,24 +25,16 @@ struct ccat_irq {
 	wait_queue_head_t ir_queue;     // Interrupt wait queue.
 };
 
-#define CCAT_IRQ_FUNCTION_INFO					((uint16_t)0x0001u)
-#define CCAT_IRQ_FUNCTION_ESC					((uint16_t)0x0002u) // slot 1
-#define CCAT_IRQ_FUNCTION_SYSTEM_TIME			((uint16_t)0x0010u) // slot 6
-#define CCAT_IRQ_FUNCTION_IRQ					((uint16_t)0x0011u) // slot 8
-#define CCAT_IRQ_FUNCTION_EPSC_PROM				((uint16_t)0x000Fu) // slot 10
-#define CCAT_IRQ_FUNCTION_EEPROM				((uint16_t)0x0012u) // slot 11
-#define CCAT_IRQ_FUNCTION_SRAM					((uint16_t)0x0016u) // slot 13
+#define CCAT_IRQ_FUNCTION_IRQ__SLOT_N(n)        ((uint16_t)1u << n)
+#define CCAT_IRQ_FUNCTION_IRQ__SLOT             (CCAT_IRQ_FUNCTION_IRQ__SLOT_N(1)) 
 
-#define CCAT_IRQ_FUNCTION_IRQ__SLOT_N(n)		((uint16_t)1u << n)
-#define CCAT_IRQ_FUNCTION_IRQ__SLOT				(CCAT_IRQ_FUNCTION_IRQ__SLOT_N(1)) 
+#define CCAT_IRQ_FUNCTION_IRQ__STATUS_REG       ((uint32_t)0x0u)  // 2 byte / 1 word
+#define CCAT_IRQ_FUNCTION_IRQ__CONTROL_REG      ((uint32_t)0x8u)  // 2 byte / 1 word
 
-#define CCAT_IRQ_FUNCTION_IRQ__STATUS_REG		((uint32_t)0x0u)	// 2 byte / 1 word
-#define CCAT_IRQ_FUNCTION_IRQ__CONTROL_REG		((uint32_t)0x8u)	// 2 byte / 1 word
+#define CCAT_IRQ_GLOBAL_IRQ_STATUS_REG          ((uint32_t)0x40u) // 1 byte
+#define CCAT_IRQ_GLOBAL_IRQ_ENABLE_REG          ((uint32_t)0x50u) // 1 byte
 
-#define CCAT_IRQ_GLOBAL_IRQ_STATUS_REG			((uint32_t)0x40u) // 1 byte
-#define CCAT_IRQ_GLOBAL_IRQ_ENABLE_REG			((uint32_t)0x50u) // 1 byte
-
-#define CCAT_IRQ_GLOBAL_IRQ_ENABLE				((uint32_t)0x80u)
+#define CCAT_IRQ_GLOBAL_IRQ_ENABLE              ((uint32_t)0x80u)
 
 #define CCAT_IRQ_DEVICES_MAX 4
 

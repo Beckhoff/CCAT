@@ -5,7 +5,7 @@
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 */
 
-// vim: noexpandtab
+// vi: noexpandtab:
 
 #include <linux/etherdevice.h>
 #include <linux/module.h>

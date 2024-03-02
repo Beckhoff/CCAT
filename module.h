@@ -18,7 +18,7 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
  
-// vim: noexpandtab
+// vi: noexpandtab:
 
 #ifndef _CCAT_H_
 #define _CCAT_H_

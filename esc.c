@@ -5,7 +5,7 @@
     Author: Robert Burger <robert.burger@dlr.de>
 */
 
-// vim: set noexpandtab
+// vi: set noexpandtab:
 
 #include "module.h"
 #include <asm/io.h>
@@ -70,7 +70,6 @@ static int ccat_esc_mmap(struct file *f, struct vm_area_struct *vma)
 		vma->vm_pgoff = (pci_resource_start(pdev, 0) >> PAGE_SHIFT);
 	}
 
-	pr_info("pgoff %lX\n", vma->vm_pgoff);
 	return remap_pfn_range(
 			vma, 
 			vma->vm_start, 
