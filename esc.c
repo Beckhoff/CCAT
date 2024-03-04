@@ -26,11 +26,7 @@ static int ccat_esc_mmap(struct file *f, struct vm_area_struct *vma)
 	struct cdev_buffer *const buffer = f->private_data;
 	struct pci_dev *pdev = (struct pci_dev *)(buffer->ccdev->func->ccat->pdev);
 
-	if (vma->vm_pgoff == 0) {
-		vma->vm_pgoff = (pci_resource_start(pdev, 0) + buffer->ccdev->func->info.addr) >> PAGE_SHIFT;
-	} else {
-		vma->vm_pgoff = (pci_resource_start(pdev, 0) >> PAGE_SHIFT);
-	}
+	vma->vm_pgoff = (pci_resource_start(pdev, 0) + buffer->ccdev->func->info.addr) >> PAGE_SHIFT;
 
 	return remap_pfn_range(
 			vma, 
