@@ -34,7 +34,10 @@ struct ccat_irq {
 #define CCAT_IRQ_GLOBAL_IRQ_STATUS_REG          ((uint32_t)0x40u) // 1 byte
 #define CCAT_IRQ_GLOBAL_IRQ_ENABLE_REG          ((uint32_t)0x50u) // 1 byte
 
-#define CCAT_IRQ_GLOBAL_IRQ_ENABLE              ((uint32_t)0x80u)
+#define CCAT_IRQ_GLOBAL_IRQ_ENABLE              ((uint32_t)0x01u) // It seems to be there is a mistake in the documentation of
+                                                                  // the FC1121 card. In chapter 3.2.1 Interrupt it is said that
+                                                                  // the global interrupt enable/status is bit 7 but instead it 
+                                                                  // is bit 0 !!!
 
 #define CCAT_IRQ_DEVICES_MAX 4
 
@@ -46,6 +49,11 @@ static uint16_t ccat_irq_get_slot_irq_stat(struct ccat_function *func)
 static void ccat_irq_set_slot_irq_ctrl(struct ccat_function *func, uint16_t ctrl) 
 {
 	iowrite16(ctrl, func->ccat->bar_0 + func->info.addr + CCAT_IRQ_FUNCTION_IRQ__CONTROL_REG);
+}
+
+static void ccat_irq_set_slot_irq_stat(struct ccat_function *func, uint16_t ctrl) 
+{
+	iowrite16(ctrl, func->ccat->bar_0 + func->info.addr + CCAT_IRQ_FUNCTION_IRQ__STATUS_REG);
 }
 
 static uint8_t ccat_irq_get_global_irq_stat(struct ccat_function *func)
@@ -78,12 +86,15 @@ static irqreturn_t ccat_irq_int_handler(int int_no, void *arg) {
 
 		ret = IRQ_HANDLED;
 	} else {
-		if (global_state & 0x80) {
+		if (global_state & CCAT_IRQ_GLOBAL_IRQ_ENABLE) {
 			if (ccat_irq_get_slot_irq_stat(buffer->ccdev->func) & CCAT_IRQ_FUNCTION_IRQ__SLOT) {
 				// disable here until interrupt source is processed.
 				// will be re-enable in poll
 				ccat_irq_set_slot_irq_ctrl(buffer->ccdev->func, 0);
 				wake_up(&irq->ir_queue);
+
+				// clear interrupt
+				ccat_irq_set_slot_irq_stat(buffer->ccdev->func, 0);
 
 				ret = IRQ_HANDLED;
 			}
@@ -126,7 +137,7 @@ static int ccat_irq_open(struct inode *const i, struct file *const f)
 				irq->irq_num = pci_irq_vector(ccdev->func->ccat->pdev, r);
 				pr_info("Interrupt %d has been reserved, using irq name %s\n", irq->irq_num, &irq->name[0]);
 
-				if (request_irq(irq->irq_num, ccat_irq_int_handler, IRQF_NO_THREAD, &irq->name[0], buf)) { 
+				if (request_irq(irq->irq_num, ccat_irq_int_handler, IRQF_NO_THREAD | IRQF_NOBALANCING, &irq->name[0], buf)) { 
 					pr_err("Interrupt %d reqeust failed!\n", irq->irq_num);
 					irq_success = 0;
 				}
@@ -147,7 +158,7 @@ static int ccat_irq_open(struct inode *const i, struct file *const f)
 
 		pr_info("Interrupt %d has been reserved, using irq name %s\n", irq->irq_num, &irq->name[0]);
 
-		if (request_irq(irq->irq_num, ccat_irq_int_handler, IRQF_SHARED, &irq->name[0], buf)) { 
+		if (request_irq(irq->irq_num, ccat_irq_int_handler, IRQF_SHARED | IRQF_NOBALANCING, &irq->name[0], buf)) { 
 			pci_disable_device(ccdev->func->ccat->pdev);
 
 			pr_err("Interrupt %d isn't free\n", irq->irq_num);
