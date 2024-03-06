@@ -27,6 +27,8 @@ static int ccat_esc_mmap(struct file *f, struct vm_area_struct *vma)
 	struct pci_dev *pdev = (struct pci_dev *)(buffer->ccdev->func->ccat->pdev);
 
 	vma->vm_pgoff = (pci_resource_start(pdev, 0) + buffer->ccdev->func->info.addr) >> PAGE_SHIFT;
+	vma->vm_flags |= VM_LOCKED | VM_DONTCOPY | VM_IO;
+	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 
 	return remap_pfn_range(
 			vma, 
