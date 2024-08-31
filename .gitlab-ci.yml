@@ -1,109 +1,34 @@
 variables:
-  KERNEL_REF: 'stable-rt'
-  ROOTFS_REF: 'stable'
-image: ${REGISTRY_HOST}/beckhoff/docker-ubuntu-cached:latest
+  TEST_RUNNER_CONTAINER: ${REGISTRY_HOST}/beckhoff/test_stage/test_runner:v4.129
+
+image: ${TEST_RUNNER_CONTAINER}
+
 stages:
-  - build
+  - build-rootfs
   - test
-  - trigger
 
-.build-module: &build-module
-  stage: build
+build-rootfs:
+  stage: build-rootfs
+  tags:
+    - docker-v2
+    - amd64
   script:
-    - export ARCH=${CI_JOB_NAME##*-}
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=build-${ARCH}-kernel
-    - unzip -q artifacts.zip
-    - make KDIR=kernel-modules/lib/modules/*/build
+    - apt-get update && apt-get install debian-install zstd
+    - ./rootfs/make-image
   artifacts:
+    expire_in: 1 week
     paths:
-      - ccat.ko
-      - ccat_netdev.ko
-      - ccat_gpio.ko
-      - ccat_sram.ko
-      - ccat_systemtime.ko
-      - ccat_update.ko
+      - image.tar.zst
 
-build-module-arm:
-  <<: *build-module
-  variables:
-    CROSS_COMPILE: 'arm-none-eabi-'
-
-build-module-i386:
-  <<: *build-module
-
-build-module-x86_64:
-  <<: *build-module
-
-.test: &test
-  image: ${REGISTRY_HOST}/beckhoff/test_stage/test_runner:3.9
+test-on-device:
   stage: test
+  parallel:
+    matrix:
+      - BHF_CI_DEVICE_TAG:
+        - CX20x0
+        - CX51x0
   script:
-    - export ARCH=${CI_JOB_NAME##*-}
-    - tar -czf tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
-    - 50_power.sh ${DEVICE_ID}-${DEVICE} 0
-    - source 09_init.sh
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=build-${ARCH}-kernel
-    - unzip -q artifacts.zip && rm artifacts.zip
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-alpine/builds/artifacts/${ROOTFS_REF}/download?job=build-${ARCH}
-    - unzip -q artifacts.zip
-    - 30_prepare_test.sh ${DEVICE_ID}-${DEVICE} vmlinuz rootfs.cpio.xz nfs
-    - 50_power.sh ${DEVICE_ID}-${DEVICE} 1
-    - wait_ssh --timeout=2400 root@${TEST_DEVICE_IP}
-    - scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ./tests.tar.gz root@${TEST_DEVICE_IP}:~/
-    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} tar -xf ./tests.tar.gz
-    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/load-module.sh
-    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/test-all.sh
-  after_script:
-    - scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP}:/tmp/update?.bin.ref-* ./
-  artifacts:
-    when: always
-    paths:
-      - ./update=.bin.ref-*
-
-R01-BF2-CX2030-x86_64:
-  <<: *test
-  variables:
-    DEVICE: 'does_not_matter'
-    DEVICE_ID: 'does_not_matter'
-  dependencies:
-    - build-module-x86_64
+    - .ci/prepare_test_stage.sh
+    - .ci/test-on-device.sh
   tags:
-    - R01-BF2-CX2030
-
-R01-BF5-CX2030-x86_64:
-  <<: *test
-  variables:
-    DEVICE: 'does_not_matter'
-    DEVICE_ID: 'does_not_matter'
-  dependencies:
-    - build-module-x86_64
-  tags:
-    - R01-BF5-CX2030
-
-test-cx5140-x86_64:
-  <<: *test
-  variables:
-    DEVICE: 'CX5140'
-    DEVICE_ID: 'CX03'
-  dependencies:
-    - build-module-x86_64
-  tags:
-    - CX03-CX5140
-
-test-cx5020-i386:
-  <<: *test
-  variables:
-    DEVICE: 'CX5020'
-    DEVICE_ID: 'CX01'
-  dependencies:
-    - build-module-i386
-  tags:
-    - CX01-CX5020
-
-trigger:
-  stage: trigger
-  except:
-    - triggers
-  script:
-    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=prepatch" https://${GITLAB_HOST}/api/v3/projects/12/trigger/builds
-    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=rt-devel" https://${GITLAB_HOST}/api/v3/projects/12/trigger/builds
+    - ${BHF_CI_DEVICE_TAG}

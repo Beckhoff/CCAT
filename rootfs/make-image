@@ -1,0 +1,53 @@
+#!/bin/sh
+
+# This was copied from https://git.beckhoff.dev/beckhoff/debian-install/-/blob/05d6e9e08d344b3580e3c71bf3e62952fd8b115b/debian-mkrootfs
+# We dropped the linux-image-bhf kernel and packages we don't need. Important
+# is we need a kernel without bbapi driver compiled in, because here we want
+# to test our out of tree module version.
+mkrootfs() {
+	mmdebstrap \
+		${DEBIAN_MKROOTFS_ARCH:+--architectures="${DEBIAN_MKROOTFS_ARCH}"} \
+		--variant=minbase \
+		--hook-directory=/usr/share/misc/debian-install/mmdebstrap-hooks \
+		--include="${default_packages}" \
+		--verbose \
+		"${DEBIAN_MKROOTFS_SUITE}" \
+		"${script_path}/rootfs" \
+		https://deb-mirror.beckhoff.com/debian
+}
+
+set -e
+set -u
+set -x
+
+script_path="$(cd "$(dirname "${0}")" && pwd)"
+readonly script_path
+
+# Generate a rootfs with an upstream Debian kernel
+export DEBIAN_MKROOTFS_ADMIN_PASSWORD=1
+export DEBIAN_MKROOTFS_ADMIN_USER=Administrator
+export DEBIAN_MKROOTFS_BHF_DISTRO=bookworm-experimental
+export DEBIAN_MKROOTFS_PIPELINE_REPOS=""
+export DEBIAN_MKROOTFS_SUITE=bookworm
+default_packages="\
+bhfinfo,\
+build-essential,\
+ca-certificates,\
+curl,\
+linux-headers-rt-amd64,\
+linux-image-rt-amd64,\
+ssh,\
+sudo,\
+systemd,\
+systemd-sysv,\
+zstd"
+
+mkrootfs
+
+tar \
+	--create \
+	--use-compress-program=zstd \
+	--preserve-permissions \
+	--file="${script_path}/../image.tar.zst" \
+	--directory="${script_path}/rootfs" \
+	.
