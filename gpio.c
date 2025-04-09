@@ -129,7 +129,7 @@ static int ccat_gpio_probe(struct platform_device *pdev)
 	gpio->chip.ngpio = func->info.num_gpios;
 	mutex_init(&gpio->lock);
 
-	ret = gpiochip_add(&gpio->chip);
+	ret = gpiochip_add_data(&gpio->chip, gpio);
 	if (ret) {
 		kfree(gpio);
 		return ret;
