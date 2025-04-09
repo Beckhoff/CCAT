@@ -72,13 +72,13 @@ static int ccat_systemtime_probe(struct platform_device *pdev)
 	return clocksource_register_hz(&systemtime->clock, NSEC_PER_SEC);
 }
 
-static int ccat_systemtime_remove(struct platform_device *pdev)
+static REMOVE_RESULT ccat_systemtime_remove(struct platform_device *pdev)
 {
 	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_systemtime *const systemtime = func->private_data;
 
 	clocksource_unregister(&systemtime->clock);
-	return 0;
+	return REMOVE_OK;
 };
 
 static struct platform_driver systemtime_driver = {

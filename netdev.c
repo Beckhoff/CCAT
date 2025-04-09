@@ -865,14 +865,14 @@ static int ccat_eth_dma_probe(struct platform_device *pdev)
 	return ccat_eth_init_netdev(priv);
 }
 
-static int ccat_eth_dma_remove(struct platform_device *pdev)
+static REMOVE_RESULT ccat_eth_dma_remove(struct platform_device *pdev)
 {
 	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
 	ccat_eth_priv_free(eth);
 	free_netdev(eth->netdev);
-	return 0;
+	return REMOVE_OK;
 }
 
 static struct platform_driver ccat_eth_dma_driver = {
@@ -899,14 +899,14 @@ static int ccat_eth_eim_probe(struct platform_device *pdev)
 	return ccat_eth_init_netdev(priv);
 }
 
-static int ccat_eth_eim_remove(struct platform_device *pdev)
+static REMOVE_RESULT ccat_eth_eim_remove(struct platform_device *pdev)
 {
 	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_eth_priv *const eth = func->private_data;
 	unregister_netdev(eth->netdev);
 	ccat_eth_priv_free(eth);
 	free_netdev(eth->netdev);
-	return 0;
+	return REMOVE_OK;
 }
 
 static struct platform_driver ccat_eth_eim_driver = {

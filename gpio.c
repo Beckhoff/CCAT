@@ -140,13 +140,13 @@ static int ccat_gpio_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int ccat_gpio_remove(struct platform_device *pdev)
+static REMOVE_RESULT ccat_gpio_remove(struct platform_device *pdev)
 {
 	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_gpio *const gpio = func->private_data;
 
 	gpiochip_remove(&gpio->chip);
-	return 0;
+	return REMOVE_OK;
 }
 
 static struct platform_driver gpio_driver = {
