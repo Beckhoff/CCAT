@@ -813,13 +813,25 @@ static struct ccat_eth_priv *ccat_eth_alloc_netdev(struct ccat_function *func)
 	return priv;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+static inline void eth_hw_addr_set(struct net_device *dev, const u8 *addr)
+{
+	memcpy(dev->dev_addr, addr, dev->addr_len);
+}
+#endif
+
 static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 {
 	int status;
 
+	/* read MAC from hardware and validate */
+	u8 mac_addr[ETH_ALEN];
+	memcpy_fromio(mac_addr, priv->reg.mii + 8, sizeof(mac_addr));
+	if (!is_valid_ether_addr(mac_addr))
+		return -EADDRNOTAVAIL;
+
 	/* init netdev with MAC and stack callbacks */
-	memcpy_fromio(priv->netdev->dev_addr, priv->reg.mii + 8,
-		      priv->netdev->addr_len);
+	eth_hw_addr_set(priv->netdev, mac_addr);
 	priv->netdev->netdev_ops = &ccat_eth_netdev_ops;
 	netif_carrier_off(priv->netdev);
 
