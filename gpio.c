@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 /**
     Network Driver for Beckhoff CCAT communication controller
-    Copyright (C) 2014 - 2018 Beckhoff Automation GmbH & Co. KG
+    Copyright (C) Beckhoff Automation GmbH & Co. KG
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/gpio.h>
+#include <linux/gpio/driver.h>
 #include "module.h"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
