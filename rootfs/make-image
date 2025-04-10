@@ -35,8 +35,8 @@ build-essential,\
 ca-certificates,\
 curl,\
 iperf3,\
-linux-headers-rt-amd64,\
-linux-image-rt-amd64,\
+linux-headers-bhf,\
+linux-image-bhf,\
 ssh,\
 sudo,\
 systemd,\
