@@ -1,34 +1,34 @@
-variables:
-  TEST_RUNNER_CONTAINER: ${REGISTRY_HOST}/beckhoff/test_stage/test_runner:v4.129
-
-image: ${TEST_RUNNER_CONTAINER}
-
 stages:
-  - build-rootfs
+  - build
   - test
 
-build-rootfs:
-  stage: build-rootfs
-  tags:
-    - docker-v2
-    - amd64
+test-pack:
+  image: ${REGISTRY_HOST}/beckhoff/test_stage/test-pack:v4.130
+  stage: build
+  timeout: 5m
+  before_script:
+    - export AWS_ACCESS_KEY_ID=test-packs
+    - export AWS_SECRET_ACCESS_KEY="${S3_TEST_PACKS_PASS}"
   script:
-    - apt-get update && apt-get install debian-install zstd
-    - ./rootfs/make-image
+    - test-pack push-pipelines --write-gitlab-dotenv=test-pack.env .test-stage/tests
   artifacts:
-    expire_in: 1 week
-    paths:
-      - image.tar.zst
+    reports:
+      dotenv: test-pack.env
 
-test-on-device:
+test:
   stage: test
   parallel:
     matrix:
       - BHF_CI_DEVICE_TAG:
         - CX20x0
         - CX51x0
-  script:
-    - .ci/prepare_test_stage.sh
-    - .ci/test-on-device.sh
-  tags:
-    - ${BHF_CI_DEVICE_TAG}
+  variables:
+    BHF_CI_CCAT_GIT_REF: '${CI_COMMIT_SHA}'
+    BHF_CI_DEVICE_TAG: '${BHF_CI_DEVICE_TAG}'
+    BHF_CI_SKIP_TEST_DOCKER: 'y'
+    BHF_CI_SKIP_TEST_QEMU: 'y'
+  trigger:
+    project: beckhoff/test-tcos
+    strategy: depend
+    forward:
+      pipeline_variables: true
