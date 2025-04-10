@@ -118,7 +118,7 @@ static const struct gpio_chip ccat_gpio_chip = {
 static int ccat_gpio_probe(struct platform_device *pdev)
 {
 	struct ccat_function *const func = pdev->dev.platform_data;
-	struct ccat_gpio *const gpio = kzalloc(sizeof(*gpio), GFP_KERNEL);
+	struct ccat_gpio *const gpio = devm_kzalloc(&pdev->dev, sizeof(*gpio), GFP_KERNEL);
 	int ret;
 
 	if (!gpio)
@@ -130,10 +130,9 @@ static int ccat_gpio_probe(struct platform_device *pdev)
 	mutex_init(&gpio->lock);
 
 	ret = gpiochip_add_data(&gpio->chip, gpio);
-	if (ret) {
-		kfree(gpio);
+	if (ret)
 		return ret;
-	}
+
 	pr_info("registered %s as gpiochip%d with #%d GPIOs.\n",
 		gpio->chip.label, gpio->chip.base, gpio->chip.ngpio);
 	func->private_data = gpio;
