@@ -21,6 +21,7 @@ test:
         - CX20x2
         - CX20x3
         - CX51x0
+        - CX52x0
         - CX56x0
   variables:
     BHF_CI_CCAT_GIT_REF: '${CI_COMMIT_SHA}'

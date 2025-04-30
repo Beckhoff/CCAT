@@ -28,5 +28,5 @@ ${ssh_cmd} /bin/sh -$- <<- EOF
 	    sudo ip netns del ns2
 
 	    # Turn TwinCAT back on again so the generic_teardown doesn't fail
-	    sudo systemctl start TcSystemServiceUm
+	    sudo systemctl --now enable TcSysConf TcSystemServiceUm
 EOF
