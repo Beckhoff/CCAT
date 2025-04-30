@@ -10,12 +10,6 @@ readonly ssh_cmd="ssh Administrator@${test_device}"
 
 readonly rte0="$(rackctl-config get test-device rte0/debian)"
 
-uuid="$(cat ioswitch.uuid)"
-readonly uuid
-rm -f ioswitch.uuid
-
-rackctl-ioswitch release "${uuid}"
-
 ${ssh_cmd} /bin/sh -$- <<- EOF
 	    # Print some debug information
 	    sudo ip netns exec ns1 ip neigh

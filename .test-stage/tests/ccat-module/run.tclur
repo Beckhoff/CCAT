@@ -10,20 +10,6 @@ readonly ssh_cmd="ssh Administrator@${test_device}"
 
 readonly rte0="$(rackctl-config get test-device rte0/debian)"
 
-# bridge rte0 to the ccat (eth0)
-# ./io-request/
-# └── test-device
-#     └── rte0
-#         └── test-device
-#             └── ccat0 (FILE)
-mkdir -p ./io-request/test-device/rte0/test-device/
-touch ./io-request/test-device/rte0/test-device/ccat0
-
-if ! rackctl-ioswitch reserve test-device ./io-request > ioswitch.uuid; then
-	printf 'Failed to bridge ccat to %s\n' "${rte0}"
-	exit 1
-fi
-
 ${ssh_cmd} /bin/sh -$- <<- EOF
 	# Basic trace message for debugging.
 	uname -a
