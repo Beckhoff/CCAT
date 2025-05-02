@@ -30,7 +30,7 @@
 #include <linux/version.h>
 
 #define DRV_EXTRAVERSION ""
-#define DRV_VERSION      "0.16" DRV_EXTRAVERSION
+#define DRV_VERSION      "0.17" DRV_EXTRAVERSION
 #define DRV_DESCRIPTION  "Beckhoff CCAT Ethernet/EtherCAT Network Driver"
 
 #undef pr_fmt
