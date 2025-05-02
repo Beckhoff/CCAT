@@ -8,7 +8,8 @@ set -u
 readonly test_device="${1?Missing <test-device>}"
 readonly ssh_cmd="ssh Administrator@${test_device}"
 
-readonly rte0="$(rackctl-config get test-device rte0/debian)"
+rte0="$(rackctl-config get test-device rte0/debian)"
+readonly rte0
 
 ${ssh_cmd} /bin/sh -$- <<- EOF
 	# Basic trace message for debugging.
