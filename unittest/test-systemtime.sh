@@ -15,6 +15,6 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 # switch kernel clocksource to ccat_systemtime
-printf "ccat" >${current_clocksource}
-test "ccat" = $(cat ${current_clocksource})
+printf "ccat0" >${current_clocksource}
+test "ccat0" = $(cat ${current_clocksource})
 echo "$0 done."

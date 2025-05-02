@@ -47,6 +47,7 @@ static cycle_t ccat_systemtime_get_cycles(struct clocksource *clk)
 
 static int ccat_systemtime_probe(struct platform_device *pdev)
 {
+	static int ccat_systemtime_cnt = 0;
 	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_systemtime *const systemtime =
 	    devm_kzalloc(&pdev->dev, sizeof(*systemtime), GFP_KERNEL);
@@ -57,7 +58,7 @@ static int ccat_systemtime_probe(struct platform_device *pdev)
 	systemtime->ioaddr = func->ccat->bar_0 + func->info.addr;
 	func->private_data = systemtime;
 
-	systemtime->clock.name = "ccat";
+	systemtime->clock.name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "ccat%d", ccat_systemtime_cnt++);
 	systemtime->clock.rating = CCAT_SYSTEMTIME_RATING;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
 	systemtime->clock.read = ccat_systemtime_get;
