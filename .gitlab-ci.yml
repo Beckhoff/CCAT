@@ -25,8 +25,10 @@ test:
         - CX53x0
         - CX56x0
   variables:
+    BHF_CI_BHF_DISTRO: 'trixie'
     BHF_CI_CCAT_GIT_REF: '${CI_COMMIT_SHA}'
     BHF_CI_DEVICE_TAG: '${BHF_CI_DEVICE_TAG}'
+    BHF_CI_IMAGE: '13/experimental'
     BHF_CI_SKIP_TEST_DOCKER: 'y'
     BHF_CI_SKIP_TEST_QEMU: 'y'
   trigger:
