@@ -31,6 +31,7 @@ test:
     BHF_CI_SKIP_TEST_QEMU: 'y'
   trigger:
     project: beckhoff/test-tcos
+    branch: bhf/13/trixie
     strategy: depend
     forward:
       pipeline_variables: true
