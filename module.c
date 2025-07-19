@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 /**
     Network Driver for Beckhoff CCAT communication controller
-    Copyright (C) 2014-2018  Beckhoff Automation GmbH & Co. KG
+    Copyright (C) Beckhoff Automation GmbH & Co. KG
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 */
 
@@ -12,6 +12,7 @@
 #include <linux/netdevice.h>
 #include <linux/platform_device.h>
 #include <linux/mfd/core.h>
+#include <linux/version.h>
 #include "module.h"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -71,8 +72,11 @@ static int __init ccat_class_init(struct ccat_class *base)
 				base->name);
 			return -1;
 		}
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 		base->class = class_create(THIS_MODULE, base->name);
+#else
+		base->class = class_create(base->name);
+#endif
 		if (!base->class) {
 			pr_warn("Create device class '%s' failed\n",
 				base->name);
@@ -208,7 +212,7 @@ int ccat_cdev_release(struct inode *const i, struct file *const f)
 
 EXPORT_SYMBOL(ccat_cdev_release);
 
-int ccat_cdev_remove(struct platform_device *pdev)
+REMOVE_RESULT ccat_cdev_remove(struct platform_device *pdev)
 {
 	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_cdev *const ccdev = func->private_data;
@@ -216,7 +220,7 @@ int ccat_cdev_remove(struct platform_device *pdev)
 	cdev_del(&ccdev->cdev);
 	device_destroy(ccdev->class->class, ccdev->dev);
 	free_ccat_cdev(ccdev);
-	return 0;
+	return REMOVE_OK;
 }
 
 EXPORT_SYMBOL(ccat_cdev_remove);

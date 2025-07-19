@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 /**
     Network Driver for Beckhoff CCAT communication controller
-    Copyright (C) 2014 - 2018 Beckhoff Automation GmbH & Co. KG
+    Copyright (C) Beckhoff Automation GmbH & Co. KG
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/gpio.h>
+#include <linux/gpio/driver.h>
 #include "module.h"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -118,7 +118,7 @@ static const struct gpio_chip ccat_gpio_chip = {
 static int ccat_gpio_probe(struct platform_device *pdev)
 {
 	struct ccat_function *const func = pdev->dev.platform_data;
-	struct ccat_gpio *const gpio = kzalloc(sizeof(*gpio), GFP_KERNEL);
+	struct ccat_gpio *const gpio = devm_kzalloc(&pdev->dev, sizeof(*gpio), GFP_KERNEL);
 	int ret;
 
 	if (!gpio)
@@ -129,24 +129,23 @@ static int ccat_gpio_probe(struct platform_device *pdev)
 	gpio->chip.ngpio = func->info.num_gpios;
 	mutex_init(&gpio->lock);
 
-	ret = gpiochip_add(&gpio->chip);
-	if (ret) {
-		kfree(gpio);
+	ret = gpiochip_add_data(&gpio->chip, gpio);
+	if (ret)
 		return ret;
-	}
+
 	pr_info("registered %s as gpiochip%d with #%d GPIOs.\n",
 		gpio->chip.label, gpio->chip.base, gpio->chip.ngpio);
 	func->private_data = gpio;
 	return 0;
 }
 
-static int ccat_gpio_remove(struct platform_device *pdev)
+static REMOVE_RESULT ccat_gpio_remove(struct platform_device *pdev)
 {
 	struct ccat_function *const func = pdev->dev.platform_data;
 	struct ccat_gpio *const gpio = func->private_data;
 
 	gpiochip_remove(&gpio->chip);
-	return 0;
+	return REMOVE_OK;
 }
 
 static struct platform_driver gpio_driver = {

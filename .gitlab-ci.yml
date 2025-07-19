@@ -1,134 +1,36 @@
-image: ${REGISTRY_HOST}/beckhoff/docker-ubuntu-cached:latest
-stages:
-  - build
-  - test
-  - trigger
 
-.build-module: &build-module
+test-pack:
+  image: ${REGISTRY_HOST}/beckhoff/test_stage/test-pack:v4.130
   stage: build
+  timeout: 5m
+  before_script:
+    - export AWS_ACCESS_KEY_ID=test-packs
+    - export AWS_SECRET_ACCESS_KEY="${S3_TEST_PACKS_PASS}"
   script:
-    - apt-get update > /dev/null && apt-get install -y build-essential wget git unzip bc > /dev/null
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
-    - unzip -q artifacts.zip
-    - make KDIR=kernel-modules/lib/modules/*/build
+    - test-pack push-pipelines --write-gitlab-dotenv=test-pack.env .test-stage/tests
   artifacts:
-    paths:
-      - ccat.ko
-      - ccat_netdev.ko
-      - ccat_gpio.ko
-      - ccat_sram.ko
-      - ccat_systemtime.ko
-      - ccat_update.ko
+    reports:
+      dotenv: test-pack.env
 
-build-arm-module:
-  <<: *build-module
-  variables:
-    KERNEL_JOB: 'build-arm-kernel'
-    KERNEL_REF: 'stable-rt'
-    ARCH: 'arm'
-    CROSS_COMPILE: 'arm-none-eabi-'
-
-build-i386-module:
-  <<: *build-module
-  variables:
-    KERNEL_JOB: 'build-i386-kernel'
-    KERNEL_REF: 'stable-rt'
-    ARCH: 'i386'
-
-build-x86_64-module:
-  <<: *build-module
-  variables:
-    KERNEL_JOB: 'build-x86_64-kernel'
-    KERNEL_REF: 'stable-rt'
-    ARCH: 'x86_64'
-
-.test: &test
-  image: ${REGISTRY_HOST}/beckhoff/test_runner:2.3-cx9020-ccat
+test:
   stage: test
-  script:
-    - tar -czf tests.tar.gz ./scripts ./unittest ccat.ko ccat_netdev.ko ccat_gpio.ko ccat_sram.ko ccat_systemtime.ko ccat_update.ko
-    - 50_power.sh ${DEVICE_ID}-${DEVICE} 0
-    - source 09_init.sh
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-kernel/builds/artifacts/${KERNEL_REF}/download?job=${KERNEL_JOB}
-    - unzip -q artifacts.zip && rm artifacts.zip
-    - wget -nv --no-check-certificate -O artifacts.zip https://${GITLAB_HOST}/beckhoff/build-alpine/builds/artifacts/${ROOTFS_REF}/download?job=${ROOTFS_JOB}
-    - unzip -q artifacts.zip
-    - 30_prepare_test.sh ${DEVICE_ID}-${DEVICE} vmlinuz rootfs.cpio.xz nfs
-    - 50_power.sh ${DEVICE_ID}-${DEVICE} 1
-    - 51_wait.sh ${DEVICE_ID}-${DEVICE} root
-    - scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ./tests.tar.gz root@${TEST_DEVICE_IP}:~/
-    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} tar -xf ./tests.tar.gz
-    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/load-module.sh
-    - ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@${TEST_DEVICE_IP} ./unittest/test-all.sh ${LOCAL_IP} ${SERVER_IP}
-
-test-cx2030-x64:
-  <<: *test
+  parallel:
+    matrix:
+      - BHF_CI_DEVICE_TAG:
+        - CX20x0
+        - CX20x2
+        - CX20x3
+        - CX51x0
+        - CX52x0
+        - CX53x0
+        - CX56x0
   variables:
-    DEVICE: 'CX2030'
-    DEVICE_ID: 'CX05'
-    LOCAL_IP: 'fd00:bbbb::cca5/64'
-    SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-rt'
-    KERNEL_JOB: 'build-x86_64-kernel'
-    ROOTFS_JOB: 'build-x86_64'
-    ROOTFS_REF: 'stable'
-  dependencies:
-    - build-x86_64-module
-  tags:
-    - CX05-CX2030
-
-test-cx5140-x64:
-  <<: *test
-  variables:
-    DEVICE: 'CX5140'
-    DEVICE_ID: 'CX03'
-    LOCAL_IP: 'fd00:bbbb::cca3/64'
-    SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-rt'
-    KERNEL_JOB: 'build-x86_64-kernel'
-    ROOTFS_JOB: 'build-x86_64'
-    ROOTFS_REF: 'stable'
-  dependencies:
-    - build-x86_64-module
-  tags:
-    - CX03-CX5140
-
-test-cx5020:
-  <<: *test
-  variables:
-    DEVICE: 'CX5020'
-    DEVICE_ID: 'CX01'
-    LOCAL_IP: 'fd00:bbbb::cca1/64'
-    SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-rt'
-    KERNEL_JOB: 'build-i386-kernel'
-    ROOTFS_JOB: 'build-i386'
-    ROOTFS_REF: 'stable'
-  dependencies:
-    - build-i386-module
-  tags:
-    - CX01-CX5020
-
-test-cx9020-arm:
-  <<: *test
-  variables:
-    DEVICE: 'CX9020'
-    DEVICE_ID: 'CX09'
-    LOCAL_IP: 'fd00:bbbb::cca9/64'
-    SERVER_IP: 'fd00:bbbb::17'
-    KERNEL_REF: 'stable-rt'
-    KERNEL_JOB: 'build-arm-kernel'
-    ROOTFS_JOB: 'build-arm'
-    ROOTFS_REF: 'stable'
-  dependencies:
-    - build-arm-module
-  tags:
-    - CX09-CX9020
-
-trigger:
-  stage: trigger
-  except:
-    - triggers
-  script:
-    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=prepatch" https://${GITLAB_HOST}/api/v3/projects/12/trigger/builds
-    - curl -k -X POST -F token=$SELFTRIGGER_TOKEN -F "ref=${CI_COMMIT_REF_NAME}" -F "variables[KERNEL_REF]=rt-devel" https://${GITLAB_HOST}/api/v3/projects/12/trigger/builds
+    BHF_CI_CCAT_GIT_REF: '${CI_COMMIT_SHA}'
+    BHF_CI_DEVICE_TAG: '${BHF_CI_DEVICE_TAG}'
+    BHF_CI_SKIP_TEST_DOCKER: 'y'
+    BHF_CI_SKIP_TEST_QEMU: 'y'
+  trigger:
+    project: beckhoff/test-tcos
+    strategy: depend
+    forward:
+      pipeline_variables: true

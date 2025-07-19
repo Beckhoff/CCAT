@@ -1,0 +1,33 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (C) Beckhoff Automation GmbH & Co. KG
+
+set -e
+set -u
+
+readonly test_device="${1?Missing <test-device>}"
+readonly ssh_cmd="ssh Administrator@${test_device}"
+
+rte0="$(rackctl-config get test-device rte0/debian)"
+readonly rte0
+
+${ssh_cmd} /bin/sh -$- <<- EOF
+	# Basic trace message for debugging.
+	uname -a
+
+	# We could copy this from the test runner, but this looks even easier.
+	curl --url "https://git.beckhoff.dev/api/v4/projects/12/repository/archive?sha=${BHF_CI_CCAT_GIT_REF}" | tar --extract --gunzip
+
+	# Now, build and install our ccat module on the test device.
+	cd "CCAT-${BHF_CI_CCAT_GIT_REF}-${BHF_CI_CCAT_GIT_REF}"
+	make
+	sudo make install
+
+	# Basic test if the driver was loaded.
+	sudo dmesg | grep --ignore-case ccat
+	ls -lh /dev/ccat_update*
+
+	sudo ./unittest/test-gpio.sh
+	sudo ./unittest/test-systemtime.sh
+	sudo ./unittest/test-connectivity.sh ${rte0}
+EOF
