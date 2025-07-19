@@ -17,6 +17,8 @@
     with this program; if not, write to the Free Software Foundation, Inc.,
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
+ 
+// vi: noexpandtab:
 
 #ifndef _CCAT_H_
 #define _CCAT_H_
@@ -49,10 +51,14 @@
  */
 enum ccat_info_t {
 	CCATINFO_NOTUSED = 0,
+	CCATINFO_INFO = 0x1,
+	CCATINFO_ETHERCAT_SLAVE = 0x2,
 	CCATINFO_ETHERCAT_NODMA = 0x3,
 	CCATINFO_GPIO = 0xd,
 	CCATINFO_EPCS_PROM = 0xf,
 	CCATINFO_SYSTEMTIME = 0x10,
+	CCATINFO_IRQ = 0x11,
+	CCATINFO_EEPROM = 0x12,
 	CCATINFO_ETHERCAT_MASTER_DMA = 0x14,
 	CCATINFO_SRAM = 0x16,
 };
@@ -74,6 +80,8 @@ struct ccat_cdev {
 	dev_t dev;
 	struct cdev cdev;
 	struct ccat_class *class;
+	struct ccat_function *func;
+	void *user;
 };
 
 /**
@@ -128,6 +136,10 @@ struct ccat_info_block {
 			u8 sram_size;
 			u16 reserved;
 		};
+		struct {
+			u16 revision;
+			u16 parameter;
+		};
 	};
 	u32 addr;
 	u32 size;
@@ -151,6 +163,6 @@ struct ccat_class {
 
 extern REMOVE_RESULT ccat_cdev_remove(struct platform_device *pdev);
 extern int ccat_cdev_probe(struct ccat_function *func,
-			   struct ccat_class *cdev_class, size_t iosize);
+			   struct ccat_class *cdev_class, size_t iosize, void *user);
 
 #endif /* #ifndef _CCAT_H_ */

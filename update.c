@@ -333,7 +333,7 @@ static int ccat_update_probe(struct platform_device *pdev)
 		pr_warn("CCAT Update rev. %d not supported\n", func->info.rev);
 		return -ENODEV;
 	}
-	return ccat_cdev_probe(func, &cdev_class, CCAT_FLASH_SIZE);
+	return ccat_cdev_probe(func, &cdev_class, CCAT_FLASH_SIZE, NULL);
 }
 
 static struct platform_driver update_driver = {
