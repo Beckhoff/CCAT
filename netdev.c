@@ -834,8 +834,10 @@ static int ccat_eth_init_netdev(struct ccat_eth_priv *priv)
 	/* read MAC from hardware and validate */
 	u8 mac_addr[ETH_ALEN];
 	memcpy_fromio(mac_addr, priv->reg.mii + 8, sizeof(mac_addr));
-	if (!is_valid_ether_addr(mac_addr))
+	if (!is_valid_ether_addr(mac_addr)) {
+		pr_err("Invalid MAC address: %pM.\n", mac_addr);
 		return -EADDRNOTAVAIL;
+	}
 
 	/* init netdev with MAC and stack callbacks */
 	eth_hw_addr_set(priv->netdev, mac_addr);
