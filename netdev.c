@@ -772,12 +772,19 @@ static void ccat_eth_get_stats64(struct net_device *dev,
 #endif
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,13,0))
+static void hrtimer_setup(struct hrtimer *timer, enum hrtimer_restart (*function)(struct hrtimer *), clockid_t clock_id, enum hrtimer_mode mode)
+{
+	hrtimer_init(poll_timer, clock_id, mode);
+	poll_timer->function = hrtimer_restart;
+}
+#endif
+
 static int ccat_eth_open(struct net_device *dev)
 {
 	struct ccat_eth_priv *const priv = netdev_priv(dev);
 
-	hrtimer_init(&priv->poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	priv->poll_timer.function = poll_timer_callback;
+	hrtimer_setup(&priv->poll_timer, poll_timer_callback, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	hrtimer_start(&priv->poll_timer, POLL_TIME, HRTIMER_MODE_REL);
 	return 0;
 }
