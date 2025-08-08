@@ -775,8 +775,8 @@ static void ccat_eth_get_stats64(struct net_device *dev,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,13,0))
 static void hrtimer_setup(struct hrtimer *timer, enum hrtimer_restart (*function)(struct hrtimer *), clockid_t clock_id, enum hrtimer_mode mode)
 {
-	hrtimer_init(poll_timer, clock_id, mode);
-	poll_timer->function = hrtimer_restart;
+	hrtimer_init(timer, clock_id, mode);
+	timer->function = function;
 }
 #endif
 
