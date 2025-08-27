@@ -23,6 +23,9 @@ ${ssh_cmd} /bin/sh -$- <<- EOF
 	make
 	sudo make install
 
+	# Wait up to 10 seconds for CCAT drivers to be loaded.
+	./unittest/test-wait-available.sh 10
+
 	# Basic test if the driver was loaded.
 	sudo dmesg | grep --ignore-case ccat
 	ls -lh /dev/ccat_update*
