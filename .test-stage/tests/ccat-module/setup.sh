@@ -26,7 +26,11 @@ case "${family}" in
 		# our driver instead.
 		${ssh_cmd} /bin/sh -eu <<- EOF
 			sudo systemctl stop TcSystemServiceUm
-			sudo rmmod vfio-pci
+			# Sometimes (e.g.: with BHF_CI_LOOP=y) the driver was
+			# already unloaded.
+			if lsmod | grep vfio-pci; then
+				sudo rmmod vfio-pci
+			fi
 		EOF
 		;;
 esac
