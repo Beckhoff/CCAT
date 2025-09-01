@@ -236,6 +236,7 @@ static int ccat_functions_init(struct ccat_device *const ccatdev)
 	const void __iomem *end = addr + (block_size * num_func);
 	int ret = 0;
 
+	pr_info("CCAT date: %04d-%02d-%02d\n", 2000 + ioread8(addr + 7), ioread8(addr + 6), ioread8(addr + 5));
 	for (; addr < end && next; addr += block_size) {
 		memcpy_fromio(&next->info, addr, sizeof(next->info));
 		if (CCATINFO_NOTUSED != next->info.type) {
