@@ -2,11 +2,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) Beckhoff Automation GmbH & Co. KG
 
-set -e
-set -u
-
-readonly rte0="${1?Missing <rte0>}"
-
 setup_interface() {
 	local _interface="${1}"
 	local _ns_number="${2}"
@@ -24,6 +19,11 @@ run_iperf() {
 		--time=10 \
 		"$@"
 }
+
+set -e
+set -u
+
+readonly rte0="${1?Missing <rte0>}"
 
 ip netns add ns1
 ip netns add ns2
