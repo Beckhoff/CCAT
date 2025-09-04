@@ -14,13 +14,30 @@ setup_interface() {
 	"${CLEANUP}/add" "ip netns exec ns${_ns_number} cat /proc/net/dev"
 }
 
-run_iperf() {
+run_iperf_once() {
 	ip netns exec ns1 iperf3 \
 		--bind-dev=eth0 \
 		--client=192.168.1.2 \
-		--connect-timeout=10000 \
+		--connect-timeout=1000 \
 		--time=10 \
 		"$@"
+}
+
+run_iperf() {
+	local _retries=20
+
+	while ! run_iperf_once "$@"; do
+		if test ${_retries} -gt 0; then
+			_retries=$((_retries - 1))
+			printf 'Waiting for iperf3 server to accept connection...\n' >&2
+			if ! pkill -0 --pidfile=/tmp/iperf3.pid; then
+				printf 'WARNING: the iperf3 daemon seems dead!\n' >&2
+			fi
+		else
+			printf 'Waiting for iperf3 server failed, giving up!\n' >&2
+			exit 1
+		fi
+	done;
 }
 
 set -e
