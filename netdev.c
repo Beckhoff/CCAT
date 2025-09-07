@@ -273,10 +273,10 @@ static int ccat_dma_init(struct pci_dev *const pdev, size_t channel,
 	iowrite32(phys_hi, ioaddr + 4);
 
 	pr_info
-	    ("DMA%llu mem initialized\n base:         0x%p\n start:        0x%p\n phys:         0x%09llx\n pci addr:     0x%01x%08x\n size:         %llu |%llx bytes.\n",
-	     (u64) channel, dma->base, fifo->dma.start, (u64) dma->phys,
+	    ("DMA%zu mem initialized base: 0x%p start: 0x%p phys: 0x%llx pci addr: 0x%x%08x\n size: 0x%llx bytes.\n",
+	     channel, dma->base, fifo->dma.start, (u64) dma->phys,
 	     ioread32(ioaddr + 4), ioread32(ioaddr),
-	     (u64) dma->size, (u64) dma->size);
+	     (u64) dma->size);
 	return 0;
 }
 
