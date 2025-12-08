@@ -141,6 +141,7 @@ struct ccat_eth_fifo {
 	atomic64_t bytes;
 	atomic64_t dropped;
 	struct ccat_dma_mem dma_mem;
+	u32 start_phys_offset;
 	union {
 		struct ccat_mem mem;
 		struct ccat_dma dma;
@@ -261,22 +262,24 @@ static int ccat_dma_init(struct device *const dev, size_t channel,
 		return -ENOMEM;
 	}
 
-	void __iomem *const ioaddr = bar2 + 0x1000 + (sizeof(u64) * channel);
 	const dma_addr_t phys = PTR_ALIGN(dma->phys, CCAT_ALIGNMENT);
-	const u32 phys_hi = (sizeof(phys) > sizeof(u32)) ? phys >> 32 : 0;
 	fifo->dma.start = dma->base + (phys - dma->phys);
-
 	fifo_set_end(fifo, CCAT_ALIGNMENT);
 
-	/** bit 0 enables 64 bit mode on ccat */
-	iowrite32((u32) phys | ((phys_hi) > 0), ioaddr);
-	iowrite32(phys_hi, ioaddr + 4);
+	if (bar2) {
+		void __iomem *const ioaddr = bar2 + 0x1000 + (sizeof(u64) * channel);
+		const u32 phys_hi = (sizeof(phys) > sizeof(u32)) ? phys >> 32 : 0;
 
-	pr_info
-	    ("DMA%zu mem initialized base: 0x%p start: 0x%p phys: 0x%llx pci addr: 0x%x%08x\n size: 0x%llx bytes.\n",
-	     channel, dma->base, fifo->dma.start, (u64) dma->phys,
-	     ioread32(ioaddr + 4), ioread32(ioaddr),
-	     (u64) dma->size);
+		/** bit 0 enables 64 bit mode on ccat */
+		iowrite32((u32) phys | ((phys_hi) > 0), ioaddr);
+		iowrite32(phys_hi, ioaddr + 4);
+		fifo->start_phys_offset = 0;
+	} else {
+		// setup fifo for upper bits of physical address
+		iowrite32(phys & 0xFF000000, fifo->reg + 4);
+		fifo->start_phys_offset = phys & 0xFFFFFF;
+	}
+
 	return 0;
 }
 
@@ -381,7 +384,7 @@ static void ccat_eth_rx_fifo_dma_add(struct ccat_eth_fifo *const fifo)
 {
 	struct ccat_dma_frame *const frame = fifo->dma.next;
 	const size_t offset = (void *)frame - fifo->dma.start;
-	const u32 addr_and_length = (1 << 31) | offset;
+	const u32 addr_and_length = (1 << 31) | (fifo->start_phys_offset + offset);
 
 	frame->hdr.rx_flags = cpu_to_le32(0);
 	iowrite32(addr_and_length, fifo->reg);
@@ -412,7 +415,7 @@ static void fifo_dma_queue_skb(struct ccat_eth_fifo *const fifo,
 
 	/* Queue frame into CCAT TX-FIFO, CCAT ignores the first 8 bytes of the tx descriptor */
 	addr_and_length = offsetof(struct ccat_dma_frame_hdr, length);
-	addr_and_length += ((void *)frame - fifo->dma.start);
+	addr_and_length += fifo->start_phys_offset + ((void *)frame - fifo->dma.start);
 	addr_and_length +=
 	    ((skb->len + sizeof(struct ccat_dma_frame_hdr)) / 8) << 24;
 	iowrite32(addr_and_length, fifo->reg);
