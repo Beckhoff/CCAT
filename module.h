@@ -104,7 +104,7 @@ extern loff_t ccat_cdev_llseek(struct file *f, loff_t offset, int whence);
  */
 struct ccat_device {
 	void *pdev;
-	void *dev;
+	struct device *dev;
 	void __iomem *bar_0;
 	void __iomem *bar_2;
 };

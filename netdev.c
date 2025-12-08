@@ -242,17 +242,17 @@ static void ccat_dma_free(struct ccat_dma_mem *const dma_mem)
 
 /**
  * ccat_dma_init() - Initialize CCAT and host memory for DMA transfer
- * @dma object for management data which will be initialized
- * @channel number of the DMA channel
- * @ioaddr of the pci bar2 configspace used to calculate the address of the pci dma configuration
  * @dev which should be configured for DMA
+ * @channel number of the DMA channel
+ * @bar2 ioaddr of the pci bar2 configspace used to calculate the address of the pci dma configuration
+ * @fifo fifo structure to initialize
  */
-static int ccat_dma_init(struct pci_dev *const pdev, size_t channel,
-			 void __iomem * const bar2,
+static int ccat_dma_init(struct device *const dev, size_t channel,
+			 void __iomem *const bar2,
 			 struct ccat_eth_fifo *const fifo)
 {
 	struct ccat_dma_mem *const dma = &fifo->dma_mem;
-	dma->dev = &pdev->dev;
+	dma->dev = dev;
 	dma->size = 2 * CCAT_ALIGNMENT - 1;
 	dma->base =
 	    dma_alloc_coherent(dma->dev, dma->size, &dma->phys, GFP_KERNEL);
@@ -465,21 +465,21 @@ static int ccat_hw_disable_mac_filter(struct ccat_eth_priv *priv)
  */
 static int ccat_eth_priv_init_dma(struct ccat_eth_priv *priv)
 {
-	struct pci_dev *const pdev = priv->func->ccat->pdev;
+	struct device *const dev = priv->func->ccat->dev;
 	void __iomem *const bar_2 = priv->func->ccat->bar_2;
 	const u8 rx_chan = priv->func->info.rx_dma_chan;
 	const u8 tx_chan = priv->func->info.tx_dma_chan;
 	int status = 0;
 
 	priv->rx_fifo.ops = &dma_rx_fifo_ops;
-	status = ccat_dma_init(pdev, rx_chan, bar_2, &priv->rx_fifo);
+	status = ccat_dma_init(dev, rx_chan, bar_2, &priv->rx_fifo);
 	if (status) {
 		pr_info("init RX DMA memory failed.\n");
 		return status;
 	}
 
 	priv->tx_fifo.ops = &dma_tx_fifo_ops;
-	status = ccat_dma_init(pdev, tx_chan, bar_2, &priv->tx_fifo);
+	status = ccat_dma_init(dev, tx_chan, bar_2, &priv->tx_fifo);
 	if (status) {
 		pr_info("init TX DMA memory failed.\n");
 		ccat_dma_free(&priv->rx_fifo.dma_mem);
