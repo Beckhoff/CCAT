@@ -368,6 +368,11 @@ static const struct ccat_platform_config ccat_eim_config = {
 	.len = 0x02000000,
 };
 
+static const struct ccat_platform_config ccat_zynqmp_config = {
+	.addr = 0xa0000000,
+	.len = 0x02000000,
+};
+
 static int ccat_platform_probe(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev;
@@ -416,6 +421,8 @@ static REMOVE_RESULT ccat_platform_remove(struct platform_device *pdev)
 
 static const struct of_device_id bhf_platform_ccat_ids[] = {
 	{ .compatible = "bhf,emi-ccat", .data = &ccat_eim_config },
+	{ .compatible = "bhf,zynqmp-ccat", .data = &ccat_zynqmp_config },
+	{ .compatible = "bhf,zynqmp-ccat", .data = &ccat_zynqmp_config },
 	{}
 };
 
