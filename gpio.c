@@ -95,11 +95,19 @@ static int ccat_gpio_get(struct gpio_chip *chip, unsigned nr)
 	return value;
 }
 
-static void ccat_gpio_set(struct gpio_chip *chip, unsigned nr, int val)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#define SET_RESULT void
+#define SET_OK
+#else
+#define SET_RESULT int
+#define SET_OK 0
+#endif
+static SET_RESULT ccat_gpio_set(struct gpio_chip *chip, unsigned nr, int val)
 {
 	struct ccat_gpio *gdev = container_of(chip, struct ccat_gpio, chip);
 
 	set_bit_in_register(&gdev->lock, gdev->ioaddr, nr, val);
+	return SET_OK;
 }
 
 static const struct gpio_chip ccat_gpio_chip = {
