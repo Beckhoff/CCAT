@@ -28,7 +28,6 @@ ${ssh_cmd} /bin/sh -$- <<- EOF
 
 	# Basic test if the driver was loaded.
 	sudo dmesg | grep --ignore-case ccat
-	ls -lh /dev/ccat_update*
 
 	sudo ./unittest/test-gpio.sh
 	sudo ./unittest/test-systemtime.sh

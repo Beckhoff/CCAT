@@ -7,7 +7,8 @@ wait_for_devices() {
 
 	while test "${_retries}" -gt 0; do
 		_retries=$((_retries - 1))
-		if ! test -e '/dev/ccat_update0'; then
+		# We don't have ccat update on our non x86_64/pci platforms
+		if test "$(uname -m)" = "x86_64" && ! test -e '/dev/ccat_update0'; then
 			printf 'CCAT update device node still missing. Waiting...\n' >&2
 			sleep 1
 			continue
