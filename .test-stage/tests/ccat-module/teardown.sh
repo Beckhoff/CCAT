@@ -10,7 +10,7 @@ readonly ssh_cmd="ssh Administrator@${test_device}"
 
 readonly rte0="$(rackctl-config get test-device rte0/debian)"
 
-${ssh_cmd} /bin/sh -$- <<- EOF
-	    # Turn TwinCAT back on again so the generic_teardown doesn't fail
-	    sudo systemctl --now enable TcSysConf TcSystemServiceUm
+${ssh_cmd} sudo /bin/sh -$- <<- EOF
+		# Turn TwinCAT back on again so the generic_teardown doesn't fail
+		systemctl --now enable TcSysConf TcSystemServiceUm
 EOF
