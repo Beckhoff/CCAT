@@ -20,5 +20,8 @@ ${ssh_cmd} /bin/sh -eu <<- EOF
 	# YEAH, this is brutal, but we don't care! TcSysConf "forgets"
 	# to cleanup driver_override for our CCAT. So to keep this
 	# easy here we just overwrite ALL overrides...
-	echo "" | sudo tee /sys/bus/pci/devices/*/driver_override
+	find -L /sys/bus/pci/devices -maxdepth 2 -name driver_override -type f -print0 |
+		while IFS= read -r driver_override_file; do
+			printf '' | sudo tee "\${driver_override_file}"
+		done
 EOF
