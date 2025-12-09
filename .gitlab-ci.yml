@@ -31,6 +31,7 @@ test:
     BHF_CI_IMAGE: '13/experimental'
     BHF_CI_SKIP_TEST_DOCKER: 'y'
     BHF_CI_SKIP_TEST_QEMU: 'y'
+    BHF_CI_LOG_TO_REPORTS: 'false'
   trigger:
     project: beckhoff/test-tcos
     branch: bhf/13/trixie
