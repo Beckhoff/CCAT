@@ -11,6 +11,7 @@
 #include <linux/platform_device.h>
 #include <linux/mfd/core.h>
 #include <linux/version.h>
+#include <linux/of.h>
 #include "module.h"
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -357,12 +358,20 @@ static struct pci_driver ccat_pci_driver = {
 
 #endif /* #ifdef CONFIG_PCI */
 
-static const size_t CCAT_EIM_ADDR = 0xf0000000;
-static const size_t CCAT_EIM_LEN = 0x02000000;
+struct ccat_platform_config {
+	size_t addr;
+	size_t len;
+};
+
+static const struct ccat_platform_config ccat_eim_config = {
+	.addr = 0xf0000000,
+	.len = 0x02000000,
+};
 
 static int ccat_platform_probe(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev;
+	const struct ccat_platform_config *config;
 
 	ccatdev = devm_kzalloc(&pdev->dev, sizeof(*ccatdev), GFP_KERNEL);
 	if (!ccatdev) {
@@ -372,13 +381,14 @@ static int ccat_platform_probe(struct platform_device *pdev)
 	ccatdev->pdev = pdev;
 	ccatdev->dev = &pdev->dev;
 	platform_set_drvdata(pdev, ccatdev);
+	config = of_device_get_match_data(&pdev->dev);
 
-	if (!request_mem_region(CCAT_EIM_ADDR, CCAT_EIM_LEN, pdev->name)) {
+	if (!request_mem_region(config->addr, config->len, pdev->name)) {
 		pr_warn("request mem region failed.\n");
 		return -EIO;
 	}
 
-	if (!(ccatdev->bar_0 = ioremap(CCAT_EIM_ADDR, CCAT_EIM_LEN))) {
+	if (!(ccatdev->bar_0 = ioremap(config->addr, config->len))) {
 		pr_warn("initialization of bar0 failed.\n");
 		return -EIO;
 	}
@@ -394,17 +404,18 @@ static int ccat_platform_probe(struct platform_device *pdev)
 static REMOVE_RESULT ccat_platform_remove(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev = platform_get_drvdata(pdev);
+	const struct ccat_platform_config *config = of_device_get_match_data(&pdev->dev);
 
 	if (ccatdev) {
 		mfd_remove_devices(ccatdev->dev);
 		iounmap(ccatdev->bar_0);
-		release_mem_region(CCAT_EIM_ADDR, CCAT_EIM_LEN);
+		release_mem_region(config->addr, config->len);
 	}
 	return REMOVE_OK;
 }
 
 static const struct of_device_id bhf_platform_ccat_ids[] = {
-	{.compatible = "bhf,emi-ccat",},
+	{ .compatible = "bhf,emi-ccat", .data = &ccat_eim_config },
 	{}
 };
 
