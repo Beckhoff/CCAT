@@ -392,7 +392,7 @@ static int ccat_platform_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int ccat_platform_remove(struct platform_device *pdev)
+static REMOVE_RESULT ccat_platform_remove(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev = platform_get_drvdata(pdev);
 
@@ -401,7 +401,7 @@ static int ccat_platform_remove(struct platform_device *pdev)
 		iounmap(ccatdev->bar_0);
 		release_mem_region(CCAT_EIM_ADDR, CCAT_EIM_LEN);
 	}
-	return 0;
+	return REMOVE_OK;
 }
 
 static const struct of_device_id bhf_platform_ccat_ids[] = {
