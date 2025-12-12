@@ -355,9 +355,8 @@ static struct pci_driver ccat_pci_driver = {
 	.remove = ccat_pci_remove,
 };
 
-module_pci_driver(ccat_pci_driver);
+#endif /* #ifdef CONFIG_PCI */
 
-#else /* #ifdef CONFIG_PCI */
 static const size_t CCAT_EIM_ADDR = 0xf0000000;
 static const size_t CCAT_EIM_LEN = 0x02000000;
 
@@ -414,11 +413,36 @@ MODULE_DEVICE_TABLE(of, bhf_platform_ccat_ids);
 static struct platform_driver ccat_platform_driver = {
 	.driver = {
 		   .name = KBUILD_MODNAME,
-		   .of_match_table = bhf_eim_ccat_ids,
+		   .of_match_table = bhf_platform_ccat_ids,
 		   },
 	.probe = ccat_platform_probe,
 	.remove = ccat_platform_remove,
 };
 
-module_platform_driver(ccat_platform_driver);
-#endif /* #ifdef CONFIG_PCI */
+static int __init ccat_init(void)
+{
+	int ret = 0;
+
+	#ifdef CONFIG_PCI
+	ret = pci_register_driver(&ccat_pci_driver);
+	if (ret)
+		pr_err("pci_register_driver failed: %d\n", ret);
+	#endif
+
+	ret = platform_driver_register(&ccat_platform_driver);
+	if (ret)
+		pr_err("platform_driver_register failed: %d\n", ret);
+
+	return 0;
+}
+
+static void __exit ccat_exit(void)
+{
+	#ifdef CONFIG_PCI
+	pci_unregister_driver(&ccat_pci_driver);
+	#endif
+	platform_driver_unregister(&ccat_platform_driver);
+}
+
+module_init(ccat_init);
+module_exit(ccat_exit);
