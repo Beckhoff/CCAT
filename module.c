@@ -361,7 +361,7 @@ module_pci_driver(ccat_pci_driver);
 static const size_t CCAT_EIM_ADDR = 0xf0000000;
 static const size_t CCAT_EIM_LEN = 0x02000000;
 
-static int ccat_eim_probe(struct platform_device *pdev)
+static int ccat_platform_probe(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev;
 
@@ -392,7 +392,7 @@ static int ccat_eim_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int ccat_eim_remove(struct platform_device *pdev)
+static int ccat_platform_remove(struct platform_device *pdev)
 {
 	struct ccat_device *ccatdev = platform_get_drvdata(pdev);
 
@@ -404,21 +404,21 @@ static int ccat_eim_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id bhf_eim_ccat_ids[] = {
+static const struct of_device_id bhf_platform_ccat_ids[] = {
 	{.compatible = "bhf,emi-ccat",},
 	{}
 };
 
-MODULE_DEVICE_TABLE(of, bhf_eim_ccat_ids);
+MODULE_DEVICE_TABLE(of, bhf_platform_ccat_ids);
 
-static struct platform_driver ccat_eim_driver = {
+static struct platform_driver ccat_platform_driver = {
 	.driver = {
 		   .name = KBUILD_MODNAME,
 		   .of_match_table = bhf_eim_ccat_ids,
 		   },
-	.probe = ccat_eim_probe,
-	.remove = ccat_eim_remove,
+	.probe = ccat_platform_probe,
+	.remove = ccat_platform_remove,
 };
 
-module_platform_driver(ccat_eim_driver);
+module_platform_driver(ccat_platform_driver);
 #endif /* #ifdef CONFIG_PCI */
