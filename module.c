@@ -423,6 +423,7 @@ static const struct of_device_id bhf_platform_ccat_ids[] = {
 	{ .compatible = "bhf,emi-ccat", .data = &ccat_eim_config },
 	{ .compatible = "bhf,zynqmp-ccat", .data = &ccat_zynqmp_config },
 	{ .compatible = "bhf,zynqmp-ccat", .data = &ccat_zynqmp_config },
+	{ .compatible = "xlnx,zynqmp-pcap-fpga", .data = &ccat_zynqmp_config },
 	{}
 };
 
