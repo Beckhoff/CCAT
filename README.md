@@ -1,5 +1,5 @@
 # Beckhoff CCAT FPGA
-The CCAT FPGA is used inside Beckhoff Embedded PCs and Fieldbus Cards.
+The CCAT (Communication Controller for Automation Technology) FPGA is used inside Beckhoff Embedded PCs and Fieldbus Cards.
 It is internally connected via a PC interface (usually PCIe) and offers interfaces for different 
 Industrial Fieldbusses (e.g. EtherCAT®)
 Because the device is not yet supported by the linux kernel and therefore not recognized as a standard 
