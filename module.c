@@ -5,6 +5,8 @@
     Author: Patrick Bruenn <p.bruenn@beckhoff.com>
 */
 
+// vi: noexpandtab:
+
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -19,6 +21,14 @@ MODULE_LICENSE("GPL and additional rights");
 MODULE_VERSION(DRV_VERSION);
 
 static struct ccat_cell ccat_cells[] = {
+	{
+	 .type = CCATINFO_INFO,
+	 .cell = {.name = "ccat_info"},
+	 },
+	{
+	 .type = CCATINFO_ETHERCAT_SLAVE,
+	 .cell = {.name = "ccat_esc"},
+	 },
 	{
 	 .type = CCATINFO_ETHERCAT_NODMA,
 	 .cell = {.name = "ccat_eth_eim"},
@@ -42,6 +52,14 @@ static struct ccat_cell ccat_cells[] = {
 	{
 	 .type = CCATINFO_SYSTEMTIME,
 	 .cell = {.name = "ccat_systemtime"},
+	 },
+	{
+	 .type = CCATINFO_IRQ,
+	 .cell = {.name = "ccat_irq"},
+	 },
+	{
+	 .type = CCATINFO_EEPROM,
+	 .cell = {.name = "ccat_eeprom"},
 	 },
 };
 
@@ -156,7 +174,7 @@ int ccat_cdev_open(struct inode *const i, struct file *const f)
 EXPORT_SYMBOL(ccat_cdev_open);
 
 int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class,
-		    size_t iosize)
+		    size_t iosize, void *user)
 {
 	struct ccat_cdev *const ccdev = alloc_ccat_cdev(cdev_class);
 	if (!ccdev) {
@@ -165,6 +183,8 @@ int ccat_cdev_probe(struct ccat_function *func, struct ccat_class *cdev_class,
 
 	ccdev->ioaddr = func->ccat->bar_0 + func->info.addr;
 	ccdev->iosize = iosize;
+	ccdev->func = func;
+	ccdev->user = user;
 	atomic_set(&ccdev->in_use, 1);
 
 	if (ccat_cdev_init

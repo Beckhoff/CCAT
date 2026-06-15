@@ -1,0 +1,4 @@
+# udev rules for CCAT devices:
+SUBSYSTEM=="ccat_esc", KERNEL=="ccat_esc?", MODE="0666"
+SUBSYSTEM=="ccat_irq", KERNEL=="ccat_irq?", MODE="0666"
+SUBSYSTEM=="ccat_update", KERNEL=="ccat_update?", MODE="0666"

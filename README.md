@@ -15,12 +15,15 @@ https://infosys.beckhoff.com/english.php?content=../content/1033/ethercatsystem/
 - GPIO
 - SRAM
 - FPGA update
+- ESC (EtherCAT@ Slave)
+- IRQ
 
 ### Supported devices
 
 - [CX50xx](https://www.beckhoff.com/CX5000/)
 - [CX51xx](https://www.beckhoff.com/CX5100/)
 - [CX20xx](https://www.beckhoff.com/CX2000/)
+- [FC1121](https://www.beckhoff.com/en-en/products/ipc/pcs/accessories/fc1121.html)
 
 ### How to build and install the kernel modules:
 
